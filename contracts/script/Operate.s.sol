@@ -7,6 +7,9 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {USDW} from "../src/mocks/USDW.sol";
 import {IOstiumRegistry} from "../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
 import {IOstiumPairsStorage} from "../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
+import {IOstiumTradingStorage} from "../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
+import {IOstiumPairInfos} from "../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
+import {IOstiumTradingCallbacks} from "../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
 import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
 import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
 import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
@@ -61,6 +64,19 @@ contract OperateScript is Script {
     // per-oracle upkeep registry key as bytes32(abi.encodePacked(pair.oracle, "PriceUpkeep")).
     // With PAIR_ORACLE == "BTC/USD" that is fixed at deploy time, so it is safe to inline here.
     bytes32 internal constant PRICE_UPKEEP_KEY = "BTC/USDPriceUpkeep";
+
+    /// @dev The pair's open-interest ceiling, PRECISION_6 (so $1,000,000). `openInterest[i][2]`
+    ///      defaults to ZERO on a freshly listed pair, and `TradingCallbacksLib.withinExposureLimits`
+    ///      compares `existingOi * price + collateral * leverage / 100` against it — so until this
+    ///      is set, EVERY trade is silently cancelled with `CancelReason.EXPOSURE_LIMITS`. That
+    ///      cancellation is not a revert: the open transaction succeeds and refunds the collateral
+    ///      minus the oracle fee, leaving no position and no error to notice. Generous relative to
+    ///      the 100,000 USDW vault, whose 20% `maxCollateralP` caps collateral at 20,000 anyway.
+    uint256 internal constant PAIR_MAX_OI = 1_000_000e6;
+
+    /// @dev PRECISION_18. Only has to be non-zero (it is a divisor) and satisfy
+    ///      `springFactor * sFactorUpScaleP / 100e2 <= MAX_FR_SPRING_FACTOR = 1e18`.
+    uint64 internal constant FUNDING_SPRING_FACTOR = 1e12;
 
     /// @dev Set by `run()`, once, before any of the eight functions execute. Distinguishes
     ///      "driven by `vm.startBroadcast`" from "driven by `vm.prank`" so `_relay` knows
@@ -129,7 +145,9 @@ contract OperateScript is Script {
         }
 
         if (ps.isPairListed(PAIR_FROM, PAIR_TO)) {
-            return _findPairIndex(ps);
+            pairIndex = _findPairIndex(ps);
+            _setFundingParams(c, pairIndex);
+            return pairIndex;
         }
 
         _relay(msg.sender);
@@ -147,7 +165,49 @@ contract OperateScript is Script {
             })
         );
 
-        return ps.pairsCount() - 1;
+        pairIndex = ps.pairsCount() - 1;
+        _setFundingParams(c, pairIndex);
+        return pairIndex;
+    }
+
+    /// @dev A freshly listed pair has an all-zero `PairFundingFeesV2`, and `springFactor` is a
+    ///      DIVISOR in `OstiumPairInfos.getPendingAccFundingFees` — so the first trade on an
+    ///      unconfigured pair panics with division-by-zero inside `storeTradeInitialAccFees`,
+    ///      taking the whole `performUpkeep` delivery down with it. `addPair` does not set these,
+    ///      so configuration must. Gated on the stored `springFactor` rather than on "we just
+    ///      listed the pair", so a run that dies between `addPair` and here still heals.
+    ///
+    ///      `maxFundingFeePerBlock: 0` disables funding entirely, which is what this phase wants:
+    ///      it keeps `targetFr` at zero, so the accumulator stays zero no matter how large
+    ///      `block.number - lastUpdateBlock` is on a live chain. Everything else is the minimum
+    ///      that satisfies `setPairFundingFees`' validation: `springFactor != 0`,
+    ///      `springFactor * sFactorUpScaleP / 100e2 <= MAX_FR_SPRING_FACTOR (1e18)`,
+    ///      `sFactorUpScaleP >= 100e2`, `sFactorDownScaleP <= 100e2`, and both hill scales
+    ///      `<= MAX_HILL_SCALE (250)`.
+    function _setFundingParams(Config memory c, uint16 pairIndex) internal {
+        IOstiumPairInfos pairInfos =
+            IOstiumPairInfos(IOstiumRegistry(c.registry).getContractAddress("pairInfos"));
+        (,,,,, uint64 springFactor,,,,,,) = pairInfos.pairFundingFees(pairIndex);
+        if (springFactor != 0) return;
+
+        _relay(msg.sender);
+        pairInfos.setPairFundingFees(
+            pairIndex,
+            IOstiumPairInfos.PairFundingFeesV2({
+                accPerOiLong: 0,
+                accPerOiShort: 0,
+                lastFundingRate: 0,
+                hillInflectionPoint: 0,
+                maxFundingFeePerBlock: 0,
+                springFactor: FUNDING_SPRING_FACTOR,
+                lastUpdateBlock: 0,
+                hillPosScale: 100,
+                hillNegScale: 100,
+                sFactorUpScaleP: 100_00,
+                sFactorDownScaleP: 100_00,
+                lastOiDelta: 0
+            })
+        );
     }
 
     /// @dev `isPairListed` has no reverse (from,to) -> index lookup, so on the idempotent
@@ -161,6 +221,34 @@ contract OperateScript is Script {
             }
         }
         revert("BTC/USD pair not found despite isPairListed() == true");
+    }
+
+    /// @notice Lets the vault pull settled losses and fees out of the callbacks contract.
+    /// @dev Caller must be `registry.gov()` (`setVaultMaxAllowance` is `onlyGov`).
+    ///      `OstiumVault.receiveAssets` does `transferFrom(callbacks, vault, amount)`, so without
+    ///      this allowance every CLOSE reverts `ERC20InsufficientAllowance` — opens succeed, which
+    ///      makes it a trap: positions can be entered and then not exited. Nothing in
+    ///      `Deploy.s.sol` sets it, because the vault address is only knowable after both are
+    ///      deployed.
+    function approveVaultAllowance(Config memory c) public {
+        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        address callbacks = registry.getContractAddress("callbacks");
+        if (IERC20(c.usdw).allowance(callbacks, c.vault) > 0) return;
+        _relay(msg.sender);
+        IOstiumTradingCallbacks(callbacks).setVaultMaxAllowance();
+    }
+
+    /// @notice Lifts the pair's open-interest ceiling off zero, so trades can actually open.
+    /// @dev Caller must be `registry.manager()` — `setMaxOpenInterest` is
+    ///      `onlyManagerOrMaxOIKeeper`, and no max-OI keeper is configured by `Deploy.s.sol`.
+    ///      `tradingStorage` is resolved through the registry rather than added to `Config`,
+    ///      matching how the vendored contracts locate each other.
+    function setMaxOi(Config memory c, uint16 pairIndex) public {
+        IOstiumTradingStorage ts =
+            IOstiumTradingStorage(IOstiumRegistry(c.registry).getContractAddress("tradingStorage"));
+        if (ts.openInterest(pairIndex, 2) > 0) return;
+        _relay(msg.sender);
+        ts.setMaxOpenInterest(pairIndex, PAIR_MAX_OI);
     }
 
     /// @notice Authorises `c.signer` to sign price reports the verifier will accept.
@@ -355,9 +443,18 @@ contract OperateScript is Script {
         uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
         uint256 ownerKey = vm.envUint("OWNER_PRIVATE_KEY");
         uint256 lpKey = vm.envUint("LP_PRIVATE_KEY");
+        uint256 managerKey = vm.envUint("MANAGER_PRIVATE_KEY");
 
         vm.startBroadcast(govKey);
-        addMarket(c);
+        uint16 pairIndex = addMarket(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(managerKey);
+        setMaxOi(c, pairIndex);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(govKey);
+        approveVaultAllowance(c);
         vm.stopBroadcast();
 
         vm.startBroadcast(govKey);

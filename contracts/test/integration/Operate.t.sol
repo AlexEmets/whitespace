@@ -48,6 +48,8 @@ contract OperateTest is Test {
     function _configureAll() internal returns (uint16 pairIndex, uint32 settlementId) {
         OperateScript.Config memory c = _config();
         vm.prank(gov);          pairIndex = operator.addMarket(c);
+        vm.prank(manager);      operator.setMaxOi(c, pairIndex);
+        vm.prank(gov);          operator.approveVaultAllowance(c);
         vm.prank(gov);          operator.authoriseSigner(c);
         vm.prank(address(this)); operator.authoriseForwarder(c);   // registry owner
         vm.prank(gov);          operator.registerUpkeep(c);
@@ -64,7 +66,8 @@ contract OperateTest is Test {
     ///      never ran.
     function _passDyingAfterSettle() internal {
         OperateScript.Config memory c = _config();
-        vm.prank(gov);           operator.addMarket(c);
+        vm.prank(gov);           uint16 pairIndex = operator.addMarket(c);
+        vm.prank(manager);       operator.setMaxOi(c, pairIndex);
         vm.prank(gov);           operator.authoriseSigner(c);
         vm.prank(address(this)); operator.authoriseForwarder(c);
         vm.prank(gov);           operator.registerUpkeep(c);
