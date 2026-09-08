@@ -2,3 +2,6 @@
 @openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 forge-std/=lib/forge-std/src/
 src/=src/
+src/interfaces/=src/vendor/ostium/interfaces/
+src/lib/=src/vendor/ostium/lib/
+src/abstract/=src/vendor/ostium/abstract/
