@@ -1,0 +1,11 @@
+{
+  "name": "@whitespace/metrics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/registry.mjs",
+  "exports": {
+    ".": "./src/registry.mjs",
+    "./registry": "./src/registry.mjs"
+  }
+}

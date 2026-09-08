@@ -1,0 +1,16 @@
+{
+  "name": "@whitespace/liquidator",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "@whitespace/metrics": "workspace:*",
+    "@whitespace/shared": "workspace:*",
+    "viem": "^2.21.0"
+  }
+}
