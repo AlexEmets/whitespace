@@ -237,11 +237,33 @@ whitespace/
 
 | # | Change | Reason |
 |---|---|---|
-| 1 | `ChainUtils`/`IArbSys` → `block.number` | Arbitrum precompile does not exist on Whitechain |
+| 1 | ~~`ChainUtils`/`IArbSys` → `block.number`~~ **Not required — see below** | Corrected 2026-09-08 |
 | 2 | Chainlink Automation forwarder → own keeper allowlist | No Automation; already parameterised via `registerForwarder` |
 | 3 | **`Verifier`: 1-of-N → k-of-N threshold** | See §6 — the central security work |
 | 4 | Oracle rails: staleness, max deviation, per-market breaker | On Arbitrum, Chainlink is the backstop; here there is none |
 | 5 | Pin `solc 0.8.24`, `evm_version = shanghai` | Mainnet 1875 portability |
+
+**Correction to change #1 (2026-09-08).** An earlier draft of this spec claimed `ChainUtils` had
+to be rewritten because the Arbitrum `ArbSys` precompile is absent on Whitechain. Reading the
+source disproves it:
+
+```solidity
+function getBlockNumber() internal view returns (uint256) {
+    if (block.chainid == ARBITRUM_MAINNET || block.chainid == ARBITRUM_GOERLI
+        || block.chainid == ARBITRUM_SEPOLIA) {
+        return ARB_SYS.arbBlockNumber();
+    }
+    return block.number;
+}
+```
+
+The Arbitrum branch is gated on `block.chainid` and is **never taken** on 1874, 2625 or 1875;
+`ARB_SYS` is a `constant` address, so no call is made. The library is already correct on
+Whitechain.
+
+**Decision: keep `ChainUtils` unmodified.** Minimal divergence from upstream keeps future
+upstream fixes mergeable, and the dead branch costs no gas. A regression test pins the behaviour
+for our three chain ids instead. Removing it would be cosmetic churn against a live dependency.
 
 ---
 
@@ -423,7 +445,7 @@ Playwright E2E; a load test measuring liquidation latency at N open positions.
 
 | # | Phase | Completion gate |
 |---|---|---|
-| **0** | Scaffolding: monorepo, pinned solc, `TestUSD` deploy, pre-EIP-155 probe | trivial contract deployed on 1874 **and** 2625 |
+| **0** | Scaffolding: monorepo, pinned solc, `USDW` deploy, pre-EIP-155 probe | trivial contract deployed on 1874 **and** 2625 |
 | **1** | Contract port: remove `IArbSys`, build under shanghai | compiles and deploys to both networks |
 | **2** | **Oracle hardening**: k-of-N + rails | verifier invariant tests green |
 | **3** | Price publisher + keeper | an order completes end-to-end on testnet |
@@ -473,7 +495,7 @@ proving compatibility continuously. What the plan cannot do is create liquidity.
 
 ## 11. Collateral and gas
 
-**Collateral.** No stablecoin exists on Whitechain. On testnet we deploy `TestUSD` (6 decimals)
+**Collateral.** No stablecoin exists on Whitechain. On testnet we deploy `USDW` (6 decimals)
 with a faucet, behind an interface so a real stablecoin substitutes without core changes.
 
 **Gas.** Mainnet is 10 gwei with no EIP-1559; testnet 1874 has EIP-1559 active. All automated
