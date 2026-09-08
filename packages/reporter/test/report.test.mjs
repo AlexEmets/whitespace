@@ -28,12 +28,24 @@ test('report data round-trips through the exact on-chain tuple', () => {
   assert.equal(decoded[0], FEED);
   assert.equal(decoded[1], 1757325600);
   assert.equal(decoded[2], 65000000000000000000000n);
+  assert.equal(decoded[3], 64999000000000000000000n);
+  assert.equal(decoded[4], 65001000000000000000000n);
   assert.equal(decoded[5], true);
   assert.equal(decoded[6], false);
 });
 
-test('price uses 18 decimals, so $65,000 is 65000e18', () => {
-  assert.equal(FIELDS.price, 65000n * 10n ** 18n);
+test('a negative int192 price round-trips through the encoder', () => {
+  const data = buildReportData({ ...FIELDS, price: -1n, bid: -2n, ask: -3n });
+  const decoded = decodeAbiParameters(
+    [
+      { type: 'bytes32' }, { type: 'uint32' }, { type: 'int192' },
+      { type: 'int192' }, { type: 'int192' }, { type: 'bool' }, { type: 'bool' },
+    ],
+    data,
+  );
+  assert.equal(decoded[2], -1n);
+  assert.equal(decoded[3], -2n);
+  assert.equal(decoded[4], -3n);
 });
 
 test('the signature recovers to the signing key', async () => {
