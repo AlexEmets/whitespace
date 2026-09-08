@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 
-const EXPECTED = { solc: '0.8.24', evm_version: 'shanghai', bytecode_hash: 'none', cbor_metadata: false };
+const EXPECTED = { solc: '0.8.24', evm_version: 'shanghai', bytecode_hash: 'none', cbor_metadata: false, via_ir: true };
 
 const path = process.argv[2];
 if (!path) {
