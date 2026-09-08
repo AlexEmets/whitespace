@@ -168,6 +168,18 @@ contract DeployScript is Script {
                 OstiumPriceRouter.initialize, (reg, MAX_TS_VALIDITY, FIRST_ORDER_ID)
             )
         );
+        // Deployed but DELIBERATELY NOT REGISTERED, and `priceUpKeep` is this struct's local
+        // field name, not a registry key. The registry key for a price upkeep is per-oracle
+        // and is not a constant: OstiumPriceRouter.sol:81-84 and OstiumTradingCallbacks.sol
+        // :83-85 both resolve it as
+        //     bytes32(abi.encodePacked(pairsStorage.oracle(pairIndex), 'PriceUpkeep'))
+        // i.e. `<pair.oracle>` + "PriceUpkeep". That string is undeterminable until pairs
+        // exist, and phase 1 adds none — so there is nothing to register under yet, and
+        // registering it as "priceUpKeep" would create an entry no consumer ever reads.
+        // Phase 3 must register it under the real `<oracle>PriceUpkeep` key when it adds the
+        // first pair (one entry per distinct oracle type, not per pair). The omission is
+        // pinned by test_priceUpKeepIsNotRegisteredUnderItsStructName in
+        // test/integration/DeployLocal.t.sol; see docs/runbooks/deploy-testnet.md.
         d.priceUpKeep = _proxy(
             address(new OstiumPrivatePriceUpKeep()),
             abi.encodeCall(OstiumPrivatePriceUpKeep.initialize, (reg))

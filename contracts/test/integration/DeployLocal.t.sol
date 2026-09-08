@@ -99,14 +99,38 @@ contract DeployLocalTest is Test {
         assertEq(registry.getContractAddress("ostiumVerifier"), d.verifier);
     }
 
+    /// @dev Covers all TWELVE fields the Deployment struct exports, not just the nine the
+    ///      registry knows about. `collateral`, `verifier` and `priceUpKeep` are returned to
+    ///      the operator and written into deployments/<chainid>.json, so a silently-zero
+    ///      address in any of them is just as damaging as in a registered component.
     function test_everyComponentHasCode() public view {
-        address[9] memory all = [
-            d.registry, d.tradingStorage, d.pairsStorage, d.pairInfos,
-            d.trading, d.callbacks, d.vault, d.openPnl, d.priceRouter
+        address[12] memory all = [
+            d.registry, d.collateral, d.tradingStorage, d.pairsStorage, d.pairInfos,
+            d.trading, d.callbacks, d.vault, d.openPnl, d.priceRouter,
+            d.verifier, d.priceUpKeep
         ];
         for (uint256 i = 0; i < all.length; i++) {
             assertGt(all[i].code.length, 0);
         }
+    }
+
+    /// @dev Pins the priceUpKeep omission as INTENTIONAL, not forgotten.
+    ///
+    ///      `Deployment.priceUpKeep` is a local field name, not a registry key. The real key
+    ///      is per-oracle and not a constant — OstiumPriceRouter.sol:81-84 and
+    ///      OstiumTradingCallbacks.sol:83-85 both resolve it as
+    ///      `bytes32(abi.encodePacked(pairsStorage.oracle(pairIndex), 'PriceUpkeep'))`, which
+    ///      is undeterminable until pairs exist. Phase 1 adds none, so not registering it is
+    ///      correct.
+    ///
+    ///      Without this assertion, a future change that "helpfully" registers the upkeep
+    ///      under the literal name "priceUpKeep" would pass the whole suite while creating a
+    ///      registry entry no consumer ever reads — and would look authoritative to whoever
+    ///      wires phase 3. `OstiumRegistry.getContractAddress` reverts `NotFound(bytes32)`
+    ///      (OstiumRegistry.sol:114, declared IOstiumRegistry.sol:13) for an unknown name.
+    function test_priceUpKeepIsNotRegisteredUnderItsStructName() public {
+        vm.expectRevert(abi.encodeWithSelector(IOstiumRegistry.NotFound.selector, bytes32("priceUpKeep")));
+        IOstiumRegistry(d.registry).getContractAddress("priceUpKeep");
     }
 
     function test_collateralIsSixDecimals() public view {
