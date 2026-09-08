@@ -4,10 +4,13 @@
   "packageManager": "pnpm@9.12.0",
   "engines": { "node": ">=22" },
   "scripts": {
-    "build:contracts": "cd contracts && forge build",
+    "build:contracts": "cd contracts && forge build --sizes",
     "test:contracts": "cd contracts && forge test",
     "test:tools": "node --test tools/",
     "gate:evm": "node tools/evm-compat/scan.mjs contracts/out",
-    "gate:toolchain": "cd contracts && forge config --json > /tmp/fc.json && node ../tools/evm-compat/toolchain.mjs /tmp/fc.json"
+    "gate:toolchain": "cd contracts && forge config --json > /tmp/fc.json && node ../tools/evm-compat/toolchain.mjs /tmp/fc.json",
+    "probe:chains": "node tools/chain-probe/probe.mjs",
+    "deploy:1874": "cd contracts && forge script script/Deploy.s.sol:DeployScript --rpc-url https://rpc.testnet.whitechain.io --broadcast --legacy -vvv",
+    "deploy:2625": "cd contracts && forge script script/Deploy.s.sol:DeployScript --rpc-url https://rpc-testnet.whitechain.io --broadcast --legacy -vvv"
   }
 }
