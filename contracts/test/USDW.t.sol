@@ -3,6 +3,7 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {USDW} from "../src/mocks/USDW.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract USDWTest is Test {
     USDW internal usd;
@@ -47,7 +48,7 @@ contract USDWTest is Test {
 
     function test_nonOwnerCannotMint() public {
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
         usd.mint(alice, 1);
     }
 }
