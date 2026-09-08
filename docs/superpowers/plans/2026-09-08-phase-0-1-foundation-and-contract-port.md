@@ -915,15 +915,9 @@ contract ChainUtilsTest is Test {
         assertEq(harness.blockNumber(), 999);
     }
 
-    /// @dev Documents why the Arbitrum branch is harmless here: it is unreachable
-    ///      on our chain ids, and reaching it would revert (no ArbSys precompile).
-    function test_arbitrumBranchIsUnreachableOnOurChains() public {
-        uint256[3] memory ours = [uint256(1874), 2625, 1875];
-        for (uint256 i = 0; i < ours.length; i++) {
-            assertTrue(ours[i] != 42161 && ours[i] != 421613 && ours[i] != 421614);
-        }
-    }
-
+    /// @dev The Arbitrum branch is unreachable on our chain ids, so `block.number` is the
+    ///      only path taken. This fuzz test covers the whole non-Arbitrum chain-id space,
+    ///      which is what makes keeping the vendored library unmodified safe.
     function testFuzz_returnsBlockNumberForAnyNonArbitrumChain(uint64 chainId, uint32 height)
         public
     {
@@ -945,7 +939,7 @@ That is expected and correct for a regression guard on vendored source.
 cd contracts && forge test --match-path test/ChainUtils.t.sol -vv
 ```
 
-Expected: PASS, 5 tests (4 unit + 1 fuzz).
+Expected: PASS, 4 tests (3 unit + 1 fuzz).
 
 - [ ] **Step 3: Prove the test would catch a regression**
 
