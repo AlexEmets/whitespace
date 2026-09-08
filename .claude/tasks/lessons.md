@@ -47,3 +47,28 @@ collateral could be stranded when the keeper is down. The recovery functions exi
 **Rule.** When a grep is being used to establish a *negative* ("this mechanism does not exist"),
 never truncate the output. Count matches first, or clone the repo and grep it whole. A truncated
 search proves nothing about absence.
+
+## 2026-09-08 — Concluded "no stablecoin on mainnet" from a 200-block sample
+
+**What happened.** The design spec and my memory both recorded that Whitechain mainnet 1875 has
+no stablecoin, and therefore that mainnet deployment is blocked by a business problem "no amount
+of engineering solves". The evidence was a 200-block sample showing 0.4 tx/block and zero
+contract calls. The user said "there IS USDC on Whitechain, check it." There is: `USDC.e`
+("Bridged USDC (Whitechain)", 6 decimals) is live on all three networks, and on mainnet it had
+moved 2.5 hours before I checked.
+
+**The missed tell.** Token activity on 1875 is sparse, not absent: 322 `USDC.e` transfers per
+1,000,000 blocks is about one every 3,100 blocks. A 200-block window had roughly a 6% chance of
+containing a single one. I treated a negative result from a tiny sample as proof of absence, and
+then wrote that conclusion into a design document as settled fact, where it shaped the entire
+mainnet roadmap.
+
+**What worked instead.** `eth_getLogs` over a 1M-block range filtered on the ERC-20 `Transfer`
+topic `0xddf252ad...`, then `name()`/`symbol()`/`decimals()` on each address that appeared. That
+enumerates every token that has *ever moved* in the window, regardless of how idle it is now.
+
+**Rule.** Never infer that an asset or contract does not exist on a chain from a short activity
+sample — sparse is not absent. To establish absence, sweep `eth_getLogs` on the relevant event
+topic across a wide range, or read a token-list source, and state the window searched. And when
+a negative finding is about to become a project-level decision ("mainnet is blocked"), it earns
+a second, differently-shaped probe before it is written down as fact.
