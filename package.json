@@ -1,0 +1,13 @@
+{
+  "name": "whitespace",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build:contracts": "cd contracts && forge build",
+    "test:contracts": "cd contracts && forge test",
+    "test:tools": "node --test tools/",
+    "gate:evm": "node tools/evm-compat/scan.mjs contracts/out",
+    "gate:toolchain": "cd contracts && forge config --json > /tmp/fc.json && node ../tools/evm-compat/toolchain.mjs /tmp/fc.json"
+  }
+}

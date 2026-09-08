@@ -18,7 +18,6 @@ artifacts/
 broadcast/
 typechain/
 typechain-types/
-lib/forge-std/
 coverage/
 lcov.info
 
