@@ -1,0 +1,252 @@
+import {
+  decodeFunctionData,
+  encodeEventTopics,
+  encodeFunctionResult,
+  numberToHex,
+  type Address,
+  type Hex,
+} from 'viem';
+import { CHAIN_ID } from '../../src/lib/config';
+import { COLLATERAL_ADDRESS, PAIRS_STORAGE_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_ADDRESS, VAULT_ADDRESS } from '../../src/lib/deployment';
+import { ERC20_ABI, PAIRS_STORAGE_ABI, PAIR_INFOS_ABI, TRADING_ABI, VAULT_ABI } from '../../src/lib/abi';
+import { MOCK_TRADER_ADDRESS, type TestState } from './testState';
+
+const CHAIN_ID_HEX = numberToHex(CHAIN_ID);
+let receiptCounter = 0;
+let blockCounter = 10;
+
+interface EthRequestPayload {
+  method: string;
+  params?: unknown[];
+}
+
+/**
+ * Answers the subset of the EIP-1193 JSON-RPC surface this app's wallet-signed writes
+ * and balance/allowance/vault-status reads need. Bridged into the browser as
+ * `window.ethereum.request` via `page.exposeFunction` + `page.addInitScript` (see
+ * trade-flow.spec.ts) — real ABI decoding/encoding happens here in Node, using the exact
+ * same ABIs (src/lib/abi.ts) and addresses (src/lib/deployment.ts) the app itself uses,
+ * so this mock cannot silently drift from what the app actually calls.
+ */
+export function createMockChain(state: TestState) {
+  const receipts = new Map<string, unknown>();
+
+  function addressEquals(a: string, b: Address): boolean {
+    return a.toLowerCase() === b.toLowerCase();
+  }
+
+  function handleCall(callParams: { to?: string; data?: Hex }): Hex {
+    const { to, data } = callParams;
+    if (!to || !data) return '0x';
+
+    if (addressEquals(to, COLLATERAL_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: ERC20_ABI, data });
+      if (decoded.functionName === 'balanceOf') {
+        return encodeFunctionResult({ abi: ERC20_ABI, functionName: 'balanceOf', result: state.usdwBalance });
+      }
+      if (decoded.functionName === 'allowance') {
+        const [, spender] = decoded.args as [Address, Address];
+        const amount = state.allowances.get(spender.toLowerCase()) ?? 0n;
+        return encodeFunctionResult({ abi: ERC20_ABI, functionName: 'allowance', result: amount });
+      }
+      if (decoded.functionName === 'decimals') {
+        return encodeFunctionResult({ abi: ERC20_ABI, functionName: 'decimals', result: 6 });
+      }
+    }
+
+    if (addressEquals(to, VAULT_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: VAULT_ABI, data });
+      if (decoded.functionName === 'targetSettlementId') {
+        return encodeFunctionResult({
+          abi: VAULT_ABI,
+          functionName: 'targetSettlementId',
+          result: state.vaultSettlementId,
+        });
+      }
+      if (decoded.functionName === 'getDepositStatus') {
+        const [, settlementId] = decoded.args as [Address, number];
+        const status = state.depositStatus.get(settlementId) ?? 0;
+        return encodeFunctionResult({ abi: VAULT_ABI, functionName: 'getDepositStatus', result: status });
+      }
+      if (decoded.functionName === 'getWithdrawStatus') {
+        return encodeFunctionResult({ abi: VAULT_ABI, functionName: 'getWithdrawStatus', result: 0 });
+      }
+      if (decoded.functionName === 'currentBalance' || decoded.functionName === 'tvl') {
+        return encodeFunctionResult({ abi: VAULT_ABI, functionName: decoded.functionName, result: 100_000_000_000n });
+      }
+    }
+
+    if (addressEquals(to, TRADING_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: TRADING_ABI, data });
+      if (decoded.functionName === 'marketOrdersTimeout') {
+        return encodeFunctionResult({ abi: TRADING_ABI, functionName: 'marketOrdersTimeout', result: 30 });
+      }
+    }
+
+    if (addressEquals(to, PAIR_INFOS_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: PAIR_INFOS_ABI, data });
+      if (decoded.functionName === 'pairOpeningFees') {
+        // Matches the ruling's stated real config: opening fees are currently zero.
+        return encodeFunctionResult({
+          abi: PAIR_INFOS_ABI,
+          functionName: 'pairOpeningFees',
+          result: [0, 0, 0, 0, 0, 0],
+        });
+      }
+    }
+
+    if (addressEquals(to, PAIRS_STORAGE_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: PAIRS_STORAGE_ABI, data });
+      if (decoded.functionName === 'pairOracleFee') {
+        // 1_000000 = $1.00 flat oracle fee (PRECISION_6), per the ruling's stated config.
+        return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairOracleFee', result: 1_000_000n });
+      }
+    }
+
+    return '0x';
+  }
+
+  function makeReceipt(hash: Hex, to: Address, logs: unknown[]) {
+    const blockNumber = numberToHex(blockCounter);
+    return {
+      transactionHash: hash,
+      transactionIndex: '0x0',
+      blockHash: numberToHex(blockCounter + 1000),
+      blockNumber,
+      from: MOCK_TRADER_ADDRESS,
+      to,
+      cumulativeGasUsed: '0x5208',
+      gasUsed: '0x5208',
+      contractAddress: null,
+      logs,
+      logsBloom: `0x${'0'.repeat(512)}`,
+      status: '0x1',
+      type: '0x0',
+    };
+  }
+
+  function handleSendTransaction(tx: { to?: string; data?: Hex }): Hex {
+    receiptCounter += 1;
+    blockCounter += 1;
+    const hash = numberToHex(receiptCounter, { size: 32 });
+    const to = tx.to as Address;
+    const data = tx.data as Hex;
+
+    if (addressEquals(to, COLLATERAL_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: ERC20_ABI, data });
+      if (decoded.functionName === 'approve') {
+        const [spender, amount] = decoded.args as [Address, bigint];
+        state.allowances.set(spender.toLowerCase(), amount);
+      } else if (decoded.functionName === 'claim') {
+        state.usdwBalance += 1_000_000_000n; // USDW.sol FAUCET_AMOUNT = 1_000e6
+      }
+      receipts.set(hash, makeReceipt(hash, to, []));
+      return hash;
+    }
+
+    if (addressEquals(to, VAULT_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: VAULT_ABI, data });
+      if (decoded.functionName === 'requestDeposit') {
+        const [assets] = decoded.args as [bigint];
+        if (state.usdwBalance < assets) throw new Error('mock chain: insufficient USDW for requestDeposit');
+        state.usdwBalance -= assets;
+        state.depositStatus.set(state.vaultSettlementId, 1); // PENDING
+      } else if (decoded.functionName === 'claimDeposit') {
+        const [settlementId] = decoded.args as [number];
+        if (state.depositStatus.get(settlementId) !== 2) {
+          throw new Error('mock chain: claimDeposit called before settlement is CLAIMABLE');
+        }
+        state.depositStatus.set(settlementId, 0); // NONE (claimed)
+        state.vaultShareBalance += 1n;
+      }
+      receipts.set(hash, makeReceipt(hash, to, []));
+      return hash;
+    }
+
+    if (addressEquals(to, TRADING_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: TRADING_ABI, data });
+      let logs: unknown[] = [];
+
+      if (decoded.functionName === 'openTrade') {
+        const [t] = decoded.args;
+        const orderId = state.nextOrderId;
+        state.nextOrderId += 1n;
+        state.orders.push({
+          orderId: orderId.toString(),
+          pairIndex: t.pairIndex,
+          trader: t.trader,
+          buy: t.buy,
+          collateral: t.collateral.toString(),
+          leverage: t.leverage.toString(),
+          requestedAt: Math.floor(Date.now() / 1000),
+          status: 'pending',
+        });
+
+        const topics = encodeEventTopics({
+          abi: TRADING_ABI,
+          eventName: 'MarketOpenOrderInitiated',
+          args: { orderId, trader: t.trader, pairIndex: t.pairIndex },
+        });
+        logs = [
+          {
+            address: TRADING_ADDRESS,
+            topics,
+            data: '0x' as Hex,
+            blockHash: numberToHex(blockCounter + 1000),
+            blockNumber: numberToHex(blockCounter),
+            transactionHash: hash,
+            transactionIndex: '0x0',
+            logIndex: '0x0',
+            removed: false,
+          },
+        ];
+      } else if (decoded.functionName === 'closeTradeMarket') {
+        const [pairIndex, index] = decoded.args;
+        const position = state.positions.find((p) => p.pairIndex === pairIndex && p.index === index);
+        if (position) {
+          state.positions = state.positions.filter((p) => p !== position);
+        }
+      }
+
+      receipts.set(hash, makeReceipt(hash, to, logs));
+      return hash;
+    }
+
+    receipts.set(hash, makeReceipt(hash, to, []));
+    return hash;
+  }
+
+  async function handleRequest({ method, params = [] }: EthRequestPayload): Promise<unknown> {
+    switch (method) {
+      case 'eth_chainId':
+        return CHAIN_ID_HEX;
+      case 'net_version':
+        return String(CHAIN_ID);
+      case 'eth_requestAccounts':
+      case 'eth_accounts':
+        return [MOCK_TRADER_ADDRESS];
+      case 'wallet_switchEthereumChain':
+      case 'wallet_addEthereumChain':
+        return null;
+      case 'eth_blockNumber':
+        blockCounter += 1;
+        return numberToHex(blockCounter);
+      case 'eth_getBlockByNumber':
+        return { number: numberToHex(blockCounter), hash: numberToHex(blockCounter + 1000), timestamp: numberToHex(Math.floor(Date.now() / 1000)) };
+      case 'eth_gasPrice':
+        return '0x3b9aca00';
+      case 'eth_getTransactionCount':
+        return numberToHex(receiptCounter);
+      case 'eth_call':
+        return handleCall((params[0] as { to?: string; data?: Hex }) ?? {});
+      case 'eth_sendTransaction':
+        return handleSendTransaction((params[0] as { to?: string; data?: Hex }) ?? {});
+      case 'eth_getTransactionReceipt':
+        return receipts.get(params[0] as string) ?? null;
+      default:
+        return null;
+    }
+  }
+
+  return { handleRequest };
+}

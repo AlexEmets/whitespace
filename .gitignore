@@ -37,3 +37,7 @@ pgdata/
 
 # Agent worktrees — isolated repo copies, never part of the tree
 .claude/worktrees/
+
+# Playwright artefacts
+test-results/
+playwright-report/
