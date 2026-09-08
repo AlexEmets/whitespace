@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build contracts
+        run: cd contracts && forge build --sizes
+
+      - name: Toolchain gate (solc 0.8.24 / shanghai / no metadata)
+        run: |
+          cd contracts && forge config --json > /tmp/forge-config.json
+          cd .. && node tools/evm-compat/toolchain.mjs /tmp/forge-config.json
+
+      - name: EVM compatibility gate (no Cancun opcodes)
+        run: node tools/evm-compat/scan.mjs contracts/out
+
+      - name: Contract tests
+        run: cd contracts && forge test -vv
+
+      - name: Tool tests
+        run: node --test tools/
+
+  network-drift:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Chain capability drift probe
+        run: node tools/chain-probe/probe.mjs
