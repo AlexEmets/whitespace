@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+keystore/
+
+# solidity build output (Foundry / Hardhat)
+out/
+cache/
+cache_hardhat/
+artifacts/
+broadcast/
+typechain/
+typechain-types/
+lib/forge-std/
+coverage/
+lcov.info
+
+# app build output
+dist/
+build/
+.next/
+.turbo/
+
+# indexer / local infra
+.ponder/
+pgdata/
+
+# misc
+*.log
+.DS_Store
