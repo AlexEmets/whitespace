@@ -283,14 +283,29 @@ contract OperateScript is Script {
     ///      vault's own address and `pendingDepositRequest[c.lp][settlementId]` was never
     ///      cleared. The correct "already done?" read is the LP's OWN claim status:
     ///      `getDepositStatus` returns CLAIMABLE only after settlement has processed this
-    ///      exact `settlementId` for this exact owner (`OstiumVault.sol:577-584`), and NONE for
-    ///      `settlementId == 0` (nothing was ever requested at id 0), so no separate zero check
-    ///      is needed.
+    ///      exact `settlementId` for this exact owner (`OstiumVault.sol:577-584`).
+    ///
+    ///      `settlementId == 0` means this was resumed by a fresh process after a *different*
+    ///      call to `requestLpDeposit` already fell through to its `currentBalance() > 0` branch
+    ///      — which happens whenever a run dies strictly between `settle()` and
+    ///      `claimLpDeposit()`: `settle()` already advanced `lastSettlementId`, so the resumed
+    ///      `requestLpDeposit` reads `targetSettlementId(true) == lastSettlementId + 1`, finds
+    ///      nothing pending at that new id, and correctly returns 0 (nothing new to request).
+    ///      Passing that 0 straight through used to read `getDepositStatus(c.lp, 0)`, which is
+    ///      always NONE (nothing was ever requested at id 0) — so the claim silently never
+    ///      happened and never self-healed, stranding the LP's shares at the vault's own escrow
+    ///      forever (the status has no expiry, but nothing else surfaces the problem either).
+    ///      Derive the actual id instead: `targetSettlementId(true) - 1 == lastSettlementId`, the
+    ///      id `settle()` most recently processed. No underflow — `targetSettlementId(true) =
+    ///      lastSettlementId + 1 >= 1` always. On the clean two-pass case (nothing left to claim)
+    ///      this derived id's `pendingDepositRequest` was already cleared by the first pass's
+    ///      claim, so `getDepositStatus` reads NONE there too and this still correctly skips.
     function claimLpDeposit(Config memory c, uint32 settlementId) public {
         IOstiumVault vault = IOstiumVault(c.vault);
-        if (vault.getDepositStatus(c.lp, settlementId) != IOstiumVault.RequestStatus.CLAIMABLE) return;
+        uint32 id = settlementId == 0 ? vault.targetSettlementId(true) - 1 : settlementId; // == lastSettlementId
+        if (vault.getDepositStatus(c.lp, id) != IOstiumVault.RequestStatus.CLAIMABLE) return;
         _relay(msg.sender);
-        vault.claimDeposit(settlementId);
+        vault.claimDeposit(id);
     }
 
     /// @dev `contracts/foundry.toml`'s `fs_permissions` only allows reads under

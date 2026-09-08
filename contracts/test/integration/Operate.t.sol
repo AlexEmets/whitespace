@@ -57,6 +57,48 @@ contract OperateTest is Test {
         vm.prank(lp);           operator.claimLpDeposit(c, settlementId);
     }
 
+    /// @dev Drives every step through `settle` and stops — models a live run that dies strictly
+    ///      between `settle()` and `claimLpDeposit()`. Used by
+    ///      `test_freshProcessResumeClaimsDepositAfterSettle` to reproduce the exact stuck state
+    ///      the reviewer measured: `settle()` has advanced `lastSettlementId`, but the LP's claim
+    ///      never ran.
+    function _passDyingAfterSettle() internal {
+        OperateScript.Config memory c = _config();
+        vm.prank(gov);           operator.addMarket(c);
+        vm.prank(gov);           operator.authoriseSigner(c);
+        vm.prank(address(this)); operator.authoriseForwarder(c);
+        vm.prank(gov);           operator.registerUpkeep(c);
+        vm.prank(address(this)); operator.mintToLp(c);
+        vm.prank(lp);            operator.requestLpDeposit(c);
+        vm.prank(gov);           operator.settle(c);
+        // dies here — never calls claimLpDeposit; a fresh process must resume the whole thing.
+    }
+
+    /// @dev Reproduces the reviewer's exact repro: a run that died between `settle()` and
+    ///      `claimLpDeposit()` is resumed by a NEW process (`new OperateScript()`, not the same
+    ///      `operator` instance — a fresh process shares no in-memory state with the dead one,
+    ///      only on-chain state). Before the Step 6 fix, the resumed `requestLpDeposit` correctly
+    ///      returns 0 (nothing new to request — liquidity already landed), but `claimLpDeposit(c,
+    ///      0)` reads `getDepositStatus(lp, 0)`, which is always NONE, so the claim silently
+    ///      never happens and the LP's shares stay stranded at the vault's own escrow forever.
+    function test_freshProcessResumeClaimsDepositAfterSettle() public {
+        _passDyingAfterSettle();
+
+        OperateScript.Config memory c = _config();
+        OperateScript fresh = new OperateScript();
+
+        vm.prank(gov);           fresh.addMarket(c);
+        vm.prank(gov);           fresh.authoriseSigner(c);
+        vm.prank(address(this)); fresh.authoriseForwarder(c);
+        vm.prank(gov);           fresh.registerUpkeep(c);
+        vm.prank(address(this)); fresh.mintToLp(c);
+        vm.prank(lp);            uint32 settlementId = fresh.requestLpDeposit(c);
+        vm.prank(gov);           fresh.settle(c);
+        vm.prank(lp);            fresh.claimLpDeposit(c, settlementId);
+
+        assertGt(IERC20(d.vault).balanceOf(lp), 0);
+    }
+
     function test_listsPairAtIndexZero() public {
         (uint16 pairIndex,) = _configureAll();
         assertEq(pairIndex, 0);
@@ -139,9 +181,23 @@ contract OperateTest is Test {
     ///      prank with a single vm.prank"). An earlier version of `_relay` swallowed any
     ///      `vm.prank` failure in a bare `try/catch`, which would have let this nested call
     ///      through misattributed as `address(operator)` instead of surfacing the conflict.
+    ///
+    ///      A bare `vm.expectRevert()` cannot distinguish that loud failure from the *old*
+    ///      `try/catch` relay's misattributed call also reverting — just with `NotGov(<script
+    ///      address>)` (selector `0x093650d5`) instead of the cheatcode's own `CheatcodeError`
+    ///      (selector `0xeeaa9e6f`). Pinning the exact cheatcode payload is what makes this test
+    ///      actually discriminate between the two.
     function test_relayFailsLoudlyOnConflictingOuterPrank() public {
         vm.startPrank(gov);
-        vm.expectRevert();
+        // Pinned as raw revert bytes, not abi.encodeWithSignature("CheatcodeError(string)", ...):
+        // this forge version reverts cheatcode failures with the bare string, and the two forms
+        // are not interchangeable. Either way it discriminates against the old try/catch relay's
+        // NotGov(address) payload, which is what this test exists to catch.
+        vm.expectRevert(
+            bytes(
+                "vm.prank: cannot override an ongoing prank with a single vm.prank; use vm.startPrank to override the current prank"
+            )
+        );
         operator.addMarket(_config());
         vm.stopPrank();
     }
