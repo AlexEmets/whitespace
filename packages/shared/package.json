@@ -4,5 +4,14 @@
   "private": true,
   "type": "module",
   "main": "src/chains.mjs",
-  "exports": { ".": "./src/chains.mjs" }
+  "exports": {
+    ".": "./src/chains.mjs",
+    "./chains": "./src/chains.mjs",
+    "./bounds": "./src/bounds.mjs",
+    "./decimal": "./src/decimal.mjs",
+    "./markets": "./src/markets.mjs",
+    "./venues": "./src/venues.mjs",
+    "./keys": "./src/keys.mjs",
+    "./orderTypes": "./src/orderTypes.mjs"
+  }
 }

@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "src/report.mjs",
-  "exports": { ".": "./src/report.mjs" },
+  "exports": {
+    ".": "./src/report.mjs",
+    "./report-v2": "./src/report-v2.mjs"
+  },
   "dependencies": { "viem": "^2.21.0" }
 }

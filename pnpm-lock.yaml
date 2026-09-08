@@ -16,6 +16,33 @@ importers:
 
   packages/shared: {}
 
+  services/keeper:
+    dependencies:
+      '@whitespace/reporter':
+        specifier: workspace:*
+        version: link:../../packages/reporter
+      '@whitespace/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      viem:
+        specifier: ^2.21.0
+        version: 2.56.3
+
+  services/price-publisher:
+    dependencies:
+      '@whitespace/reporter':
+        specifier: workspace:*
+        version: link:../../packages/reporter
+      '@whitespace/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      viem:
+        specifier: ^2.21.0
+        version: 2.56.3
+      ws:
+        specifier: ^8.18.0
+        version: 8.21.0
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':

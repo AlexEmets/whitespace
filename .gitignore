@@ -34,3 +34,6 @@ pgdata/
 # misc
 *.log
 .DS_Store
+
+# Agent worktrees — isolated repo copies, never part of the tree
+.claude/worktrees/
