@@ -2,6 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Resume point — read this first (state as of 2026-09-08, HEAD `b753f02`)
+
+| Task | State |
+|---|---|
+| **1. Report builder and signer** | **Done.** `8e54948` + fix `a476009`. Review clean after one fix round. Its encoding was independently proven against `cast` — encode, hash, EIP-191 sign and address derivation all matched byte-for-byte, so `packages/reporter/src/report.mjs` should not be changed without redoing that proof. |
+| **2. Configuration script** | **Steps 1–5 done**, `9e1c84d` + `9d4e7bb` + `b753f02`. Two items remain, written up as Steps 6–9 above: a fresh-process resume gap in `claimLpDeposit`, and a regression test that does not discriminate. Both have verified fixes in the plan text. **Start here.** |
+| **3. Full trade cycle on anvil** | Not started. Reuses Task 2's `_configureAll()` helper, so finish Task 2 first. |
+| **4. Execute against chain 1874** | Not started. Spends unreplaceable gas; has a mandatory human stop after simulation. |
+
+Current state: `forge test` 25/25, `node --test packages/reporter/test/` 4/4, `node --test tools/` 19/19, `evm compat gate OK: 104 bytecode objects`. Working tree clean.
+
+The SDD ledger with the full decision trail lives at
+`.superpowers/sdd/2026-09-08-phase-1-5-operational/progress.md` — it is git-ignored, so it survives a new session but not `git clean -xdx`. Everything load-bearing from it is mirrored into this plan.
+
+**Carry into Task 4:** it must invoke `OperateScript.run()` itself and must **not** wrap the eight functions from an outside script. Calling them externally under a foreign broadcast attributes the nested vendor calls to the `OperateScript` instance rather than the broadcaster's EOA — reproduced on a live anvil, and it would break the live run.
+
 **Goal:** Open and close one real BTC/USD position on Whitechain testnet 1874 through the genuine two-phase price flow.
 
 **Architecture:** A Foundry script performs all on-chain configuration idempotently. A dependency-free Node module builds and signs price reports. A Forge integration test proves the entire cycle on anvil — including its four failure modes — before any gas is spent on the live network.
@@ -411,6 +427,71 @@ Expected: PASS, 5 tests.
 git add contracts/script/Operate.s.sol contracts/test/integration/Operate.t.sol
 git commit -m "feat: add idempotent market configuration script"
 ```
+
+---
+
+## Task 2 — remaining work found by re-review (start a new session here)
+
+Steps 1–5 are **done and committed**: `9e1c84d`, then fix round 1 as `9d4e7bb` + `b753f02`. The suite is at 25/25 and the Cancun gate reports 104 objects. A scoped re-review confirmed all seven earlier findings addressed, and found the two items below. Both have verified fixes; neither is speculative.
+
+- [ ] **Step 6: Close the fresh-process resume gap in `claimLpDeposit`**
+
+**The defect, reproduced by the re-reviewer.** If a live run dies strictly between `settle()` and `claimLpDeposit()` and is resumed by a **fresh process**, the claim never happens and never self-heals:
+
+- `settle()` advances `lastSettlementId` 1 → 2 (`OstiumVault.sol:793`).
+- The resumed `requestLpDeposit` reads `targetSettlementId(true) = lastSettlementId + 1 = 3`, sees `getDepositStatus(lp, 3) == NONE`, falls through to `currentBalance() > 0`, and correctly returns `0`.
+- `run()` then calls `claimLpDeposit(c, 0)`, which reads `getDepositStatus(lp, 0) == NONE ≠ CLAIMABLE` and skips.
+
+Measured end state after a full resume pass: `balanceOf(lp) == 0`, `1e11` escrowed at the vault, `pendingDepositRequest[lp][2] == 1e11`, `getDepositStatus(lp, 2) == CLAIMABLE`. Three further passes do not fix it, and every one reports success.
+
+This matters because in `run()` that window spans two *separate* broadcasts, so a dropped or underpriced final transaction is exactly its shape. Funds are not lost — the status has no expiry, so `cast send $VAULT "claimDeposit(uint32)" 2` recovers it — but nothing surfaces the problem. It is the last surviving instance of the "a step silently does nothing" shape that C1 was.
+
+Fix — derive the id inside `claimLpDeposit` when passed `0`:
+
+```solidity
+uint32 id = settlementId == 0 ? vault.targetSettlementId(true) - 1 : settlementId; // == lastSettlementId
+if (vault.getDepositStatus(c.lp, id) != IOstiumVault.RequestStatus.CLAIMABLE) return;
+_relay(msg.sender);
+vault.claimDeposit(id);
+```
+
+No underflow: `targetSettlementId(true) = lastSettlementId + 1 ≥ 1`. The re-reviewer ran exactly this against the stuck state — derived id 2, status `CLAIMABLE`, shares transferred, `balanceOf(lp) > 0` — and confirmed it leaves the clean two-pass case untouched, so `Operate.t.sol`'s `assertEq(secondSettlementId, 0)` stays valid.
+
+Known limit, acceptable here: it inspects only `lastSettlementId`, so it would miss a deposit stranded behind a *later* settlement. On 1874 every settlement is operator-driven and `maxSettlementInterval` is 86400 s, so that cannot happen between two runs of this script.
+
+- [ ] **Step 7: Make the relay regression test discriminate**
+
+`contracts/test/integration/Operate.t.sol`, `test_relayFailsLoudlyOnConflictingOuterPrank` uses a bare `vm.expectRevert()` — the same flaw finding I4 was raised about, reintroduced in the round that fixed it. The re-reviewer proved it non-discriminating: it **passes** against a copy of the script with the old `try vm.prank(who) {} catch {}` restored, because the misattributed call reverts too, just with `NotGov(<script address>)` instead. The test guards nothing.
+
+The two payloads are trivially separable — `0xeeaa9e6f` `CheatcodeError(string)` versus `0x093650d5` `NotGov(address)`. Pin it:
+
+```solidity
+vm.expectRevert(
+    abi.encodeWithSignature(
+        "CheatcodeError(string)",
+        "vm.prank: cannot override an ongoing prank with a single vm.prank; use vm.startPrank to override the current prank"
+    )
+);
+```
+
+- [ ] **Step 8: Prove both fixes discriminate**
+
+- For Step 6: add a `_passDyingAfterSettle()` helper that runs every step through `settle` and stops, then a test that constructs a fresh `new OperateScript()`, runs a full pass, and asserts `IERC20(d.vault).balanceOf(lp) > 0`. It must **fail on `b753f02`** and pass with the derivation. Capture both outputs verbatim.
+- For Step 7: run the pinned test against a scratch copy of the script with the old `try/catch` relay restored, and show it now **fails**. Restore and show it passes. Keep the scratch copy under `/tmp`; never commit it.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add contracts/script/Operate.s.sol contracts/test/integration/Operate.t.sol
+git commit -m "fix(operate): claim deposits on fresh-process resume"
+```
+
+### Deferred notes for Task 2, recorded rather than fixed
+
+- `_broadcasting` is set `true` in `run()` and never reset. Harmless today because `run()` is terminal and no test calls it, but if Task 4 ever drives individual functions under `vm.prank` on the same instance, every `_relay` would silently no-op. A symmetric reset removes the footgun.
+- `.superpowers/…/task-2-report.md:150-153` still lists the pre-fix predicates as current; the fix section supersedes it but the stale list reads as authoritative.
+- `_findPairIndex`'s defensive revert is unreachable and untested.
+- `mintToLp`'s first gate treats "the vault has liquidity from anyone" as done, so a pre-seeded vault would mean our LP contributes nothing. Cannot bite on 1874, where the vault deploys empty.
 
 ---
 
