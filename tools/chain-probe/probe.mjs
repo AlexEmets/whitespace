@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url';
 import { CHAINS } from '../../packages/shared/src/chains.mjs';
 
 const MULTICALL3 = '0xcA11bde05977b3631167028862bE2a173976CA11';
@@ -69,4 +70,8 @@ async function main() {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// `pathToFileURL` percent-encodes the path exactly the way `import.meta.url` is encoded.
+// Comparing against a raw `file://${process.argv[1]}` silently fails to match whenever the
+// checkout path contains a space, `#`, or a non-ASCII character — main() would never run and
+// the probe would exit 0 having contacted nothing.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
