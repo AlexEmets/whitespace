@@ -104,6 +104,11 @@ contract DeployScript is Script {
     ///          addresses — OstiumRegistry reverts with `HasAlreadyRole` on any collision.
     function deployAll(Roles memory r) public returns (Deployment memory d) {
         require(
+            r.gov != address(0) && r.dev != address(0) && r.manager != address(0)
+                && r.owner != address(0) && r.marketMaker != address(0),
+            "roles must be non-zero"
+        );
+        require(
             r.gov != r.dev && r.gov != r.manager && r.gov != r.owner && r.dev != r.manager
                 && r.dev != r.owner && r.manager != r.owner,
             "roles must be distinct"
@@ -111,6 +116,18 @@ contract DeployScript is Script {
 
         // The bootstrap holds gov + owner until the registry is wired; see RegistryBootstrap.
         RegistryBootstrap bootstrap = new RegistryBootstrap();
+
+        // `driver` is the account that created the bootstrap, and therefore also the account
+        // that creates the registry on the next line — the script contract under `forge test`,
+        // the broadcasting EOA under `vm.broadcast`, where `address(this)` would be wrong.
+        // The registry constructor checks every incoming role against `owner()`, which during
+        // construction is that same account (`Ownable(msg.sender)`), so a collision must be
+        // rejected here rather than surfacing as `HasAlreadyRole` deep inside OstiumRegistry.
+        address deployer = bootstrap.driver();
+        require(
+            r.gov != deployer && r.dev != deployer && r.manager != deployer,
+            "roles must differ from deployer"
+        );
 
         OstiumRegistry registry =
             new OstiumRegistry(address(bootstrap), r.dev, r.manager, address(bootstrap));
@@ -232,6 +249,14 @@ contract DeployScript is Script {
     }
 
     function run() external returns (Deployment memory) {
+        // The two target RPC URLs differ by a single character (`rpc.testnet` vs
+        // `rpc-testnet`) and mainnet 1875 answers a near-identical URL, so refuse to deploy
+        // anywhere the operator did not intend.
+        require(
+            block.chainid == 1874 || block.chainid == 2625,
+            string.concat("unsupported chain: ", vm.toString(block.chainid))
+        );
+
         uint256 pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address owner = vm.addr(pk);
         vm.startBroadcast(pk);
