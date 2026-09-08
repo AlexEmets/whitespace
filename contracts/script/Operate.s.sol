@@ -14,6 +14,8 @@ import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.s
 import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
 import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
 import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
+import {WhitespaceVerifier} from "../src/oracle/WhitespaceVerifier.sol";
+import {WhitespacePriceUpKeep} from "../src/oracle/WhitespacePriceUpKeep.sol";
 
 /// @notice Idempotent, sender-scoped configuration of an already-deployed Ostium system:
 ///         lists the BTC/USD market, authorises the price-report signer and the keeper
@@ -396,6 +398,190 @@ contract OperateScript is Script {
         vault.claimDeposit(id);
     }
 
+    // =======================================================================================
+    // Phase 2 — oracle hardening
+    //
+    // Four more functions in the same shape as the eight above: one `msg.sender` role each,
+    // each opening with a read that answers "already done?". They MIGRATE an already-deployed
+    // and already-configured system (which chain 1874 is) from the vendored single-signer
+    // oracle to the hardened k-of-N one, so every one of them resolves its target through the
+    // registry rather than through `Config` — the registry is the single source of truth for
+    // which verifier and which upkeep the vendored contracts will actually call.
+    //
+    // ORDER MATTERS, but only for how long the window of mismatch lasts, not for safety.
+    // `WhitespaceVerifier` returns a NINE-field `reportData`; the vendored upkeep decodes SEVEN.
+    // Between the two installs the pair is mismatched — and it fails CLOSED in both directions:
+    // a hardened upkeep asking the vendored verifier to parse `abi.encode(bytes, bytes[])`
+    // recovers a garbage signer and reverts `NotAuthorizedSigner`; a vendored upkeep decoding a
+    // nine-field payload as seven reverts in the ABI decoder when the 20-byte verifier address
+    // fails to fit the `uint32 timestamp` slot. No mismatched combination delivers a price.
+    // In-flight orders simply time out and traders reclaim via `openTradeMarketTimeout`.
+    // =======================================================================================
+
+    bytes32 internal constant VERIFIER_KEY = "ostiumVerifier";
+
+    /// @param registry        The system registry. Everything else is resolved through it.
+    /// @param signers         The N authorised report signers. Registration order is irrelevant;
+    ///                        ascending order is a per-report requirement, not a per-signer one.
+    /// @param threshold       k. Initial: 3 of N=5.
+    /// @param guardian        May pause the upkeep and halt feeds immediately; cannot restart.
+    /// @param keeper          The forwarder allowed to call `performUpkeep`.
+    /// @param maxAge          Rail 1, seconds. Initial: 10.
+    /// @param maxDeviationBps Rail 2, basis points vs the feed's last accepted price. Initial: 500.
+    struct OracleConfig {
+        address registry;
+        address[] signers;
+        uint256 threshold;
+        address guardian;
+        address keeper;
+        uint32 maxAge;
+        uint16 maxDeviationBps;
+    }
+
+    /// @notice Deploys `WhitespaceVerifier` and points the registry's `ostiumVerifier` key at it.
+    /// @dev Caller must be `registry.gov()` (`registerContract`/`updateContract` are `onlyGov`).
+    ///      Idempotent on the registry read: if the key already resolves to a hardened verifier
+    ///      this deploys nothing and returns the incumbent, so a resumed run does not orphan a
+    ///      working verifier (and does not spend a deployment's worth of gas re-doing it).
+    ///
+    ///      The constructor seeds the signer set, because the deploying account is not gov and
+    ///      an unseeded verifier accepts nothing. Gov's adoption of the address IS the trust
+    ///      decision — read `signerCount`/`threshold` off the instance before believing it.
+    function installHardenedVerifier(OracleConfig memory c) public returns (address verifier) {
+        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        (bool found, address current) = _lookup(registry, VERIFIER_KEY);
+        if (found && _isHardenedVerifier(current)) return current;
+
+        verifier = address(new WhitespaceVerifier(registry, c.signers, c.threshold));
+
+        _relay(msg.sender);
+        if (found) registry.updateContract(VERIFIER_KEY, verifier);
+        else registry.registerContract(VERIFIER_KEY, verifier);
+    }
+
+    /// @notice Reconciles the verifier's signer set and threshold with `c`.
+    /// @dev Caller must be `registry.gov()`. Separate from `installHardenedVerifier` because it
+    ///      is the only path that heals a verifier which already exists but whose signer set has
+    ///      drifted (a key rotated, a signer added) — the install path returns early in exactly
+    ///      that case. Additive only: it never unregisters a signer, because removing one is a
+    ///      decision about a suspected compromise and must not happen as a side effect of a
+    ///      configuration replay.
+    function authoriseHardenedSigners(OracleConfig memory c) public {
+        WhitespaceVerifier verifier = WhitespaceVerifier(_requireHardenedVerifier(c.registry));
+
+        for (uint256 i = 0; i < c.signers.length; i++) {
+            if (verifier.isAuthorizedSigner(c.signers[i])) continue;
+            _relay(msg.sender);
+            verifier.registerAuthorizedSigner(c.signers[i]);
+        }
+
+        if (verifier.threshold() == c.threshold) return;
+        _relay(msg.sender);
+        verifier.setThreshold(c.threshold);
+    }
+
+    /// @notice Deploys `WhitespacePriceUpKeep` and points the per-oracle registry key at it.
+    /// @dev Caller must be `registry.gov()`. Handles both live states: the key is absent (a
+    ///      system where `registerUpkeep` never ran) and the key holds the vendored upkeep (the
+    ///      1874 deployment) — `registerContract` reverts `AlreadyRegistered` on the second, so
+    ///      the branch is not cosmetic.
+    ///
+    ///      Deployed directly, not behind an `ERC1967Proxy` as `Deploy.s.sol` does for the
+    ///      vendored upkeep: nothing in `src/vendor/` is UUPS, so those proxies cannot be
+    ///      upgraded and buy only an extra DELEGATECALL per delivery. See the contract's header.
+    function installHardenedUpkeep(OracleConfig memory c) public returns (address upkeep) {
+        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        (bool found, address current) = _lookup(registry, PRICE_UPKEEP_KEY);
+        if (found && _isHardenedUpkeep(current)) return current;
+
+        upkeep = address(new WhitespacePriceUpKeep(registry, c.guardian));
+
+        _relay(msg.sender);
+        if (found) registry.updateContract(PRICE_UPKEEP_KEY, upkeep);
+        else registry.registerContract(PRICE_UPKEEP_KEY, upkeep);
+    }
+
+    /// @notice Allowlists `c.keeper` as a forwarder on the hardened upkeep.
+    /// @dev Caller must be `IOwnable(c.registry).owner()` — `registerForwarder` is
+    ///      `onlyTimelock`, same as on the vendored upkeep. Separate from `authoriseForwarder`
+    ///      rather than a `Config` field swap, because it is a different contract instance and
+    ///      the two upkeeps are allowlisted independently: forwarding rights on the retired one
+    ///      are deliberately not carried over.
+    function authoriseHardenedForwarder(OracleConfig memory c) public {
+        IOstiumForwarded upkeep = IOstiumForwarded(_requireHardenedUpkeep(c.registry));
+        if (upkeep.isForwarder(c.keeper)) return;
+        _relay(msg.sender);
+        upkeep.registerForwarder(c.keeper);
+    }
+
+    /// @notice Brings the upkeep's rail parameters and guardian in line with `c`.
+    /// @dev Caller must be `registry.gov()` — every parameter setter on the upkeep is `onlyGov`;
+    ///      the guardian's powers are limited to `pause`/`haltFeed`, never to configuration.
+    ///      Each of the three is compared before it is written, so a replay sends zero
+    ///      transactions. The constructor already applies the spec defaults (10 s / 500 bps), so
+    ///      this is a no-op on a fresh install configured with those same values.
+    function configureOracleRails(OracleConfig memory c) public {
+        WhitespacePriceUpKeep upkeep = WhitespacePriceUpKeep(_requireHardenedUpkeep(c.registry));
+
+        if (upkeep.maxAge() != c.maxAge) {
+            _relay(msg.sender);
+            upkeep.setMaxAge(c.maxAge);
+        }
+        if (upkeep.maxDeviationBps() != c.maxDeviationBps) {
+            _relay(msg.sender);
+            upkeep.setMaxDeviationBps(c.maxDeviationBps);
+        }
+        if (upkeep.guardian() != c.guardian) {
+            _relay(msg.sender);
+            upkeep.setGuardian(c.guardian);
+        }
+    }
+
+    /// @dev `getContractAddress` reverts `NotFound` rather than returning zero, so "is this key
+    ///      set?" is a try/catch on the read — the same shape `registerUpkeep` already uses.
+    function _lookup(IOstiumRegistry registry, bytes32 key)
+        internal
+        view
+        returns (bool found, address addr)
+    {
+        try registry.getContractAddress(key) returns (address a) {
+            return (true, a);
+        } catch {
+            return (false, address(0));
+        }
+    }
+
+    /// @dev Distinguishes a hardened instance from the vendored one by probing for a getter only
+    ///      the hardened one has. `OstiumVerifier` has no `threshold()` and no fallback, so the
+    ///      staticcall reverts there. Deliberately low-level rather than `try/catch`: a
+    ///      `try` statement does not catch a return-data DECODING failure, so a contract
+    ///      answering that selector with short data would take the whole run down instead of
+    ///      being classified as "not hardened". `abi.encodeCall` against the instance getter
+    ///      keeps the selector compiler-checked, so renaming `threshold` breaks the build rather
+    ///      than silently making every install non-idempotent.
+    function _isHardenedVerifier(address a) internal view returns (bool) {
+        (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(WhitespaceVerifier(a).threshold, ()));
+        return ok && ret.length == 32;
+    }
+
+    /// @dev Same probe for the upkeep. `OstiumPrivatePriceUpKeep` has no `maxAge()`.
+    function _isHardenedUpkeep(address a) internal view returns (bool) {
+        (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(WhitespacePriceUpKeep(a).maxAge, ()));
+        return ok && ret.length == 32;
+    }
+
+    function _requireHardenedVerifier(address registry) internal view returns (address verifier) {
+        (bool found, address current) = _lookup(IOstiumRegistry(registry), VERIFIER_KEY);
+        require(found && _isHardenedVerifier(current), "hardened verifier not installed");
+        return current;
+    }
+
+    function _requireHardenedUpkeep(address registry) internal view returns (address upkeep) {
+        (bool found, address current) = _lookup(IOstiumRegistry(registry), PRICE_UPKEEP_KEY);
+        require(found && _isHardenedUpkeep(current), "hardened upkeep not installed");
+        return current;
+    }
+
     /// @dev `contracts/foundry.toml`'s `fs_permissions` only allows reads under
     ///      `./script/config`, so `vm.readFile` cannot reach `$REPO/deployments/1874.json`
     ///      (verified empirically: `vm.readFile` reverts "is not allowed to be accessed for
@@ -483,6 +669,69 @@ contract OperateScript is Script {
 
         vm.startBroadcast(lpKey);
         claimLpDeposit(c, settlementId);
+        vm.stopBroadcast();
+    }
+
+    /// @dev Rail defaults, applied when the operator does not override them. Same values as the
+    ///      upkeep's own constructor defaults and as design spec §5.2, restated here so
+    ///      `configureOracleRails` has something concrete to compare against instead of
+    ///      silently accepting whatever the contract happened to be deployed with.
+    uint256 internal constant DEFAULT_ORACLE_MAX_AGE = 10;
+    uint256 internal constant DEFAULT_ORACLE_MAX_DEVIATION_BPS = 500;
+
+    function _readOracleConfig() internal view returns (OracleConfig memory) {
+        return OracleConfig({
+            registry: vm.envAddress("REGISTRY_ADDRESS"),
+            signers: vm.envAddress("ORACLE_SIGNERS", ","),
+            threshold: vm.envUint("ORACLE_THRESHOLD"),
+            guardian: vm.envAddress("GUARDIAN_ADDRESS"),
+            keeper: vm.envAddress("KEEPER_ADDRESS"),
+            maxAge: uint32(vm.envOr("ORACLE_MAX_AGE", DEFAULT_ORACLE_MAX_AGE)),
+            maxDeviationBps: uint16(vm.envOr("ORACLE_MAX_DEVIATION_BPS", DEFAULT_ORACLE_MAX_DEVIATION_BPS))
+        });
+    }
+
+    /// @notice Migrates a deployed system from the vendored single-signer oracle to the
+    ///         hardened k-of-N one. Separate entrypoint from `run()`, invoked with
+    ///         `forge script ... --sig "runOracle()"`.
+    /// @dev A separate entrypoint rather than five more steps inside `run()`, for two reasons.
+    ///      `run()` is documented in `docs/runbooks/deploy-testnet.md` with an exact env-var
+    ///      block that has already been executed against 1874; adding four required variables to
+    ///      it would silently invalidate that recorded procedure. And the two operations have
+    ///      genuinely different preconditions — `run()` configures a market that does not exist
+    ///      yet, this one replaces the oracle under a market that is already trading.
+    ///
+    ///      Needs only two keys: gov for four of the five steps, and the registry `owner()`
+    ///      (what `onlyTimelock` resolves to here) for the forwarder allowlist.
+    ///
+    ///      `ORACLE_SIGNERS` is a comma-separated address list, e.g.
+    ///      `ORACLE_SIGNERS=0xaaa...,0xbbb...,0xccc...,0xddd...,0xeee...`.
+    function runOracle() external {
+        require(block.chainid == 1874, "unsupported chain");
+        _broadcasting = true;
+
+        OracleConfig memory c = _readOracleConfig();
+        uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
+        uint256 ownerKey = vm.envUint("OWNER_PRIVATE_KEY");
+
+        vm.startBroadcast(govKey);
+        installHardenedVerifier(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(govKey);
+        authoriseHardenedSigners(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(govKey);
+        installHardenedUpkeep(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(ownerKey);
+        authoriseHardenedForwarder(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(govKey);
+        configureOracleRails(c);
         vm.stopBroadcast();
     }
 }
