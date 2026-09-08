@@ -107,7 +107,7 @@ only — if you type it by hand, you own the `--legacy` flag.
 **Chain guard.** `DeployScript.run()` opens with
 `require(block.chainid == 1874 || block.chainid == 2625, ...)`. A typo'd or wrong RPC
 therefore aborts before any broadcast with `unsupported chain: <id>` — including against
-mainnet 1875, whose URL differs from 1874's by three characters. If you see that message,
+mainnet 1875, whose URL differs from 1874's by eight characters. If you see that message,
 the guard is doing its job; fix the RPC, do not work around it.
 
 ---
@@ -283,9 +283,9 @@ Write `$REPO/deployments/1874.json` and `$REPO/deployments/2625.json` (repositor
 ```
 
 > **`priceUpKeep` is a local label, NOT a registry key.** Nine of these twelve are registered
-> in `OstiumRegistry` under exactly the key shown (`registry` and `collateral` are not
-> registered either; `verifier` is registered as `ostiumVerifier`). `priceUpKeep` is
-> **deliberately unregistered** — see
+> in `OstiumRegistry`; eight are registered under exactly the key shown, and `verifier` is
+> registered as `ostiumVerifier` instead. `registry` and `collateral` are also not registered.
+> `priceUpKeep` is **deliberately unregistered** — see
 > [The unregistered priceUpKeep](#the-unregistered-priceupkeep) before wiring phase 3.
 
 Only write these files after [Step 5](#step-5-verify-the-deployment) passes — see
