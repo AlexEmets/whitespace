@@ -66,14 +66,35 @@ Seven canonical OP Stack predeploys are present on 1874 and **absent** on 1875:
 At 1.00 s/block and ~7.25M blocks, testnet 1874 is roughly 84 days old — a recent deployment,
 consistent with a next-generation stack rather than the mirror of the current mainnet.
 
-### 2.3 Mainnet 1875 has effectively no smart-contract activity
+### 2.3 Mainnet 1875 has low smart-contract activity ~~effectively none~~
 
 Sampling 200 mainnet blocks: **82 transactions, 144 blocks empty (72%), 0.4 tx/block**. Every
 top recipient was an **EOA** — not a single contract call was observed in the sample. No
 stablecoin, DEX, or lending market was found.
 
-**Implication:** the perp DEX would be the chain's first real DeFi application, and there is
-currently **no collateral asset on mainnet to trade against**.
+~~**Implication:** the perp DEX would be the chain's first real DeFi application, and there is
+currently **no collateral asset on mainnet to trade against**.~~ **Superseded — see correction
+below.**
+
+**Correction to §2.3 (2026-09-08).** The 200-block sample was too small to see token activity
+that is sparse rather than absent. A wider probe — `eth_getLogs` over the ERC-20 `Transfer`
+topic (`0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`) across the most
+recent 1,000,000 blocks on `rpc.whitechain.io` — found **478 Transfer events across 4 token
+contracts**, independently re-counted from the raw `eth_getLogs` response:
+
+| Contract | Name / symbol | Decimals | Transfers /1M blocks |
+|---|---|---|---|
+| `0xf97b9bf62916f1eb42dd906a7254603e7b9fc4a7` | Bridged USDC (Whitechain) / `USDC.e` | 6 | 322 |
+| `0xb044a2a1e3c3deb17e3602bf088811d9bdc762ea` | Wrapped WBT / `WWBT` | 18 | 152 |
+| `0xee623f9ef066e6ecd382d81d377866ab342e2fcd` | WhiteBIT GEL / `WBGEL` | 6 | 2 |
+| `0xd372a78934a5e66c17fecfa28ce13f5787b72f63` | Test Bridged eUAH / `teUAH` | 6 | 2 |
+
+322 transfers in 1,000,000 blocks is one roughly every 3,106 blocks, so a 200-block sample had
+about a 6% chance of catching one — the original sample missing all activity was consistent
+with sparse-but-real usage, not proof of absence. `USDC.e`'s `totalSupply()` is `337525000000`
+(≈337,525 USDC.e), and its most recent transfer in the sweep was ~2.6 hours before this
+correction was written (block 48898431 vs. chain head 48903090, ×2.00 s/block). See §10.2 for
+the full correction and its consequence for mainnet portability.
 
 ### 2.4 RPC surface
 
@@ -479,24 +500,74 @@ mainnet incompatibility.
 
 | Blocker | Measured state |
 |---|---|
-| **No stablecoin on mainnet** | zero contract calls observed in a 200-block sample |
+| ~~**No stablecoin on mainnet**~~ | ~~zero contract calls observed in a 200-block sample~~ — **refuted, see correction below** |
 | No verified bridge for inbound funds | none confirmed |
 | No Safe multisig deployed | Safe is open source; we can deploy it |
 | No CREATE2 factory on 1875 | its canonical deployment needs a pre-EIP-155 transaction — **phase-0 must verify the chain accepts these** |
 | Audit before real funds | $50–150k, out of testnet scope |
 
-**The load-bearing sentence.** "Works perfectly on testnet" is an engineering problem and it is
+~~**The load-bearing sentence.** "Works perfectly on testnet" is an engineering problem and it is
 solvable. "Then on mainnet" is **not an engineering problem** — it is blocked by the absence of
 a stablecoin to trade against. This plan guarantees that *the code will not be the obstacle*:
 when a stablecoin and bridge appear, deployment is a day's work, because CI will have been
-proving compatibility continuously. What the plan cannot do is create liquidity.
+proving compatibility continuously. What the plan cannot do is create liquidity.~~
+
+**Correction to §10.2 (2026-09-08).** The "no stablecoin" blocker above rested on a 200-block
+sample that found zero contract calls (§2.3) and read that as absence. The sample was too small:
+token activity on 1875 is sparse, not absent. A 1,000,000-block `eth_getLogs` sweep on the
+ERC-20 `Transfer` topic (`0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef`),
+re-run directly against the public RPCs for this correction, found:
+
+- **Mainnet 1875**: 478 Transfer events across 4 token contracts (table in §2.3), including
+  `USDC.e` — "Bridged USDC (Whitechain)", 6 decimals, `totalSupply()` ≈337,525 USDC.e, still
+  actively transferring (most recent event ~2.6 h before this correction was written).
+- **Testnet 1874**: the same-named "Bridged USDC (Whitechain)" / `USDC.e` token at
+  `0x5eb541ba8a2dd841af7864c3389162a23dda8401`, 6 decimals, `totalSupply()` = 6,020 USDC.e.
+- **Testnet 2625**: 5 active token contracts, 1,511 Transfer events over the same
+  1,000,000-block window (busier than mainnet) — but **not** the same bridged-USDC contract.
+  Reading `name()`/`symbol()`/`decimals()` on all five found four other 6-decimal test
+  stablecoins ("Test USD" `USDW`, "Thether TUSDT" `TUSDT`, "Test EURC" `tEURC`, "AgentPay USD"
+  `apUSD`) plus `WWBT` (18 decimals) — no `USDC.e`-named contract among them. The specific
+  bridged-USDC contract exists on mainnet and on testnet 1874, not on 2625; 2625 instead already
+  hosts its own set of 6-decimal test stablecoins, one of which happens to already be named
+  `USDW` — the same ticker §11 proposes deploying (see the note there).
+
+6 decimals is exactly what the vendored Ostium contracts expect for collateral. **Conclusion:
+mainnet 1875 already has a live, 6-decimal bridged-USDC asset with real (if sparse) transfer
+activity. Mainnet deployment is an engineering path, not a business dead end** — the load-bearing
+sentence above no longer holds as written. What remains genuinely outside engineering control is
+whether that asset is *suitable* collateral for a leveraged exchange (see the new risk below),
+and the bridge-verification, Safe, CREATE2 and audit rows, which this correction does not touch.
+
+**New risk surfaced: mainnet `USDC.e` has a single centralizing admin key.** Verified directly
+against `0xf97b9bf62916f1eb42dd906a7254603e7b9fc4a7` on `rpc.whitechain.io`:
+
+- `paused()` → `false` — not currently paused, but pausable.
+- `owner()` and `blacklister()` both resolve to the **same address**,
+  `0xF31663436d0731015ad0e84603d25576cb9F5230`.
+- `implementation()` → `0xaA8145fe0081964F754fa247A5719F3712F3AddF`, while the standard
+  EIP-1967 implementation-slot read returns zero — this is the Centre `FiatToken` pattern (a
+  non-standard, non-EIP-1967 proxy), not a transparent/UUPS proxy.
+
+One address can pause transfers, blacklist any holder, and upgrade the implementation of the
+asset an exchange would settle in. That is a systemic dependency this spec did not previously
+record anywhere. **Not decided here:** whether that risk is acceptable for this project, whether
+`0xF31663...` is a multisig or an EOA, and whether mainnet collateral should be `USDC.e` as-is,
+a wrapped/vetted version of it, or something else — these need an explicit decision before §1's
+"mainnet 1875 stays reachable" framing is acted on.
 
 ---
 
 ## 11. Collateral and gas
 
-**Collateral.** No stablecoin exists on Whitechain. On testnet we deploy `USDW` (6 decimals)
-with a faucet, behind an interface so a real stablecoin substitutes without core changes.
+**Collateral.** ~~No stablecoin exists on Whitechain.~~ **Superseded 2026-09-08 — see §10.2
+correction.** A live 6-decimal bridged `USDC.e` exists on mainnet 1875 and on testnet 1874;
+testnet 2625 has its own distinct set of 6-decimal test stablecoins, one of them already named
+`USDW` at an address this project does not control. On testnet we deploy our own `USDW` (6
+decimals) with a faucet, behind an interface so a real stablecoin substitutes without core
+changes. **Open decision, not resolved by this correction:** whether to keep deploying a
+project-owned `USDW` mock or integrate the pre-existing bridged/test tokens directly, and
+whether mainnet collateral should be `USDC.e` as-is given the admin-key risk in §10.2.
 
 **Gas.** Mainnet is 10 gwei with no EIP-1559; testnet 1874 has EIP-1559 active. All automated
 transactions are formed as **legacy type 0**, valid on both.
@@ -527,6 +598,11 @@ Recorded explicitly so no reader mistakes these for established facts.
    was not identified.
 9. **Exchange API terms of use** — whether Binance/Bybit/OKX permit redistribution of their
    market data as a signed oracle feed has not been reviewed. Legal check before mainnet.
+10. **Added 2026-09-08.** Custody of the mainnet `USDC.e` admin key — `owner()` and
+    `blacklister()` on `0xf97b9bf62916f1eb42dd906a7254603e7b9fc4a7` are the same address,
+    `0xF31663436d0731015ad0e84603d25576cb9F5230` (see §10.2); whether it is an EOA or a
+    multisig, who controls it, and its pause/blacklist/upgrade history have not been
+    investigated. Required before treating mainnet `USDC.e` as viable collateral.
 
 ---
 
