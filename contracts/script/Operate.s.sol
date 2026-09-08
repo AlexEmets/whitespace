@@ -10,6 +10,7 @@ import {IOstiumPairsStorage} from "../src/vendor/ostium/interfaces/IOstiumPairsS
 import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
 import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
 import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
+import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
 
 /// @notice Idempotent, sender-scoped configuration of an already-deployed Ostium system:
 ///         lists the BTC/USD market, authorises the price-report signer and the keeper
@@ -61,6 +62,11 @@ contract OperateScript is Script {
     // With PAIR_ORACLE == "BTC/USD" that is fixed at deploy time, so it is safe to inline here.
     bytes32 internal constant PRICE_UPKEEP_KEY = "BTC/USDPriceUpkeep";
 
+    /// @dev Set by `run()`, once, before any of the eight functions execute. Distinguishes
+    ///      "driven by `vm.startBroadcast`" from "driven by `vm.prank`" so `_relay` knows
+    ///      whether it needs to do anything at all.
+    bool private _broadcasting;
+
     /// @dev Foundry's `vm.prank` overrides `msg.sender` for exactly the next call, no deeper —
     ///      confirmed empirically against forge 0.3.0: a prank set by the test is consumed by
     ///      the call INTO one of this contract's public functions, so by the time that function
@@ -73,13 +79,23 @@ contract OperateScript is Script {
     ///      `vm.startBroadcast(key)`, which — unlike `vm.prank` — persists across every
     ///      subsequent call this contract makes until `vm.stopBroadcast()`, so no relay is
     ///      needed there; broadcast already attributes every nested call correctly (this is the
-    ///      same mechanism `Deploy.s.sol`'s `deployAll()` relies on). But `vm.prank` cannot be
+    ///      same mechanism `Deploy.s.sol`'s `deployAll()` relies on). `vm.prank` also cannot be
     ///      called at all while a broadcast is active — it reverts unconditionally with
-    ///      "cannot `prank` for a broadcasted transaction", confirmed empirically — so the
-    ///      relay wraps its `vm.prank` in try/catch: it succeeds and does real work under
-    ///      `vm.prank`-driven tests, and harmlessly no-ops under `vm.startBroadcast`-driven runs.
+    ///      "cannot `prank` for a broadcasted transaction", confirmed empirically.
+    ///
+    ///      An earlier version swallowed that revert with a bare `try/catch` so one `_relay`
+    ///      worked under both callers. That is unsound: under a *test's own* `vm.startPrank`
+    ///      (not `run()`'s broadcast), the inner `vm.prank` here can ALSO fail — for an
+    ///      unrelated reason ("cannot override an ongoing prank with a single vm.prank") — and
+    ///      the bare catch would swallow that too, silently misattributing the nested call to
+    ///      this script contract instead of loudly failing. Reproduced empirically. `run()`
+    ///      therefore sets `_broadcasting = true` explicitly, and `_relay` branches on it
+    ///      instead of on whether `vm.prank` happens to succeed: no `vm.prank` call is even
+    ///      attempted while broadcasting, and outside of broadcasting an unexpected prank
+    ///      failure now propagates instead of being hidden.
     function _relay(address who) internal {
-        try vm.prank(who) {} catch {}
+        if (_broadcasting) return;
+        vm.prank(who);
     }
 
     /// @notice Lists the BTC/USD market: the Crypto group, the BTC-USD fee tier, and the pair
@@ -182,9 +198,34 @@ contract OperateScript is Script {
 
     /// @notice Mints `c.lpAmount` of USDW to the LP so it can fund the vault.
     /// @dev Caller must be `USDW(c.usdw).owner()` (checked by `USDW`'s `onlyOwner`).
+    ///
+    ///      Two independent "already done?" signals, checked in this order:
+    ///
+    ///      1. `currentBalance() > 0` — the configuration's actual goal (a non-empty vault) is
+    ///         already satisfied by an earlier, fully-completed cycle. Needed in addition to
+    ///         (2): once a deposit has been claimed, the LP holds vault SHARES, not USDW or a
+    ///         pending request, so (2) alone reads as "nothing done" and would mint a whole new
+    ///         batch of USDW that never gets deposited (`requestLpDeposit`'s own
+    ///         `currentBalance() > 0` fallback correctly refuses to request it) — wasteful, and
+    ///         it is exactly what `test_everyStepIsIdempotent` (run the full sequence twice)
+    ///         catches by asserting `USDW.totalSupply()` is unchanged on the second pass.
+    ///      2. `balanceOf(c.lp) + pendingDepositRequest(c.lp, id) >= c.lpAmount` — what the LP
+    ///         already holds PLUS what it already committed to the *current* target settlement.
+    ///         Needed for the narrower mid-cycle case (1) does not cover: resumed strictly
+    ///         between a successful `requestDeposit` and the following `forceSettlement`, where
+    ///         `currentBalance()` is still zero (settlement is what mints the escrowed shares —
+    ///         see `requestLpDeposit`'s comment) but the LP's balance already moved into
+    ///         `pendingDepositRequest`. Without (2), that balance-only read is zero and this
+    ///         would mint a second `c.lpAmount`, even though nothing was lost; combined with
+    ///         `requestLpDeposit`'s own idempotency check that would then let a *second*
+    ///         `requestDeposit` succeed instead of correctly failing on insufficient balance,
+    ///         doubling the vault's liquidity.
     function mintToLp(Config memory c) public {
         USDW usdw = USDW(c.usdw);
-        if (usdw.balanceOf(c.lp) >= c.lpAmount) return;
+        OstiumVault vault = OstiumVault(c.vault);
+        if (vault.currentBalance() > 0) return;
+        uint32 id = vault.targetSettlementId(true);
+        if (usdw.balanceOf(c.lp) + vault.pendingDepositRequest(c.lp, id) >= c.lpAmount) return;
         _relay(msg.sender);
         usdw.mint(c.lp, c.lpAmount);
     }
@@ -192,13 +233,26 @@ contract OperateScript is Script {
     /// @notice Requests an LP deposit of `c.lpAmount` into the vault.
     /// @dev Caller must be `c.lp`. The approve target is the vault itself, because
     ///      `OstiumVault.requestDeposit` executes `safeTransferFrom` from inside its own code,
-    ///      making the vault the ERC-20 `msg.sender` for that transfer. Skipped, returning 0,
-    ///      once `currentBalance() > 0` — the post-settlement signal that liquidity landed.
+    ///      making the vault the ERC-20 `msg.sender` for that transfer.
+    ///
+    ///      `currentBalance()` only becomes non-zero once `settle()` mints shares into the
+    ///      vault's own escrow (`OstiumVault.sol:608-654`) — it is zero for the whole window
+    ///      between a successful `requestDeposit` and the following `forceSettlement`. Skipping
+    ///      solely on `currentBalance() > 0` would therefore re-request (and double-pull USDW
+    ///      from the LP) on a run resumed inside that window. Instead: resume by returning the
+    ///      already-established settlement id whenever a request for it already exists
+    ///      (`getDepositStatus != NONE` covers PENDING, CLAIMABLE and RECLAIMABLE alike), and
+    ///      only fall back to the `currentBalance()` check — "nothing pending for the current
+    ///      target id, and the vault already has liquidity from an earlier cycle" — once no
+    ///      request is outstanding.
     function requestLpDeposit(Config memory c) public returns (uint32 settlementId) {
         IOstiumVault vault = IOstiumVault(c.vault);
-        if (vault.currentBalance() > 0) return 0;
-
         settlementId = vault.targetSettlementId(true);
+
+        if (vault.getDepositStatus(c.lp, settlementId) != IOstiumVault.RequestStatus.NONE) {
+            return settlementId; // already requested; resume instead of re-requesting
+        }
+        if (vault.currentBalance() > 0) return 0; // nothing pending, and liquidity already landed
 
         _relay(msg.sender);
         IERC20(c.usdw).approve(c.vault, c.lpAmount);
@@ -219,11 +273,22 @@ contract OperateScript is Script {
     }
 
     /// @notice Claims the LP's settled deposit shares.
-    /// @dev Caller must be `c.lp`. Skipped if there is no pending settlement to claim
-    ///      (`settlementId == 0`) or if the deposit is already reflected in the vault's balance.
+    /// @dev Caller must be `c.lp`.
+    ///
+    ///      Skipping on `currentBalance() > 0` (as an earlier version did) is wrong: settlement
+    ///      mints shares into the VAULT'S OWN escrow, not the LP's balance, so
+    ///      `currentBalance()` — which counts `totalSupply()` regardless of holder — is already
+    ///      non-zero the moment `settle()` returns, before this function ever runs. That made
+    ///      `claimDeposit` unreachable on every path: the LP's shares stayed escrowed at the
+    ///      vault's own address and `pendingDepositRequest[c.lp][settlementId]` was never
+    ///      cleared. The correct "already done?" read is the LP's OWN claim status:
+    ///      `getDepositStatus` returns CLAIMABLE only after settlement has processed this
+    ///      exact `settlementId` for this exact owner (`OstiumVault.sol:577-584`), and NONE for
+    ///      `settlementId == 0` (nothing was ever requested at id 0), so no separate zero check
+    ///      is needed.
     function claimLpDeposit(Config memory c, uint32 settlementId) public {
         IOstiumVault vault = IOstiumVault(c.vault);
-        if (settlementId == 0 || vault.currentBalance() > 0) return;
+        if (vault.getDepositStatus(c.lp, settlementId) != IOstiumVault.RequestStatus.CLAIMABLE) return;
         _relay(msg.sender);
         vault.claimDeposit(settlementId);
     }
@@ -256,8 +321,20 @@ contract OperateScript is Script {
     /// @dev `OWNER_PRIVATE_KEY` is the single key both `authoriseForwarder` and `mintToLp`
     ///      need: `Deploy.s.sol` hands both the registry's ownership (the `onlyTimelock`
     ///      resolution target) and `USDW`'s ownership to the same `owner` role.
+    ///
+    ///      IMPORTANT for whoever writes the next script that reuses these eight functions
+    ///      (Task 4's live-position-opening driver, or anything else): call `OperateScript.run()`
+    ///      itself, in-process — do not `new OperateScript()` from a *different* script and
+    ///      wrap the individual functions (`addMarket`, `authoriseSigner`, ...) in your own
+    ///      `vm.startBroadcast` from outside. That adds one more external-call hop, and
+    ///      broadcast, like `vm.prank`, only attributes calls made directly by the broadcasting
+    ///      contract — a call routed through a separate `OperateScript` instance would attribute
+    ///      the nested vendor calls to that instance's address, not to the broadcaster's EOA,
+    ///      silently breaking every `onlyGov`/`onlyTimelock` check on a live network. Verified
+    ///      by the reviewer of this task against a live `anvil --broadcast`.
     function run() external {
         require(block.chainid == 1874, "unsupported chain");
+        _broadcasting = true;
 
         Config memory c = _readConfig();
         uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
