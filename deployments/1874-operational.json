@@ -1,0 +1,46 @@
+{
+  "chainId": 1874,
+  "configuredAt": "2026-09-08T00:00:00Z",
+  "commit": "1559fda",
+  "market": {
+    "pairIndex": 0,
+    "from": "BTC",
+    "to": "USD",
+    "feedId": "BTC/USD",
+    "oracle": "BTC/USD",
+    "registryKey": "BTC/USDPriceUpkeep",
+    "groupIndex": 0,
+    "feeIndex": 0,
+    "maxLeverage": 10000,
+    "maxOpenInterest": "1000000000000",
+    "fundingSpringFactor": "1000000000000",
+    "maxFundingFeePerBlock": "0"
+  },
+  "roles": {
+    "signer": "0x8981eacdCAc3c4afAb9AD5F7A4ACBB3e5C81a86E",
+    "keeper": "0x627ca96F074F030e1CfAE01c59eF03C32a588F53",
+    "lp": "0x2B90d9dA8284b8411a001446c44c06c266B5008c",
+    "trader": "0x2b8ba090DEdF879f8045c0dDA5a78762cED90D19"
+  },
+  "liquidity": {
+    "lpAmount": "100000000000",
+    "vaultCurrentBalance": "100000000000",
+    "decimals": 6
+  },
+  "proofTrade": {
+    "pairIndex": 0,
+    "buy": true,
+    "leverage": 1000,
+    "collateral": "999000000",
+    "openPrice": "65001000000000000000000",
+    "priceDecimals": 18,
+    "openOrderId": "2",
+    "closeOrderId": "3",
+    "openTradeTx": "0xa9d854259b741621aa92ef8cd763abd1ff4f75b3e9d23aa3dfe8ef34d7456277",
+    "openReportTx": "0x14b55e4006195f32cd51eeb65c96a7b26e446d3101ba873e10fb1541e5e61011",
+    "closeTradeTx": "0x0d72607fe5671ddbd812018affe12a93e852d659832e38cb6af1b5c63c49d87f",
+    "closeReportTx": "0xaa0d4683a5b2213e8b6886073712d1bde606dac54868b77382be7b97203d37b5",
+    "traderUsdwBeforeOpen": "10000000000",
+    "traderUsdwAfterClose": "9998692628"
+  }
+}

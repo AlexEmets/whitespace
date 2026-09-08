@@ -1,24 +1,28 @@
 # Runbook: Deploy to the Whitechain testnets (1874, 2625)
 
-## Status: NOT DEPLOYED
+## Status: 1874 DEPLOYED AND OPERATIONAL — 2625 NOT DEPLOYED
 
-No contracts have been deployed to either network. `deployments/1874.json` and
-`deployments/2625.json` do not exist and must not be created with placeholder
-addresses — there is nothing to record yet.
+**Chain 1874 is live.** The full contract set was deployed at commit `22e1a5c` and is
+recorded in `deployments/1874.json`. It was then configured into a tradeable BTC/USD
+market (see [Configure a market](#configure-a-market-and-push-a-price-report)), and one
+real position has been opened and closed through the genuine two-phase price flow —
+transaction hashes in `deployments/1874-operational.json`.
+
+**Chain 2625 is still undeployed** and unfunded; `deployments/2625.json` does not exist
+and must not be created with placeholder addresses.
 
 **Path convention:** every `deployments/…` path in this document is relative to the
 **repository root**, i.e. `<repo>/deployments/1874.json`, *not* `contracts/deployments/`.
 The procedure below `cd`s into `contracts/`, so it defines `$REPO` and always writes and
 reads `$REPO/deployments/…` explicitly. Do not drop the `$REPO`.
 
-**Blocker:** the deployer address `0xDa13C59838D9edDBD313b9B32FC47F5F2D65D113` has a
-balance of `0x0` on both chains, and every currently known way to fund it requires a
-human in the loop. See [Funding blocker](#funding-blocker). Steps 2–5 below cannot run
-until that is resolved. [Step 1](#step-1-pre-flight) can and should be run now — its
-balance check is precisely what reports this blocker.
+**Funding, as it actually went:** the deployer `0xDa13C59838D9edDBD313b9B32FC47F5F2D65D113`
+was funded by a human through the CAPTCHA-gated faucet and is the **only** address that
+received external funds. Every other role was topped up from it by plain transfer, because
+the faucet cannot be automated — see [Funding blocker](#funding-blocker), which still
+applies to chain 2625 and to any future role.
 
-This document is a procedure for the operator to execute once funding lands, not a
-record of a completed deployment. Everything below Prerequisites is unexecuted.
+Steps 2 and 4–5 below have been executed against 1874; Step 3 (chain 2625) has not.
 
 For *why* the deployment is shaped this way — the `RegistryBootstrap`, the migration
 replay, the unregistered `priceUpKeep`, the inert config JSONs, and the issues knowingly
@@ -361,6 +365,105 @@ RPC=https://rpc.testnet.whitechain.io
 
 Repeat all five checks against 2625 before treating that network's deployment as
 verified.
+
+---
+
+## Configure a market and push a price report
+
+A deployed system is not a tradeable one. `contracts/script/Operate.s.sol` performs the
+whole configuration idempotently — every function begins with a read that answers
+"already done?" and returns early, so a run that dies halfway is safe to resume, which
+matters because there is not enough gas for a second deployment.
+
+### Why configuration is eleven steps, not three
+
+Four of the steps do **not** announce themselves if you skip them. Three of those were
+found only by driving a complete open→close cycle in
+`contracts/test/integration/TradeLocal.t.sol`; none is visible from "did the pair get
+written into storage?".
+
+| Skipped step | What actually happens |
+|---|---|
+| `setMaxOpenInterest` | `openInterest[pair][2]` defaults to **0**, so `withinExposureLimits` fails and every trade is cancelled `EXPOSURE_LIMITS`. The open transaction **succeeds**; the collateral is refunded minus the oracle fee and no position exists. |
+| `setPairFundingFees` | `springFactor` is a **divisor** in `getPendingAccFundingFees`. A freshly listed pair has it at 0, so the first trade panics division-by-zero *inside* `performUpkeep`. |
+| `setVaultMaxAllowance` | `OstiumVault.receiveAssets` does `transferFrom(callbacks, vault)`. Without the allowance, opens succeed and **closes revert** — positions can be entered and not exited. |
+| LP deposit (`mint`→`requestDeposit`→`forceSettlement`→`claimDeposit`) | A zero-balance vault makes `groupMaxCollateral` zero, which is the same silent `EXPOSURE_LIMITS` cancel as the first row. |
+
+`Fee.name` must also be non-zero — `_feeListed` rejects `bytes32(0)` permanently, and no
+later call can undo it.
+
+### Run it
+
+Role keys live at `~/.whitespace-keys/`. `run()` needs four of them because the steps need
+four different senders: gov, the registry `owner()` (which is what `onlyTimelock` resolves
+to here), the manager, and the LP. `signer` signs price reports off-chain and never needs
+gas; `keeper` sends `performUpkeep` and does.
+
+```bash
+cd $REPO/contracts
+K=~/.whitespace-keys
+pk() { node -e "console.log(JSON.parse(require('fs').readFileSync('$K/$1.json','utf8'))[0].private_key)"; }
+ad() { node -e "console.log(JSON.parse(require('fs').readFileSync('$K/$1.json','utf8'))[0].address)"; }
+dep() { node -e "console.log(require('$REPO/deployments/1874.json').contracts.$1)"; }
+
+export REGISTRY_ADDRESS=$(dep registry) USDW_ADDRESS=$(dep collateral) \
+  PAIRS_STORAGE_ADDRESS=$(dep pairsStorage) VAULT_ADDRESS=$(dep vault) \
+  VERIFIER_ADDRESS=$(dep verifier) PRICE_UPKEEP_ADDRESS=$(dep priceUpKeep) \
+  SIGNER_ADDRESS=$(ad signer) KEEPER_ADDRESS=$(ad keeper) LP_AMOUNT=100000000000 \
+  GOV_PRIVATE_KEY=$(pk gov) OWNER_PRIVATE_KEY=$(pk owner) \
+  MANAGER_PRIVATE_KEY=$(pk manager) LP_PRIVATE_KEY=$(pk marketmaker)
+
+# Simulate first, and read the estimate before spending anything.
+forge script script/Operate.s.sol:OperateScript --rpc-url $RPC --legacy
+forge script script/Operate.s.sol:OperateScript --rpc-url $RPC --broadcast --legacy
+```
+
+`forge script` writes the decrypted key material into `contracts/cache/`. Both `cache/`
+and `broadcast/` are gitignored; do not move those files anywhere tracked.
+
+The single check that matters afterwards is the vault balance — **zero silently cancels
+every trade**:
+
+```bash
+cast call $VAULT "currentBalance()(uint256)" --rpc-url $RPC   # must be > 0
+cast call $PS "pairsCount()(uint16)" --rpc-url $RPC           # 1
+cast parse-bytes32-string $(cast call $PS "pairFeed(uint16)(bytes32)" 0 --rpc-url $RPC)
+cast call $TRADING_STORAGE "openInterest(uint16,uint256)(uint256)" 0 2 --rpc-url $RPC  # > 0
+cast call $USDW "allowance(address,address)(uint256)" $CALLBACKS $VAULT --rpc-url $RPC # > 0
+```
+
+### The price report
+
+Prices carry **exactly 18 decimals**; a wrong exponent does not revert anywhere, it opens
+the position at the wrong price. Build and sign reports with
+`packages/reporter/src/report.mjs` — its encoding was proven byte-for-byte against `cast`,
+so do not reimplement it:
+
+```javascript
+const data = buildReportData({
+  feedId: stringToHex('BTC/USD', { size: 32 }),  // must equal Pair.feed
+  timestamp,                                     // from the order's PriceRequestedV2 log
+  price: 65_000n * 10n ** 18n,
+  bid: price - 10n ** 18n, ask: price + 10n ** 18n,
+  isMarketOpen: true, isDayTradingClosed: false,
+});
+const performData = encodePerformData(await signReport(data, signerPrivateKey), orderId);
+// then, sent by the registered forwarder only:
+//   priceUpKeep.performUpkeep(performData)
+```
+
+`timestamp` must be byte-identical to the one the upkeep recorded when the order was
+placed — take it from the `PriceRequestedV2(orderId, orderType, feed, timestamp)` log on
+the `openTrade` receipt, never from `block.timestamp`. Any mismatch reverts
+`InvalidPrice(orderId)`.
+
+The three other delivery failures, all proven in `TradeLocal.t.sol`: an unregistered
+signing key reverts `NotAuthorizedSigner(<recovered>)`; a sender that is not the
+registered forwarder reverts `NotForwarder(<sender>)`; and an under-configured market
+does not revert at all — it cancels and refunds.
+
+Node resolves `viem` from `packages/reporter/node_modules`, so run report-building
+scripts from inside `packages/reporter/` or add it to `NODE_PATH`.
 
 ---
 

@@ -4,14 +4,34 @@
 
 ## Resume point — read this first (state as of 2026-09-08, HEAD `b753f02`)
 
+**ALL FOUR TASKS ARE COMPLETE. Phase 1.5 is done.**
+
 | Task | State |
 |---|---|
-| **1. Report builder and signer** | **Done.** `8e54948` + fix `a476009`. Review clean after one fix round. Its encoding was independently proven against `cast` — encode, hash, EIP-191 sign and address derivation all matched byte-for-byte, so `packages/reporter/src/report.mjs` should not be changed without redoing that proof. |
-| **2. Configuration script** | **Steps 1–5 done**, `9e1c84d` + `9d4e7bb` + `b753f02`. Two items remain, written up as Steps 6–9 above: a fresh-process resume gap in `claimLpDeposit`, and a regression test that does not discriminate. Both have verified fixes in the plan text. **Start here.** |
-| **3. Full trade cycle on anvil** | Not started. Reuses Task 2's `_configureAll()` helper, so finish Task 2 first. |
-| **4. Execute against chain 1874** | Not started. Spends unreplaceable gas; has a mandatory human stop after simulation. |
+| **1. Report builder and signer** | **Done.** `8e54948` + fix `a476009`. Its encoding was independently proven against `cast` — encode, hash, EIP-191 sign and address derivation all matched byte-for-byte, so `packages/reporter/src/report.mjs` should not be changed without redoing that proof. |
+| **2. Configuration script** | **Done.** `9e1c84d` → `b753f02` → `702d9d5`. Steps 6–9 landed in `702d9d5`. One deviation: Step 7's prescribed `abi.encodeWithSignature("CheatcodeError(string)", …)` does **not** match on this forge version — pinned as raw `bytes("vm.prank: cannot override…")` instead, which still discriminates against `NotGov(address)`. |
+| **3. Full trade cycle on anvil** | **Done.** `1559fda`. Proved the plan's configuration was **incomplete**: see below. |
+| **4. Execute against chain 1874** | **Done.** Configured live (15 txs, 1 801 375 gas, 0.009 ETH) and one BTC/USD position opened and closed. Hashes in `deployments/1874-operational.json`. |
 
-Current state: `forge test` 25/25, `node --test packages/reporter/test/` 4/4, `node --test tools/` 19/19, `evm compat gate OK: 104 bytecode objects`. Working tree clean.
+**Task 3 found three mandatory configuration steps the plan omitted.** None reverts at
+list-time, and none is visible from "did the pair reach storage?" — only a full open→close
+cycle surfaces them. All three are now in `OperateScript`:
+
+1. `setMaxOpenInterest` (manager) — `openInterest[pair][2]` defaults to 0, so every trade is
+   silently cancelled `EXPOSURE_LIMITS` while the transaction *succeeds*.
+2. `setPairFundingFees` (gov) — `springFactor` is a divisor; a fresh pair panics
+   division-by-zero inside `performUpkeep`. Folded into `addMarket` as `_setFundingParams`.
+3. `setVaultMaxAllowance` (gov, on callbacks) — without it opens succeed and **closes revert**.
+
+`run()` therefore also needs `MANAGER_PRIVATE_KEY`. `Config` is unchanged: `tradingStorage`,
+`pairInfos` and `callbacks` are resolved through the registry.
+
+Live role assignment (no `lp.json` existed; human ruling): LP = `marketmaker`,
+trader = `dev`, plus generated `signer.json` (off-chain only) and `keeper.json`. Only
+`owner` had gas; the rest were topped up from it by plain transfer.
+
+Final state: `forge test` 31/31, `node --test packages/reporter/test/` 4/4,
+`evm compat gate OK: 106 bytecode objects`. Working tree clean.
 
 The SDD ledger with the full decision trail lives at
 `.superpowers/sdd/2026-09-08-phase-1-5-operational/progress.md` — it is git-ignored, so it survives a new session but not `git clean -xdx`. Everything load-bearing from it is mirrored into this plan.
