@@ -8,7 +8,14 @@
     ".": "./src/chains.mjs",
     "./chains": "./src/chains.mjs",
     "./bounds": "./src/bounds.mjs",
-    "./decimal": "./src/decimal.mjs",
+    "./decimal": {
+      "types": "./src/decimal.d.ts",
+      "default": "./src/decimal.mjs"
+    },
+    "./candles": {
+      "types": "./src/candles.d.ts",
+      "default": "./src/candles.mjs"
+    },
     "./markets": "./src/markets.mjs",
     "./venues": "./src/venues.mjs",
     "./keys": "./src/keys.mjs",
