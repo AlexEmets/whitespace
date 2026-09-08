@@ -1,0 +1,7 @@
+{
+  "chainId": 1874,
+  "name": "whitechain-testnet-op",
+  "rpc": "https://rpc.testnet.whitechain.io",
+  "legacyTransactions": true,
+  "deployUSDW": true
+}
