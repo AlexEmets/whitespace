@@ -93,10 +93,25 @@ contract VerifierThresholdInvariantTest is Test {
         assertFalse(handler.acceptedRawBlob(), "verify() accepted an unsigned blob");
     }
 
-    /// @dev The coverage floor. Without it, every invariant above is satisfied by a `verify`
-    ///      that rejects everything, which is exactly the bug an oracle test must not miss.
+    /// @dev The coverage floor. Without one, every invariant above is satisfied by a `verify`
+    ///      that rejects everything — exactly the bug an oracle test must not miss.
+    ///
+    ///      Only the REJECT half is asserted here, deliberately. `afterInvariant` observes the
+    ///      handler state of a single run, not the whole campaign (each run restores the `setUp`
+    ///      snapshot), so asserting acceptance here is probabilistic: three of the handler's
+    ///      entry points can never accept by construction, and within `submit` a report is only
+    ///      clean when the corruption selector, the signer mask and the ordering seed all
+    ///      cooperate. Measured, that produced a spurious
+    ///      "campaign never produced an accepted report" in roughly 1 full-suite run in 12,
+    ///      while every security invariant passed in the very same run.
+    ///
+    ///      A flaky gate on the security suite is worse than no gate: it trains the reader to
+    ///      re-run until green, which is how a real failure gets waved through. The accept path
+    ///      is therefore pinned deterministically by `test_handlerReachesAcceptance` below,
+    ///      which proves the same property — `verify` is not a constant `revert` — without
+    ///      depending on what the fuzzer happened to draw. Rejection stays here because at least
+    ///      one rejection per run is effectively certain.
     function afterInvariant() public view {
-        assertGt(handler.acceptedCount(), 0, "the campaign never produced an accepted report");
         assertGt(handler.rejectedCount(), 0, "the campaign never produced a rejected report");
     }
 
