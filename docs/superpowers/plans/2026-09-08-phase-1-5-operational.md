@@ -220,11 +220,25 @@ git commit -m "feat: add price report builder and signer"
 
 **Interfaces:**
 - Consumes: the deployed addresses in `deployments/1874.json`; `USDW` from `contracts/src/mocks/USDW.sol`.
-- Produces: `OperateScript.configure(Config memory) -> uint16 pairIndex`, where
-  `struct Config { address registry; address usdw; address vault; address verifier; address priceUpKeep; address signer; address keeper; address lp; uint256 lpAmount; }`.
-  Task 3 and Task 4 both call `configure`.
+- Produces: `struct Config { address registry; address usdw; address pairsStorage; address vault; address verifier; address priceUpKeep; address signer; address keeper; address lp; uint256 lpAmount; }`
+  and **eight sender-scoped public functions**, each of which must be called by exactly one role:
 
-**Why idempotent.** The live deployment cannot be repeated for want of gas, so a script that fails halfway must be safe to re-run. Every step is guarded by a read that answers "already done?".
+  | Function | Required `msg.sender` | Returns |
+  |---|---|---|
+  | `addMarket(Config memory c)` | gov | `uint16 pairIndex` |
+  | `authoriseSigner(Config memory c)` | gov | — |
+  | `authoriseForwarder(Config memory c)` | registry `owner()` | — |
+  | `registerUpkeep(Config memory c)` | gov | — |
+  | `mintToLp(Config memory c)` | USDW `owner()` | — |
+  | `requestLpDeposit(Config memory c)` | `c.lp` | `uint32 settlementId` |
+  | `settle(Config memory c)` | gov | — |
+  | `claimLpDeposit(Config memory c, uint32 settlementId)` | `c.lp` | — |
+
+  Task 3 and Task 4 both drive these. Task 3 wraps each in `vm.prank`; Task 4's `run()` wraps each in its own `vm.startBroadcast(key)`.
+
+**Why eight functions and not one.** The steps need three different senders — gov for the registry and market calls, the registry `owner()` for `registerForwarder` (which is `onlyTimelock`, and `onlyTimelock` resolves to `IOwnable(registry).owner()` in this codebase), and the LP for the ERC-4626 deposit dance. A single function cannot satisfy all three: in a test the caller would be the script contract and the first `addGroup` would revert `NotGov`, and in a live script one `vm.startBroadcast` cannot switch sender mid-call. Splitting by sender also gives each unit one responsibility and makes each independently prankable in tests.
+
+**Why idempotent.** The live deployment cannot be repeated for want of gas, so a run that fails halfway must be safe to resume. Every function begins with a read that answers "already done?" and returns early if so.
 
 **Values chosen, and the check each satisfies.** These were derived by reading the vendored modifiers; do not substitute others without re-reading them.
 
@@ -286,26 +300,39 @@ contract OperateTest is Test {
 
     function _config() internal view returns (OperateScript.Config memory) {
         return OperateScript.Config({
-            registry: d.registry, usdw: d.collateral, vault: d.vault, verifier: d.verifier,
-            priceUpKeep: d.priceUpKeep, signer: signer, keeper: keeper, lp: lp,
-            lpAmount: 100_000e6
+            registry: d.registry, usdw: d.collateral, pairsStorage: d.pairsStorage,
+            vault: d.vault, verifier: d.verifier, priceUpKeep: d.priceUpKeep,
+            signer: signer, keeper: keeper, lp: lp, lpAmount: 100_000e6
         });
     }
 
-    function test_configureListsPairAtIndexZero() public {
-        uint16 pairIndex = operator.configure(_config());
-        assertEq(pairIndex, 0);
+    /// @dev Drives every step with the sender each one requires. Reused by every test here and
+    ///      mirrored by `run()`, which swaps each prank for its own broadcast.
+    function _configureAll() internal returns (uint16 pairIndex) {
+        OperateScript.Config memory c = _config();
+        vm.prank(gov);          pairIndex = operator.addMarket(c);
+        vm.prank(gov);          operator.authoriseSigner(c);
+        vm.prank(address(this)); operator.authoriseForwarder(c);   // registry owner
+        vm.prank(gov);          operator.registerUpkeep(c);
+        vm.prank(address(this)); operator.mintToLp(c);             // USDW owner
+        vm.prank(lp);           uint32 settlementId = operator.requestLpDeposit(c);
+        vm.prank(gov);          operator.settle(c);
+        vm.prank(lp);           operator.claimLpDeposit(c, settlementId);
+    }
+
+    function test_listsPairAtIndexZero() public {
+        assertEq(_configureAll(), 0);
         assertEq(IOstiumPairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
     }
 
-    function test_configureAuthorisesSignerAndForwarder() public {
-        operator.configure(_config());
+    function test_authorisesSigner() public {
+        _configureAll();
         assertTrue(IOstiumVerifier(d.verifier).isAuthorizedSigner(signer));
     }
 
     /// @dev The registry key is derived from Pair.oracle, not from the struct field name.
     function test_priceUpKeepRegisteredUnderOracleDerivedKey() public {
-        operator.configure(_config());
+        _configureAll();
         assertEq(
             IOstiumRegistry(d.registry).getContractAddress(bytes32("BTC/USDPriceUpkeep")),
             d.priceUpKeep
@@ -315,16 +342,26 @@ contract OperateTest is Test {
     /// @dev Zero vault balance silently cancels every trade in the callback, so this is the
     ///      single most important post-condition of configuration.
     function test_vaultHasLiquidity() public {
-        operator.configure(_config());
+        _configureAll();
         (bool ok, bytes memory ret) = d.vault.staticcall(abi.encodeWithSignature("currentBalance()"));
         assertTrue(ok);
         assertGt(abi.decode(ret, (uint256)), 0);
     }
 
-    function test_configureIsIdempotent() public {
-        uint16 first = operator.configure(_config());
-        uint16 second = operator.configure(_config());
+    /// @dev Each function must no-op on a second call, because a live run that dies halfway
+    ///      has to be resumable and there is not enough gas for a fresh deployment.
+    function test_everyStepIsIdempotent() public {
+        uint16 first = _configureAll();
+        uint16 second = _configureAll();
         assertEq(first, second);
+        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 1);
+    }
+
+    /// @dev Wrong sender must fail loudly rather than half-configure.
+    function test_addMarketRejectsNonGov() public {
+        vm.prank(address(0xBAD));
+        vm.expectRevert();
+        operator.addMarket(_config());
     }
 }
 ```
@@ -344,17 +381,21 @@ Read `contracts/script/Deploy.s.sol` first and follow its conventions: it uses `
 `contracts/script/Operate.s.sol` must:
 
 1. Declare `struct Config` exactly as given in **Interfaces** above.
-2. `configure(Config memory c) public returns (uint16 pairIndex)` performing, each guarded by an "already done?" read:
-   - `addGroup(Group{name: "Crypto", minLeverage: 100, maxLeverage: 50000, maxCollateralP: 2000})` — skip if `groupsCount() > 0`.
-   - `addFee(Fee{name: "BTC-USD", minLevPos: 10_000_000, oracleFee: 1_000_000, liqFeeP: 50})` — skip if `feesCount() > 0`.
-   - `addPair(Pair{...})` with the table's values — skip if `isPairListed("BTC","USD")`.
-   - `registerAuthorizedSigner(c.signer)` — skip if `isAuthorizedSigner(c.signer)`.
-   - `registerForwarder(c.keeper)` — skip if `isForwarder(c.keeper)`. **Send this as the registry owner, not as gov**: `registerForwarder` is `onlyTimelock`, which resolves to `IOwnable(registry).owner()`.
-   - `registry.registerContract(bytes32("BTC/USDPriceUpkeep"), c.priceUpKeep)` — skip if already registered. Wrap the lookup in a `try`/`catch`, because `getContractAddress` reverts `NotFound` rather than returning zero.
-   - Seed the vault: `USDW(c.usdw).mint(c.lp, c.lpAmount)`, then as `c.lp` — `approve(c.vault, c.lpAmount)`, `requestDeposit(c.lpAmount)`, read `settlementId` from `targetSettlementId(true)` **before** requesting, then as gov `forceSettlement()`, then as `c.lp` `claimDeposit(settlementId)`. Skip the whole block if `currentBalance() > 0`.
-3. `run()` reading addresses from `deployments/1874.json` via `vm.readFile` and role keys from the environment, wrapping the call in `vm.startBroadcast`, and guarded by `require(block.chainid == 1874, "unsupported chain")`.
 
-Use `vm.prank`/`vm.startPrank` only in the test; in the script use `vm.broadcast` with the appropriate key per role.
+2. Implement the eight sender-scoped functions. Each begins with its own "already done?" read and returns early:
+
+   - `addMarket` — `addGroup(Group{name: bytes32("Crypto"), minLeverage: 100, maxLeverage: 50000, maxCollateralP: 2000})`, skipped if `groupsCount() > 0`; then `addFee(Fee{name: bytes32("BTC-USD"), minLevPos: 10_000_000, oracleFee: 1_000_000, liqFeeP: 50})`, skipped if `feesCount() > 0`; then `addPair(Pair{...})` with the table's values, skipped if `isPairListed(bytes32("BTC"), bytes32("USD"))`. Returns the pair index — `pairsCount() - 1` after the call, or the existing index when skipping.
+   - `authoriseSigner` — `IOstiumVerifier(c.verifier).registerAuthorizedSigner(c.signer)`, skipped if `isAuthorizedSigner(c.signer)`.
+   - `authoriseForwarder` — `registerForwarder(c.keeper)` on `c.priceUpKeep`, skipped if `isForwarder(c.keeper)`.
+   - `registerUpkeep` — `IOstiumRegistry(c.registry).registerContract(bytes32("BTC/USDPriceUpkeep"), c.priceUpKeep)`. Guard with `try/catch`, because `getContractAddress` **reverts `NotFound`** rather than returning zero: attempt the read, and register only when it reverts.
+   - `mintToLp` — `USDW(c.usdw).mint(c.lp, c.lpAmount)`, skipped if `balanceOf(c.lp) >= c.lpAmount`.
+   - `requestLpDeposit` — read `settlementId = IOstiumVault(c.vault).targetSettlementId(true)` **before** requesting, then `IERC20(c.usdw).approve(c.vault, c.lpAmount)` and `requestDeposit(c.lpAmount)`. Note the approve target is the **vault itself**, because the vault executes `safeTransferFrom` from inside its own code. Returns the settlement id. Skipped, returning `0`, if `currentBalance() > 0`.
+   - `settle` — `IOstiumVault(c.vault).forceSettlement()`, skipped if `currentBalance() > 0`. This advances `lastSettlementId`, refreshes `shareToAssetsPrice`, and mints the pooled shares into the vault's own escrow.
+   - `claimLpDeposit` — `IOstiumVault(c.vault).claimDeposit(settlementId)`, skipped if `settlementId == 0` or `currentBalance() > 0`.
+
+3. `run()` — guarded by `require(block.chainid == 1874, "unsupported chain")`, reading addresses from `deployments/1874.json` with `vm.readFile` and role keys from the environment. Call the eight functions in the order listed, each wrapped in its **own** `vm.startBroadcast(<role key>)` / `vm.stopBroadcast()` pair, because each needs a different sender.
+
+Use `vm.prank` only in the test; in `run()` use per-role broadcasts. Follow `contracts/script/Deploy.s.sol`'s conventions — in particular it uses `abi.encodeCall` so every signature is compiler-checked, which is what caught zero signature errors during phase 1.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -379,7 +420,7 @@ git commit -m "feat: add idempotent market configuration script"
 - Test: `contracts/test/integration/TradeLocal.t.sol`
 
 **Interfaces:**
-- Consumes: `OperateScript.configure` (Task 2), `DeployScript.deployAll` (already committed).
+- Consumes: `DeployScript.deployAll` (already committed) and Task 2's eight sender-scoped functions on `OperateScript`. Copy Task 2's `_configureAll()` helper — the one that wraps each call in the `vm.prank` its role requires — rather than inventing a second driver.
 - Produces: nothing later tasks import; this is the gate that authorises spending gas in Task 4.
 
 **Why the failure modes are mandatory.** Three of them revert with distinct errors we must be able to recognise from a live transaction rather than guess at. The fourth does **not** revert at all: with an empty vault, `withinExposureLimits` compares collateral against `groupMaxCollateral = maxCollateralP * vault.currentBalance() / 10000`, which is zero, so the callback cancels the trade with `CancelReason.EXPOSURE_LIMITS` and refunds the collateral minus the oracle fee. A test that only asserts "the transaction succeeded" would pass while no position exists.
@@ -439,7 +480,7 @@ Fill each remaining body as follows.
 
 `test_nonForwarderReverts`: deliver a valid report from an address that is not the keeper; expect revert `NotForwarder`.
 
-`test_emptyVaultCancelsSilently`: run `configure` with `lpAmount: 0` so the vault stays empty, open a trade and deliver a valid report, then assert **no revert occurred and no position exists** — read the trade out of `tradingStorage` and assert its `collateral` is zero.
+`test_emptyVaultCancelsSilently`: drive only the market and authorisation steps — `addMarket`, `authoriseSigner`, `authoriseForwarder`, `registerUpkeep` — and **skip the four vault-seeding steps entirely**, so `currentBalance()` stays zero. Open a trade and deliver a valid report, then assert **no revert occurred and no position exists**: read the trade out of `tradingStorage` and assert its `collateral` is zero. This is the one failure mode that produces a successful transaction, so a test asserting only "the call succeeded" would pass while nothing was opened.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
