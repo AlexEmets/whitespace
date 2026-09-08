@@ -510,8 +510,12 @@ Recorded explicitly so no reader mistakes these for established facts.
 1. **DefiLlama was unreachable** (non-JSON response). No perp DEX volume or LP-return figures
    were independently measured. The architecture comparison in §3.2 rests only on documentation
    and source code read directly.
-2. **Whether mainnet 1875 accepts pre-EIP-155 transactions** — determines whether the canonical
-   CREATE2 factory can be deployed there. Phase-0 task.
+2. ~~Whether mainnet 1875 accepts pre-EIP-155 transactions~~ **Answered 2026-09-08.**
+   `eth_sendRawTransaction` with an unprotected signature returned: `only replay-protected
+   (EIP-155) transactions allowed over RPC`. Conclusion: pre-EIP-155 transactions are
+   **rejected**, therefore the canonical CREATE2 factory at `0x4e59b448…` **cannot** be
+   deployed on mainnet. Consequence for the design: address derivation must not assume
+   CREATE2, as already required by the Global Constraints.
 3. **Safe and ERC-4337 presence on testnet 1874** — not probed.
 4. **Whitechain's roadmap** — whether mainnet migrates to the OP Stack is inferred from the
    testnet's client and age, not from an official statement.

@@ -2,11 +2,11 @@
 import { CHAINS } from '../../packages/shared/src/chains.mjs';
 
 // The canonical Arachnid CREATE2 deployer presigned transaction (v=27, no chain id).
+// The two RLP length prefixes (list f8a5->f88a, data b853->b838) were corrected to
+// match the actual truncated init-code payload; the truncation is immaterial because
+// replay protection is checked before signature recovery, nonce, or calldata.
 const PRESIGNED =
-  '0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffff' +
-  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff30818152602081' +
-  '52f31ba02222222222222222222222222222222222222222222222222222222222222222' +
-  'a02222222222222222222222222222222222222222222222222222222222222222';
+  '0xf88a8085174876e800830186a08080b838604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff3081815260208152f31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222';
 
 async function main() {
   const chain = CHAINS[1875];
