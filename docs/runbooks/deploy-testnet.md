@@ -6,13 +6,23 @@ No contracts have been deployed to either network. `deployments/1874.json` and
 `deployments/2625.json` do not exist and must not be created with placeholder
 addresses — there is nothing to record yet.
 
+**Path convention:** every `deployments/…` path in this document is relative to the
+**repository root**, i.e. `<repo>/deployments/1874.json`, *not* `contracts/deployments/`.
+The procedure below `cd`s into `contracts/`, so it defines `$REPO` and always writes and
+reads `$REPO/deployments/…` explicitly. Do not drop the `$REPO`.
+
 **Blocker:** the deployer address `0xDa13C59838D9edDBD313b9B32FC47F5F2D65D113` has a
 balance of `0x0` on both chains, and every currently known way to fund it requires a
-human in the loop. See [Funding blocker](#funding-blocker). Steps 1–5 below cannot run
-until that is resolved.
+human in the loop. See [Funding blocker](#funding-blocker). Steps 2–5 below cannot run
+until that is resolved. [Step 1](#step-1-pre-flight) can and should be run now — its
+balance check is precisely what reports this blocker.
 
 This document is a procedure for the operator to execute once funding lands, not a
 record of a completed deployment. Everything below Prerequisites is unexecuted.
+
+For *why* the deployment is shaped this way — the `RegistryBootstrap`, the migration
+replay, the unregistered `priceUpKeep`, the inert config JSONs, and the issues knowingly
+carried forward — see [`docs/decisions/phase-0-1.md`](../decisions/phase-0-1.md).
 
 ---
 
@@ -20,7 +30,9 @@ record of a completed deployment. Everything below Prerequisites is unexecuted.
 
 - Foundry (`forge`, `cast`) matching `contracts/foundry.toml`: solc `0.8.24`, EVM
   version `shanghai`.
-- `node` (used below to read addresses back out of `deployments/<chainid>.json`).
+- `node` (used below to read addresses back out of `$REPO/deployments/<chainid>.json`)
+  and `pnpm` (the deploy commands below are `package.json` scripts, so that `--legacy`
+  is never something you have to remember to type).
 - `jq` (used below to read the generated key files without ever printing a private
   key to the terminal).
 - Five distinct role keypairs, already generated, living **outside the repository**
@@ -81,6 +93,23 @@ full deployment sends were verified type `0x0` (legacy) against a local anvil; 2
 has no EIP-1559 support at all, so a single command that always passes `--legacy`
 is what keeps the same invocation working unmodified on both chains.
 
+**Why this is dangerous to leave to memory.** On 1874 the failure is *silent*: that chain
+does support EIP-1559, so omitting `--legacy` succeeds and quietly broadcasts type-2
+transactions. Nothing fails, nothing warns, and the deployment looks perfect — while the
+exact same command on 2625 and on mainnet 1875 would be rejected. You would only discover
+the drift on the network where it costs the most.
+
+That is why the deploy commands below are `package.json` scripts (`pnpm deploy:1874`,
+`pnpm deploy:2625`) with `--legacy` and the RPC URL hard-coded. **Run the scripted form.**
+The raw `forge script` line is documented alongside each one for reference and debugging
+only — if you type it by hand, you own the `--legacy` flag.
+
+**Chain guard.** `DeployScript.run()` opens with
+`require(block.chainid == 1874 || block.chainid == 2625, ...)`. A typo'd or wrong RPC
+therefore aborts before any broadcast with `unsupported chain: <id>` — including against
+mainnet 1875, whose URL differs from 1874's by three characters. If you see that message,
+the guard is doing its job; fix the RPC, do not work around it.
+
 ---
 
 ## Role wiring and the `RegistryBootstrap`
@@ -108,16 +137,54 @@ core 12 deployed contracts.
 
 ## Procedure
 
+### Step 1: Pre-flight
+
+Run from the repository root, before spending any gas.
+
+```bash
+export REPO=$(git rev-parse --show-toplevel)
+cd "$REPO"
+
+# 1a. Network capabilities still match the spec. Three seconds; Whitechain has drifted
+#     before, and this is far cheaper than discovering it 30.5M gas into a deployment.
+node tools/chain-probe/probe.mjs
+
+# 1b. The deployer is funded on BOTH networks (see Funding blocker above).
+export DEPLOYER=0xDa13C59838D9edDBD313b9B32FC47F5F2D65D113
+cast balance $DEPLOYER --rpc-url https://rpc.testnet.whitechain.io
+cast balance $DEPLOYER --rpc-url https://rpc-testnet.whitechain.io
+
+# 1c. The tree builds and its gates pass at the commit you are about to deploy.
+git status --short          # must be clean: deployed artifacts need committed source
+pnpm build:contracts        # `forge build --sizes`; fails on an EIP-170 overflow
+pnpm gate:toolchain
+pnpm gate:evm
+pnpm test:contracts
+```
+
+Expected: probe prints `OK` for all three chains and exits 0; both balances non-zero;
+both gates print `OK`; the suite passes. Do not continue past a failure here.
+
+Record `git rev-parse HEAD` now — it is the `commit` field in Step 4.
+
 ### Step 2: Deploy to chain 1874
 
 ```bash
-cd contracts
+cd "$REPO"
 export DEPLOYER_PRIVATE_KEY=$(jq -r '.[0].private_key' ~/.whitespace-keys/owner.json)
 export GOV_ADDRESS=$(jq -r '.[0].address' ~/.whitespace-keys/gov.json)
 export DEV_ADDRESS=$(jq -r '.[0].address' ~/.whitespace-keys/dev.json)
 export MANAGER_ADDRESS=$(jq -r '.[0].address' ~/.whitespace-keys/manager.json)
 export MARKET_MAKER_ADDRESS=$(jq -r '.[0].address' ~/.whitespace-keys/marketmaker.json)
-forge script script/Deploy.s.sol:DeployScript \
+pnpm deploy:1874
+```
+
+`pnpm deploy:1874` is defined in the root `package.json` and expands to exactly this —
+documented for reference and debugging, but **run the `pnpm` form**, which cannot be
+invoked with `--legacy` missing:
+
+```bash
+cd contracts && forge script script/Deploy.s.sol:DeployScript \
   --rpc-url https://rpc.testnet.whitechain.io \
   --broadcast --legacy -vvv
 ```
@@ -137,7 +204,15 @@ target chain. It **does** have code on 1874, so you will see two transactions to
 ### Step 3: Deploy to chain 2625
 
 ```bash
-forge script script/Deploy.s.sol:DeployScript \
+cd "$REPO"
+pnpm deploy:2625
+```
+
+Raw equivalent, for reference only — note the RPC host differs from 1874's by a single
+character, `rpc-testnet` versus `rpc.testnet`:
+
+```bash
+cd contracts && forge script script/Deploy.s.sol:DeployScript \
   --rpc-url https://rpc-testnet.whitechain.io \
   --broadcast --legacy -vvv
 ```
@@ -157,14 +232,35 @@ diagnose before proceeding; do not retry blindly. See
 
 ### Step 4: Record the addresses
 
-Write `deployments/1874.json` and `deployments/2625.json` from each run's broadcast
-output, using this shape:
+**Take the twelve addresses from the `== Return ==` block** that `forge script` prints at
+the end of a successful run — not from the broadcast log. `run()` returns the `Deployment`
+struct, so forge decodes and prints it with its **field names** (`registry`, `collateral`,
+`tradingStorage`, …), which maps one-to-one onto the `contracts` object below. The broadcast
+log is an ordered list of raw transactions with no such labelling; reading addresses out of
+it means matching them by position, which is exactly how a mis-transcription happens.
+
+The two **linked library** addresses are *not* in that struct. Read them from the run's
+broadcast log:
+
+```bash
+jq -r '.transactions[] | select(.contractName=="TradingLib" or .contractName=="TradingCallbacksLib")
+       | "\(.contractName) \(.contractAddress)"' \
+  "$REPO/contracts/broadcast/Deploy.s.sol/1874/run-latest.json"
+```
+
+They matter: `OstiumTrading` and `OstiumTradingCallbacks` cannot be verified on a block
+explorer without them, and — as Step 3 explains — **they differ between 1874 and 2625**,
+because the CREATE2 factory has code on 1874 and none on 2625. Every other address in the
+deployment comes from an identical construction on both chains; these two do not.
+
+Write `$REPO/deployments/1874.json` and `$REPO/deployments/2625.json` (repository root, not
+`contracts/deployments/`) using this shape:
 
 ```json
 {
   "chainId": 1874,
   "deployedAt": "<ISO-8601 timestamp of the broadcast>",
-  "commit": "<git rev-parse HEAD>",
+  "commit": "<git rev-parse HEAD, recorded in Step 1>",
   "contracts": {
     "registry": "0x...",
     "collateral": "0x...",
@@ -178,24 +274,33 @@ output, using this shape:
     "priceRouter": "0x...",
     "verifier": "0x...",
     "priceUpKeep": "0x..."
+  },
+  "libraries": {
+    "TradingLib": "0x...",
+    "TradingCallbacksLib": "0x..."
   }
 }
 ```
 
-Only write these files after Step 5's checks pass — see
+> **`priceUpKeep` is a local label, NOT a registry key.** Nine of these twelve are registered
+> in `OstiumRegistry` under exactly the key shown (`registry` and `collateral` are not
+> registered either; `verifier` is registered as `ostiumVerifier`). `priceUpKeep` is
+> **deliberately unregistered** — see
+> [The unregistered priceUpKeep](#the-unregistered-priceupkeep) before wiring phase 3.
+
+Only write these files after [Step 5](#step-5-verify-the-deployment) passes — see
 [Roll-forward guidance](#failure-handling-a-failed-or-partial-deployment).
 
----
-
-## Verification
+### Step 5: Verify the deployment
 
 The point of this step is to confirm the deployed system **is** the one running —
 not merely that transactions succeeded. Run every check below against both networks
-(swap `RPC` and the `deployments/<chainid>.json` path for 2625).
+(swap `RPC` and the `$REPO/deployments/<chainid>.json` path for 2625).
 
 ```bash
-REGISTRY=$(node -e "console.log(require('./deployments/1874.json').contracts.registry)")
-VAULT=$(node -e "console.log(require('./deployments/1874.json').contracts.vault)")
+# $REPO/deployments/... — repository root, NOT contracts/deployments/.
+REGISTRY=$(node -e "console.log(require('$REPO/deployments/1874.json').contracts.registry)")
+VAULT=$(node -e "console.log(require('$REPO/deployments/1874.json').contracts.vault)")
 RPC=https://rpc.testnet.whitechain.io
 ```
 
@@ -207,7 +312,7 @@ RPC=https://rpc.testnet.whitechain.io
      $(cast format-bytes32-string "trading") --rpc-url $RPC
    ```
 
-   Expected: equals `.contracts.trading` in `deployments/1874.json`.
+   Expected: equals `.contracts.trading` in `$REPO/deployments/1874.json`.
 
 2. **`gov()` is the real gov address, not the deployer** — this is the check that
    proves the `RegistryBootstrap` handover actually completed and the bootstrap left
@@ -251,11 +356,46 @@ RPC=https://rpc.testnet.whitechain.io
    cast call $VAULT "asset()(address)" --rpc-url $RPC
    ```
 
-   Expected: equals `.contracts.collateral` in `deployments/1874.json`, **not**
+   Expected: equals `.contracts.collateral` in `$REPO/deployments/1874.json`, **not**
    `.contracts.registry`.
 
 Repeat all five checks against 2625 before treating that network's deployment as
 verified.
+
+---
+
+## The unregistered `priceUpKeep`
+
+`Deploy.s.sol` deploys an `OstiumPrivatePriceUpKeep` proxy and returns it as
+`Deployment.priceUpKeep`, but **does not register it in the registry**. That is correct, and
+it is not an oversight.
+
+The registry key for a price upkeep is not a constant. Both consumers resolve it per pair:
+
+```solidity
+// OstiumPriceRouter.sol:81-84 and OstiumTradingCallbacks.sol:83-85, identical:
+string memory priceUpkeepType =
+    IOstiumPairsStorage(registry.getContractAddress('pairsStorage')).oracle(pairIndex);
+registry.getContractAddress(bytes32(abi.encodePacked(priceUpkeepType, 'PriceUpkeep')))
+```
+
+So the key is `<pair.oracle> + "PriceUpkeep"` — for example a pair whose `oracle` string is
+`"crypto"` resolves to the key `"cryptoPriceUpkeep"` — and it is **undeterminable until pairs
+exist**. Phase 1 adds no pairs, so there is no key to register under yet, and registering
+under the struct's field name `"priceUpKeep"` would create an entry that nothing ever reads.
+
+Consequences for whoever wires phase 3:
+
+- The literal key `"priceUpKeep"` is **not** in the registry.
+  `getContractAddress("priceUpKeep")` reverts `NotFound(bytes32)`. This is pinned as
+  intentional by `test_priceUpKeepIsNotRegisteredUnderItsStructName` in
+  `contracts/test/integration/DeployLocal.t.sol`.
+- When you add the first pair, register the deployed upkeep under
+  `bytes32(abi.encodePacked(<that pair's oracle string>, 'PriceUpkeep'))`. One registration
+  per distinct oracle type, not per pair.
+- Until then the failure mode is loud, not silent: any trade routed through
+  `OstiumPriceRouter.getPrice` reverts inside `getContractAddress`. The system deploys but is
+  not operational — which is the intended phase-1 end state.
 
 ---
 
@@ -285,14 +425,15 @@ Roll-forward guidance:
    failed run to "finish" it. There is no repair path once `_initialized` has
    advanced past a skipped version.
 2. Treat every contract address from a failed or interrupted run as abandoned. Do
-   not reuse them and do not write them into `deployments/<chainid>.json`.
-3. Re-run the full `forge script ... --broadcast --legacy` command for the affected
-   network (Step 2 or Step 3). It deploys fresh proxies and implementations, so
-   there is nothing to clean up on-chain first — the old, abandoned proxies simply
-   go unreferenced.
-4. Only write `deployments/<chainid>.json` after the run reports
+   not reuse them and do not write them into `$REPO/deployments/<chainid>.json`.
+3. Re-run the whole deploy command for the affected network — `pnpm deploy:1874`
+   ([Step 2](#step-2-deploy-to-chain-1874)) or `pnpm deploy:2625`
+   ([Step 3](#step-3-deploy-to-chain-2625)). It deploys fresh proxies and
+   implementations, so there is nothing to clean up on-chain first — the old, abandoned
+   proxies simply go unreferenced.
+4. Only write `$REPO/deployments/<chainid>.json` after the run reports
    `ONCHAIN EXECUTION COMPLETE & SUCCESSFUL` **and** all five checks in
-   [Verification](#verification) pass against the new addresses.
+   [Step 5](#step-5-verify-the-deployment) pass against the new addresses.
 5. If only one network fails (e.g. 2625 fails where 1874 succeeded), do not touch
-   the working network's deployment or its `deployments/<chainid>.json`; diagnose
+   the working network's deployment or its `$REPO/deployments/<chainid>.json`; diagnose
    the failing network in isolation.
