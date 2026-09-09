@@ -35,17 +35,24 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 // default API base is 4000 (`apps/web/src/lib/config.ts:25`). Rather than leave two
 // disagreeing defaults for someone to trip over at 2am, the stack pins the port here and
 // hands the same number to the web app, so there is one answer inside a stack run.
-const API_PORT = 4000;
-const PUBLISHER_PORT = 8787;
-const LIQUIDATOR_METRICS_PORT = 9464;
-const INDEXER_PORT = 42069;
-const WEB_PORT = 3000;
+//
+// Each is overridable from the environment, because "the port is taken by something
+// unrelated" is a normal condition on a developer machine, and the pre-flight check below
+// turns it into a one-line fix (`WEB_PORT=3100 pnpm stack`) rather than a code edit.
+const port = (name, fallback) => Number(process.env[name] ?? fallback);
+
+const API_PORT = port('API_PORT', 4000);
+const PUBLISHER_PORT = port('PUBLISHER_PORT', 8787);
+const LIQUIDATOR_METRICS_PORT = port('LIQUIDATOR_METRICS_PORT', 9464);
+const INDEXER_PORT = port('INDEXER_PORT', 42069);
+const WEB_PORT = port('WEB_PORT', 3000);
 
 /**
  * @typedef {object} Service
  * @property {string} name
  * @property {string} cwd            relative to the repo root
  * @property {string[]} cmd
+ * @property {number} [port]         the port it binds, checked for collisions before boot
  * @property {string[]} needs        service names that must be ready first
  * @property {Record<string,string>} env
  * @property {(s: Service) => Promise<string>} ready  resolves with a human-readable detail
@@ -55,6 +62,7 @@ const WEB_PORT = 3000;
 const SERVICES = [
   {
     name: 'indexer',
+    port: INDEXER_PORT,
     cwd: 'services/indexer',
     cmd: ['pnpm', 'exec', 'ponder', 'start', '--port', String(INDEXER_PORT)],
     needs: [],
@@ -63,6 +71,7 @@ const SERVICES = [
   },
   {
     name: 'api',
+    port: API_PORT,
     cwd: 'services/api',
     cmd: ['pnpm', 'exec', 'tsx', 'src/server.ts'],
     needs: ['indexer'],
@@ -76,6 +85,7 @@ const SERVICES = [
   },
   {
     name: 'publisher',
+    port: PUBLISHER_PORT,
     cwd: 'services/price-publisher',
     cmd: ['pnpm', 'start'],
     needs: [],
@@ -102,6 +112,7 @@ const SERVICES = [
   },
   {
     name: 'liquidator',
+    port: LIQUIDATOR_METRICS_PORT,
     cwd: 'services/liquidator',
     cmd: ['pnpm', 'start'],
     needs: ['publisher'],
@@ -113,6 +124,7 @@ const SERVICES = [
   },
   {
     name: 'web',
+    port: WEB_PORT,
     cwd: 'apps/web',
     cmd: ['pnpm', 'exec', 'next', 'dev', '--port', String(WEB_PORT)],
     needs: ['api'],
@@ -234,7 +246,18 @@ function start(service, color) {
   // re-introduce the port disagreement this file exists to remove.
   const env = { ...process.env, ...(dotenv ?? {}), ...service.env };
 
-  const proc = spawn(service.cmd[0], service.cmd.slice(1), { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // `detached: true` puts each service in its own process GROUP, which is what makes
+  // shutdown actually work. Every command here is `pnpm …`, so the process we spawn is a
+  // parent of the real one — signalling the pnpm wrapper does not propagate to its child,
+  // and the service survives as an orphan still holding its port. Observed exactly that
+  // with ponder: the supervisor died, `pnpm` died, ponder kept indexing and kept 42069.
+  // Signalling the negated pid reaches the whole group instead.
+  const proc = spawn(service.cmd[0], service.cmd.slice(1), {
+    cwd,
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
   service.proc = proc;
   children.push(proc);
 
@@ -259,17 +282,30 @@ function start(service, color) {
   return proc;
 }
 
+/** Signals a child's whole process group, tolerating a group that has already gone. */
+function signalGroup(child, signal) {
+  if (child.exitCode !== null || child.pid === undefined) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // ESRCH: the group is already gone. Nothing to do, and nothing worth reporting.
+  }
+}
+
 function shutdown(code) {
   if (shuttingDown) return;
   shuttingDown = true;
   process.stdout.write('\nstopping…\n');
-  for (const child of children) {
-    if (child.exitCode === null) child.kill('SIGTERM');
-  }
+  for (const child of children) signalGroup(child, 'SIGTERM');
+
+  // Deliberately NOT `.unref()`d. An unref'd timer lets Node exit as soon as the stdio
+  // handles close, which is usually before this fires — so the SIGKILL escalation would
+  // never run and a child that ignores SIGTERM would be left behind. Holding the loop
+  // open for the grace period is the whole point of having an escalation.
   setTimeout(() => {
-    for (const child of children) if (child.exitCode === null) child.kill('SIGKILL');
+    for (const child of children) signalGroup(child, 'SIGKILL');
     process.exit(code);
-  }, 5000).unref();
+  }, 5000);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -304,6 +340,62 @@ if (unknown.length > 0) {
   process.exit(2);
 }
 const plan = requested.length > 0 ? withDependencies(requested) : SERVICES;
+
+/**
+ * Two pre-flight checks, both earned by a real failure rather than added defensively.
+ *
+ * 1. Port collisions. A developer machine may already have something on 3000. Without this
+ *    the web service starts, Next silently picks the next free port, the readiness gate
+ *    passes against the OTHER process, and the stack reports itself up while the browser
+ *    talks to a stranger.
+ *
+ * 2. `.env` key coverage against `.env.example`. The examples are the documented contract
+ *    with each service's config module; a `.env` missing one of their keys is a
+ *    configuration hole. This check exists because a hand-written `.env` dropped
+ *    `DATABASE_SCHEMA` here and Ponder died on it — the failure was loud, but only after a
+ *    45-second boot, and a silent one would have been worse.
+ */
+async function preflight(services) {
+  const problems = [];
+
+  for (const service of services) {
+    if (service.port === undefined) continue;
+    const taken = await new Promise((r) => {
+      const socket = connect({ port: service.port, host: '127.0.0.1' });
+      socket.once('connect', () => { socket.destroy(); r(true); });
+      socket.once('error', () => { socket.destroy(); r(false); });
+      socket.setTimeout(700, () => { socket.destroy(); r(false); });
+    });
+    if (taken) problems.push(`${service.name}: port ${service.port} is already in use`);
+  }
+
+  for (const service of services) {
+    const dir = join(REPO, service.cwd);
+    const example = readEnvFile(join(dir, '.env.example'));
+    const actual = readEnvFile(join(dir, '.env'));
+    if (!example) continue;
+    if (!actual) {
+      // Not fatal: a service may be fully configured from the process environment.
+      continue;
+    }
+    // A key the manifest pins is supplied by this file, so its absence from .env is fine.
+    const missing = Object.keys(example).filter(
+      (k) => !(k in actual) && !(k in service.env) && !(k in process.env),
+    );
+    if (missing.length > 0) {
+      problems.push(`${service.name}: .env is missing ${missing.join(', ')} (present in .env.example)`);
+    }
+  }
+
+  if (problems.length > 0) {
+    console.error('\npre-flight failed:');
+    for (const p of problems) console.error(`  - ${p}`);
+    console.error('');
+    process.exit(3);
+  }
+}
+
+await preflight(plan);
 
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
