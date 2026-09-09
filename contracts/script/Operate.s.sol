@@ -67,6 +67,21 @@ contract OperateScript is Script {
     // With PAIR_ORACLE == "BTC/USD" that is fixed at deploy time, so it is safe to inline here.
     bytes32 internal constant PRICE_UPKEEP_KEY = "BTC/USDPriceUpkeep";
 
+    /// @dev The same derivation, for markets whose oracle name is not known at compile time.
+    ///      Reproduced rather than hardcoded per market because the vendored router and callbacks
+    ///      will only ever ask the registry for THIS key — a market registered under a
+    ///      hand-written key that differs by one character lists successfully, routes to
+    ///      `NotFound`, and reverts only when the first trade tries to fetch a price.
+    ///
+    ///      `bytes32(bytes memory)` truncates past 32 bytes rather than reverting (Solidity's
+    ///      explicit bytes→bytesNN conversion, allowed since 0.8.5), so the length is asserted:
+    ///      an oracle name of 22 characters or more would silently collide with its own prefix.
+    function _upkeepKey(string memory oracle) internal pure returns (bytes32) {
+        bytes memory packed = abi.encodePacked(oracle, "PriceUpkeep");
+        require(packed.length <= 32, "oracle name too long for a bytes32 registry key");
+        return bytes32(packed);
+    }
+
     /// @dev The pair's open-interest ceiling, PRECISION_6 (so $1,000,000). `openInterest[i][2]`
     ///      defaults to ZERO on a freshly listed pair, and `TradingCallbacksLib.withinExposureLimits`
     ///      compares `existingOi * price + collateral * leverage / 100` against it — so until this
@@ -480,25 +495,57 @@ contract OperateScript is Script {
         verifier.setThreshold(c.threshold);
     }
 
-    /// @notice Deploys `WhitespacePriceUpKeep` and points the per-oracle registry key at it.
-    /// @dev Caller must be `registry.gov()`. Handles both live states: the key is absent (a
-    ///      system where `registerUpkeep` never ran) and the key holds the vendored upkeep (the
-    ///      1874 deployment) — `registerContract` reverts `AlreadyRegistered` on the second, so
-    ///      the branch is not cosmetic.
+    /// @notice Single-feed form: installs the hardened upkeep under BTC/USD's key only.
+    /// @dev Preserved as an overload so every existing caller keeps compiling and keeps its
+    ///      original meaning. New callers that list more than one market use the array form.
+    function installHardenedUpkeep(OracleConfig memory c) public returns (address upkeep) {
+        bytes32[] memory feedKeys = new bytes32[](1);
+        feedKeys[0] = PRICE_UPKEEP_KEY;
+        return installHardenedUpkeep(c, feedKeys);
+    }
+
+    /// @notice Deploys `WhitespacePriceUpKeep` once and points every per-oracle registry key in
+    ///         `feedKeys` at that same instance.
+    /// @dev Caller must be `registry.gov()`. Handles both live states per key: absent (a system
+    ///      where `registerUpkeep` never ran) and holding the vendored upkeep (the 1874
+    ///      deployment) — `registerContract` reverts `AlreadyRegistered` on the second, so the
+    ///      branch is not cosmetic.
+    ///
+    ///      ONE instance serves every feed, deliberately. The two pieces of per-market state the
+    ///      upkeep owns are already keyed by feed inside the contract — `isFeedHalted[feedId]`
+    ///      and the deviation baseline `lastPrice[feedId]` — so a second deployment would
+    ///      fragment that state across instances, cost another deployment's gas, and give the
+    ///      guardian two `pause()` switches where the design specifies one. Reuse whatever any
+    ///      of the keys already resolves to, so adding a market to a live system deploys nothing.
     ///
     ///      Deployed directly, not behind an `ERC1967Proxy` as `Deploy.s.sol` does for the
     ///      vendored upkeep: nothing in `src/vendor/` is UUPS, so those proxies cannot be
     ///      upgraded and buy only an extra DELEGATECALL per delivery. See the contract's header.
-    function installHardenedUpkeep(OracleConfig memory c) public returns (address upkeep) {
+    function installHardenedUpkeep(OracleConfig memory c, bytes32[] memory feedKeys)
+        public
+        returns (address upkeep)
+    {
+        require(feedKeys.length > 0, "installHardenedUpkeep: no feed keys");
         IOstiumRegistry registry = IOstiumRegistry(c.registry);
-        (bool found, address current) = _lookup(registry, PRICE_UPKEEP_KEY);
-        if (found && _isHardenedUpkeep(current)) return current;
 
-        upkeep = address(new WhitespacePriceUpKeep(registry, c.guardian));
+        for (uint256 i = 0; i < feedKeys.length; i++) {
+            (bool found, address current) = _lookup(registry, feedKeys[i]);
+            if (found && _isHardenedUpkeep(current)) {
+                upkeep = current;
+                break;
+            }
+        }
+        if (upkeep == address(0)) {
+            upkeep = address(new WhitespacePriceUpKeep(registry, c.guardian));
+        }
 
-        _relay(msg.sender);
-        if (found) registry.updateContract(PRICE_UPKEEP_KEY, upkeep);
-        else registry.registerContract(PRICE_UPKEEP_KEY, upkeep);
+        for (uint256 i = 0; i < feedKeys.length; i++) {
+            (bool found, address current) = _lookup(registry, feedKeys[i]);
+            if (found && current == upkeep) continue;
+            _relay(msg.sender);
+            if (found) registry.updateContract(feedKeys[i], upkeep);
+            else registry.registerContract(feedKeys[i], upkeep);
+        }
     }
 
     /// @notice Allowlists `c.keeper` as a forwarder on the hardened upkeep.
@@ -691,6 +738,23 @@ contract OperateScript is Script {
         });
     }
 
+    /// @dev `ORACLE_FEEDS` is a comma-separated list of ORACLE NAMES, not registry keys — e.g.
+    ///      `ORACLE_FEEDS=BTC/USD,ETH/USD`. The operator writes the same string that goes into
+    ///      `Pair.oracle`, and `_upkeepKey` performs the one derivation the vendored contracts
+    ///      perform, so the two cannot drift. Defaults to BTC/USD alone, which is what 1874 has
+    ///      listed today: an unset variable therefore reproduces the pre-existing behaviour
+    ///      exactly rather than silently registering nothing.
+    function _readOracleFeedKeys() internal view returns (bytes32[] memory keys) {
+        string[] memory defaultFeeds = new string[](1);
+        defaultFeeds[0] = PAIR_ORACLE;
+
+        string[] memory oracles = vm.envOr("ORACLE_FEEDS", ",", defaultFeeds);
+        keys = new bytes32[](oracles.length);
+        for (uint256 i = 0; i < oracles.length; i++) {
+            keys[i] = _upkeepKey(oracles[i]);
+        }
+    }
+
     /// @notice Migrates a deployed system from the vendored single-signer oracle to the
     ///         hardened k-of-N one. Separate entrypoint from `run()`, invoked with
     ///         `forge script ... --sig "runOracle()"`.
@@ -706,11 +770,16 @@ contract OperateScript is Script {
     ///
     ///      `ORACLE_SIGNERS` is a comma-separated address list, e.g.
     ///      `ORACLE_SIGNERS=0xaaa...,0xbbb...,0xccc...,0xddd...,0xeee...`.
+    ///
+    ///      `ORACLE_FEEDS` is a comma-separated list of oracle names, e.g.
+    ///      `ORACLE_FEEDS=BTC/USD,ETH/USD`, and every one of them is pointed at the single
+    ///      upkeep instance this run installs. Optional; defaults to BTC/USD alone.
     function runOracle() external {
         require(block.chainid == 1874, "unsupported chain");
         _broadcasting = true;
 
         OracleConfig memory c = _readOracleConfig();
+        bytes32[] memory feedKeys = _readOracleFeedKeys();
         uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
         uint256 ownerKey = vm.envUint("OWNER_PRIVATE_KEY");
 
@@ -723,7 +792,7 @@ contract OperateScript is Script {
         vm.stopBroadcast();
 
         vm.startBroadcast(govKey);
-        installHardenedUpkeep(c);
+        installHardenedUpkeep(c, feedKeys);
         vm.stopBroadcast();
 
         vm.startBroadcast(ownerKey);

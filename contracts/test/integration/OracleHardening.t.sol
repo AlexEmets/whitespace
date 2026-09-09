@@ -266,6 +266,37 @@ contract OracleHardeningTest is Test {
         );
     }
 
+    /// @dev Listing a second market must point that market's own registry key at the SAME upkeep
+    ///      instance, not at a second deployment. The upkeep's per-market state is keyed by feed
+    ///      inside the contract (`isFeedHalted`, `lastPrice`), so two instances would split the
+    ///      breaker and the deviation baseline across contracts that neither knows about — and
+    ///      would give the guardian two `pause()` switches where the design specifies one.
+    function test_oneUpkeepInstanceServesEveryRegisteredFeed() public {
+        IOstiumRegistry reg = IOstiumRegistry(d.registry);
+        bytes32 ethKey = "ETH/USDPriceUpkeep";
+
+        bytes32[] memory feedKeys = new bytes32[](2);
+        feedKeys[0] = PRICE_UPKEEP_KEY;
+        feedKeys[1] = ethKey;
+
+        vm.prank(gov);
+        address u = operator.installHardenedUpkeep(_oracleConfig(), feedKeys);
+
+        assertEq(u, address(upkeep), "adding a feed must reuse the installed upkeep");
+        assertEq(reg.getContractAddress(PRICE_UPKEEP_KEY), address(upkeep));
+        assertEq(reg.getContractAddress(ethKey), address(upkeep), "ETH must resolve to it too");
+    }
+
+    /// @dev The derived key must be byte-identical to the literal the vendored contracts compute.
+    ///      `OstiumPriceRouter.sol:81-83` and `OstiumTradingCallbacks.sol:83-85` both look the
+    ///      upkeep up under `bytes32(abi.encodePacked(pair.oracle, "PriceUpkeep"))`. A market
+    ///      registered under a key that differs by one byte lists successfully, then reverts
+    ///      `NotFound` on its first price request — so this equality is load-bearing, not cosmetic.
+    function test_derivedUpkeepKeyMatchesTheVendoredDerivation() public pure {
+        assertEq(bytes32(abi.encodePacked("BTC/USD", "PriceUpkeep")), bytes32("BTC/USDPriceUpkeep"));
+        assertEq(bytes32(abi.encodePacked("ETH/USD", "PriceUpkeep")), bytes32("ETH/USDPriceUpkeep"));
+    }
+
     /// @dev The healing path: a verifier that already exists but whose signer set drifted (a key
     ///      revoked out of band) is brought back into line by `authoriseHardenedSigners`, which
     ///      is the only step that can — `installHardenedVerifier` returns early in that case.
