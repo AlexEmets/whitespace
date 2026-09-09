@@ -1,0 +1,42 @@
+# Postgres for the indexer and the read API. Nothing else runs in Docker — the five Node
+# services are supervised by `tools/stack/run.mjs`, which keeps their logs, restarts and
+# readiness gates in one place and needs no image builds.
+#
+# Port 5433, not 5432, on purpose. A developer machine usually already has a system
+# Postgres on 5432 serving unrelated projects, and this stack must not have to share it or
+# compete for it. (On the machine this was first brought up on, the system instance also
+# had a glibc collation-version mismatch that blocked `createdb` entirely — an isolated
+# container sidesteps that class of problem rather than requiring a fix to someone's
+# unrelated databases.)
+#
+#   docker compose up -d postgres     # start
+#   docker compose down               # stop, keep data
+#   docker compose down -v            # stop and DESTROY the indexed data
+#
+# The indexer can rebuild everything it owns from chain, so the volume is a cache, not a
+# system of record. Dropping it costs a resync, not data.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: whitespace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: whitespace
+      POSTGRES_PASSWORD: whitespace
+      POSTGRES_DB: whitespace
+    ports:
+      - '127.0.0.1:5433:5432'
+    volumes:
+      - whitespace-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` alone reports true while the container is still running its
+      # first-boot init scripts, so a dependent that trusts it can connect and find no
+      # database. Ask for an actual query against the actual database instead.
+      test: ['CMD-SHELL', 'psql -U whitespace -d whitespace -c "SELECT 1" || exit 1']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  whitespace-pgdata:
