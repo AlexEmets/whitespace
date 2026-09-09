@@ -339,7 +339,13 @@ if (unknown.length > 0) {
   console.error(`unknown service(s): ${unknown.join(', ')}. Try --list.`);
   process.exit(2);
 }
-const plan = requested.length > 0 ? withDependencies(requested) : SERVICES;
+// `--no-deps` starts only what was named, and treats its dependencies as already
+// satisfied. For attaching one service to a stack that is already up — restarting just the
+// web app against a running api, say — where pulling the dependencies in would collide
+// with the instances already holding those ports.
+const noDeps = args.includes('--no-deps');
+const plan = requested.length === 0 ? SERVICES : noDeps ? SERVICES.filter((s) => requested.includes(s.name)) : withDependencies(requested);
+const assumedReady = noDeps ? plan.flatMap((s) => s.needs) : [];
 
 /**
  * Two pre-flight checks, both earned by a real failure rather than added defensively.
@@ -400,7 +406,7 @@ await preflight(plan);
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 
-const ready = new Set();
+const ready = new Set(assumedReady);
 const colorOf = new Map(plan.map((s, i) => [s.name, COLORS[i % COLORS.length]]));
 
 for (const service of plan) {
