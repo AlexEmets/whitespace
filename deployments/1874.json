@@ -13,11 +13,33 @@
     "vault": "0x7B9147B4b8b05e7e3c3F86694d8EA7a639c2D516",
     "openPnl": "0x9287F73ac606F85657010F458c0CF5efBb22d880",
     "priceRouter": "0xB14c4cf81007D60afDfd2Cc48b94cFCf861134a4",
-    "verifier": "0xf2236F1Cc7610D75DD1D38563aA090bdD7102Fc8",
-    "priceUpKeep": "0x3Ce549F5Aa65141D10f25BE793d63572bC3908Be"
+    "verifier": "0xF0F7Abe953Ac6448258AEc4d0b6ddB6b60750814",
+    "priceUpKeep": "0x6d8fa4DE0DD0aF71F044266aA630B560733efC96"
   },
   "libraries": {
     "TradingLib": "0x23215259ee9349C8C7913E5d543833170316006b",
     "TradingCallbacksLib": "0xa3c63D9F736c6dA082007546Ca2330C37C9194fe"
+  },
+  "retiredContracts": {
+    "note": "Superseded by the phase-A oracle migration. Kept for provenance: these are the addresses the proofTrade in 1874-operational.json was priced by.",
+    "verifier": "0xf2236F1Cc7610D75DD1D38563aA090bdD7102Fc8",
+    "priceUpKeep": "0x3Ce549F5Aa65141D10f25BE793d63572bC3908Be"
+  },
+  "oracle": {
+    "migratedAt": "2026-09-09T00:00:00Z",
+    "commit": "e7a78c2",
+    "verifier": "0xF0F7Abe953Ac6448258AEc4d0b6ddB6b60750814",
+    "priceUpKeep": "0x6d8fa4DE0DD0aF71F044266aA630B560733efC96",
+    "guardian": "0xc87061b624dcbb091cc6B07c39ccbA4c099719c9",
+    "threshold": 3,
+    "signerCount": 5,
+    "maxAge": 10,
+    "maxDeviationBps": 500,
+    "feedKeys": [
+      "BTC/USDPriceUpkeep"
+    ],
+    "gasUsed": 2492362,
+    "gasPriceGwei": 5.001,
+    "costWbt": "0.012226723866671663"
   }
 }
