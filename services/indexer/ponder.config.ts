@@ -34,6 +34,11 @@ const rpcUrls = (process.env.PONDER_RPC_URLS_1874 ?? PRIMARY_RPC)
 // (the live testnet deployment record) — never hand-typed.
 const startBlock = 7_284_500; // a few hundred blocks before contract deployment + pair setup
 
+// Where the liveness heartbeat begins — see the `blocks` section for why this is NOT
+// `startBlock`. Overridable so a cold sync months from now does not re-acquire a long
+// pointless tail; the default only has to be recent relative to whenever it is bumped.
+const heartbeatStartBlock = Number(process.env.HEARTBEAT_START_BLOCK ?? 7_373_000);
+
 export default createConfig({
   chains: {
     whitechain1874: {
@@ -81,13 +86,25 @@ export default createConfig({
   },
   blocks: {
     // Drives the `sync_status` singleton row that GET /health reads
-    // (indexedBlock / lagSeconds). Every block, not just blocks that
-    // happen to contain a matching event, so lag is measured accurately
-    // even during quiet periods.
+    // (indexedBlock / lagSeconds), so lag is measured even during quiet
+    // periods when no contract event fires.
+    //
+    // This is a LIVENESS signal, and liveness has no history: `sync_status` is
+    // a single row that every invocation overwrites, and `handleHealth`
+    // compares only the latest one against its 30s/300s thresholds. Backfilling
+    // it from `startBlock` therefore did 89,000+ `eth_getBlockByNumber` calls to
+    // compute a value that 88,999 of them immediately discarded — and since
+    // contract logs arrive via ranged `eth_getLogs` (a handful of requests),
+    // that heartbeat WAS the entire backfill cost. Measured at ~6 blocks/s
+    // against the public RPC, it put a cold sync at roughly four hours.
+    //
+    // So it starts near the head instead. `interval: 5` on a ~1s-block OP Stack
+    // chain bounds the added staleness at ~5s, comfortably inside the 30s
+    // "degraded" threshold, for a fifth of the requests.
     ChainHeartbeat: {
       chain: 'whitechain1874',
-      startBlock,
-      interval: 1,
+      startBlock: heartbeatStartBlock,
+      interval: 5,
     },
   },
 });
