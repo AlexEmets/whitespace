@@ -42,5 +42,30 @@
     "closeReportTx": "0xaa0d4683a5b2213e8b6886073712d1bde606dac54868b77382be7b97203d37b5",
     "traderUsdwBeforeOpen": "10000000000",
     "traderUsdwAfterClose": "9998692628"
+  },
+  "livePipelineTrade": {
+    "note": "First position priced by the full running pipeline: 4 live exchange venues -> weighted-median index -> EMA mark -> k=3-of-5 signed v2 report -> keeper -> WhitespacePriceUpKeep -> callbacks. No hand-built report anywhere in the path.",
+    "commit": "4164246",
+    "pairIndex": 0,
+    "buy": true,
+    "leverage": 1000,
+    "collateralRequested": "500000000",
+    "collateralAfterOracleFee": "499000000",
+    "openPrice": "78634010000000000000000",
+    "upkeepLastPrice": "78634596409377042770808",
+    "orderId": "4",
+    "openTradeTx": "0x2e7efbc862e82677dc70f62f59e83a442043764f3da299627d84efabcd369ddd",
+    "reportDeliveryTx": "0xc59f6cd442baffc8b8ccd2ab08b9c8e522a53bc4cda857a2493b24ef3fb4bfe4",
+    "publisherVenues": [
+      "bybit",
+      "okx",
+      "binance"
+    ],
+    "healthyVenueCount": 3,
+    "servedByApi": {
+      "positions": true,
+      "price": true,
+      "marketOpenInterest": "4990.000000"
+    }
   }
 }
