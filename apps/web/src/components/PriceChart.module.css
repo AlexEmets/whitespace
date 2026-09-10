@@ -1,0 +1,163 @@
+/*
+ * Chart-local styles. A CSS Module rather than more rules in app/globals.css: everything
+ * here is geometry for one SVG, and the class names that read best inside it (`.grid`,
+ * `.axis`, `.up`) are exactly the names most likely to collide in a global sheet.
+ *
+ * The palette is read from the global custom properties, not re-declared — `--long` /
+ * `--short` are the same greens and reds the positions table and the order form use, and
+ * a candle that disagreed with the P&L column about which colour "up" is would be worse
+ * than no colour at all.
+ */
+
+.wrap {
+  position: relative;
+  width: 100%;
+}
+
+.svg {
+  display: block;
+  touch-action: none; /* the pointer handlers own horizontal drag; let them have it */
+  cursor: crosshair;
+  user-select: none;
+}
+
+.svg:active {
+  cursor: grabbing;
+}
+
+/*
+ * The mockup's grid is barely there — it exists to let the eye carry a price level across
+ * the plot, not to be looked at. At 3.5% on a near-black ground it sits well under the
+ * candle bodies and under the axis labels, which is the ordering the design implies.
+ */
+.grid line {
+  stroke: rgba(232, 234, 237, 0.035);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.axis text {
+  fill: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+}
+
+.axisTime text {
+  text-anchor: middle;
+}
+
+.up {
+  stroke: var(--long);
+  fill: var(--long);
+}
+
+.down {
+  stroke: var(--short);
+  fill: var(--short);
+}
+
+.up line,
+.down line {
+  stroke-width: 1;
+}
+
+.up rect,
+.down rect {
+  stroke: none;
+}
+
+.markLine {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.75;
+}
+
+.markChip {
+  fill: var(--accent);
+}
+
+.markChipText {
+  fill: #07080a;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.crosshair {
+  stroke: var(--fg-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.crosshairChip {
+  fill: var(--bg-raised);
+  stroke: var(--fg-muted);
+  stroke-width: 1;
+}
+
+.crosshairChipText {
+  fill: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+/*
+ * The OHLC legend. Pinned to the top-left of the plot rather than floating by the cursor:
+ * a readout that follows the pointer needs flip logic at every edge, and the one place it
+ * is guaranteed never to sit under the thing you are pointing at is the corner.
+ */
+.readout {
+  position: absolute;
+  top: 4px;
+  left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.65rem;
+  color: var(--fg-muted);
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.readout b {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.readoutTime {
+  color: var(--fg-dim);
+}
+
+.readoutHint {
+  color: var(--fg-dim);
+}
+
+.upText b {
+  color: var(--long);
+}
+
+.downText b {
+  color: var(--short);
+}
+
+.empty {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  margin: 0 0 0.5rem;
+}
+
+/*
+ * Captions for the two states that look like a broken chart but are not: too little
+ * history, and a feed that has stopped. Both are deliberately plain text under the plot
+ * rather than an overlay — they explain the chart, they do not obstruct it.
+ */
+.note {
+  margin: 0.5rem 0 0;
+  font-size: 0.65rem;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
