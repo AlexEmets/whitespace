@@ -1066,12 +1066,17 @@ table.data-table td {
   background: rgba(91, 123, 255, 0.12);
 }
 
-.faucet-row button:not(:disabled) {
+/* The faucet is the same action in both places it appears — the order panel and the vault
+   panel — so it has to look the same in both. Scoping this to `.faucet-row` alone left the
+   vault's copy as a plain grey slab while the order form's read as a live control. */
+.faucet-row button:not(:disabled),
+.vault-panel [data-testid='faucet-button']:not(:disabled) {
   border-color: var(--long);
   color: var(--long);
   background: transparent;
 }
 
-.faucet-row button:not(:disabled):hover {
+.faucet-row button:not(:disabled):hover,
+.vault-panel [data-testid='faucet-button']:not(:disabled):hover {
   background: var(--long-dim);
 }
