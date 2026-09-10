@@ -1,0 +1,302 @@
+/*
+ * Shared chrome for the two account-scoped pages, /portfolio and /points.
+ *
+ * Both mockups build every screen out of the same three primitives: a full-bleed rule
+ * between bands, a row of bordered stat tiles, and a dense table. globals.css already owns
+ * the tile and table primitives (`.stat-tile`, `.data-table`) for the landing page and the
+ * terminal, and this module deliberately does not restyle either — it adds only the page
+ * shell around them and the numeric alignment those two pages need.
+ *
+ * Every number in this app is monospace on purpose (see layout.tsx), so `tabular-nums`
+ * costs nothing and guarantees columns of figures line up digit-for-digit even where a
+ * fallback font is doing the rendering.
+ */
+
+.page {
+  padding-bottom: 4rem;
+}
+
+/* ---------- Page head ---------- */
+
+.head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem 3rem;
+  flex-wrap: wrap;
+  padding: 2.5rem 1.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Grows to fill whatever the meta column leaves, so the lede's own 44em max-width is what
+   sets the measure. Without the `flex-grow`, this is a content-sized flex item and the
+   paragraph wraps to roughly the width of the h1 above it — a 440px column of text under a
+   1440px heading, which reads as broken rather than as a narrow measure. */
+.headMain {
+  min-width: 0;
+  flex: 1 1 32rem;
+}
+
+.eyebrow {
+  color: var(--fg-muted);
+  font-size: 0.66rem;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.1;
+  margin: 0.55rem 0 0;
+}
+
+.lede {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  max-width: 44em;
+  margin: 0.85rem 0 0;
+}
+
+.headMeta {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  line-height: 1.9;
+  text-align: right;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.headMeta strong {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+/* ---------- Stat tiles ---------- */
+
+/* auto-fit rather than a fixed column count: /portfolio shows five tiles and /points
+   four, and neither should have to hand-declare a grid template. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.tile {
+  padding: 1.5rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+/* The tile row wraps, so the bottom rule belongs on the tiles rather than only on the
+   container; the container's own rule then doubles up under the last row. Negative margin
+   is not needed — the container rule is what a partially-filled last row sits on. */
+.tiles > .tile:last-child {
+  border-right: none;
+}
+
+.tileLead {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tileLabel {
+  color: var(--fg-muted);
+  font-size: 0.64rem;
+  margin-bottom: 0.6rem;
+}
+
+.tileValue {
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.tileUnit {
+  font-size: 0.7rem;
+  color: var(--fg-muted);
+  margin-left: 0.4rem;
+}
+
+.tileNote {
+  color: var(--fg-dim);
+  font-size: 0.64rem;
+  line-height: 1.6;
+  margin-top: 0.6rem;
+}
+
+/* ---------- Sections ---------- */
+
+.section {
+  padding: 1.9rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.1rem;
+}
+
+.sectionTitle {
+  font-size: 0.92rem;
+  font-weight: 500;
+  margin: 0;
+}
+
+.sectionNote {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  line-height: 1.6;
+  max-width: 52em;
+}
+
+.sectionFoot {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  line-height: 1.7;
+  margin: 0.9rem 0 0;
+  max-width: 60em;
+}
+
+/* ---------- Tables ---------- */
+
+/* Applied alongside globals.css's `.data-table`, never instead of it. */
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.subtle {
+  color: var(--fg-muted);
+}
+
+.rowTime {
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+/* ---------- The four states ---------- */
+
+.state {
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.stateIcon {
+  color: var(--fg-dim);
+  font-size: 0.62rem;
+  margin-bottom: 0.9rem;
+}
+
+.stateTitle {
+  color: var(--fg);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin: 0 0 0.6rem;
+}
+
+.stateBody {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  line-height: 1.75;
+  max-width: 42em;
+  margin: 0 auto;
+}
+
+.stateBody a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.stateError {
+  border-style: solid;
+  border-color: var(--short);
+}
+
+.stateError .stateTitle,
+.stateError .stateIcon {
+  color: var(--short);
+}
+
+.stateDetail {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  margin-top: 0.9rem;
+  word-break: break-word;
+}
+
+/* A loading state must be visibly *alive*, or it is indistinguishable from an empty one
+   that simply failed silently. One slow pulse, no layout shift, no spinner asset. */
+.stateLoading .stateIcon {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stateLoading .stateIcon {
+    animation: none;
+  }
+}
+
+/* ---------- Definition rows (account-value breakdown, fee schedule) ---------- */
+
+.defs {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-width: 46em;
+}
+
+.defRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.74rem;
+}
+
+.defRow:last-child {
+  border-bottom: none;
+}
+
+.defKey {
+  color: var(--fg-muted);
+}
+
+.defValue {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.defTotal {
+  background: var(--bg-raised);
+}
+
+.defTotal .defKey {
+  color: var(--fg);
+}

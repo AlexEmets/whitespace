@@ -1,0 +1,341 @@
+/*
+ * /docs. Long-form prose in a monospace interface, which is the whole design problem here:
+ * JetBrains Mono at 13px is built for columns of figures, not for paragraphs, so the body
+ * text needs a shorter measure (~72ch) and a taller leading than anywhere else in the app
+ * to stay readable. Everything else — the rules between bands, the muted label colour, the
+ * tabular figures — is the same language as the terminal.
+ *
+ * This page does not reuse components/portfolio/accountPage.module.css: it has no stat
+ * tiles, no account states and no tables of money, and it does have a sticky table of
+ * contents that nothing else needs.
+ */
+
+.head {
+  padding: 2.5rem 1.5rem 1.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.eyebrow {
+  color: var(--fg-muted);
+  font-size: 0.66rem;
+}
+
+.title {
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.1;
+  margin: 0.55rem 0 0;
+}
+
+.lede {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  line-height: 1.8;
+  max-width: 68ch;
+  margin: 0.9rem 0 0;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .toc {
+    position: static;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* Offsets by the sticky nav header's height so an anchored heading is not hidden under it. */
+.toc {
+  position: sticky;
+  top: 52px;
+  padding: 1.75rem 1.25rem;
+  border-right: 1px solid var(--border);
+  align-self: start;
+}
+
+.tocLabel {
+  color: var(--fg-dim);
+  font-size: 0.62rem;
+  margin-bottom: 0.9rem;
+}
+
+.tocList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+  counter-reset: toc;
+}
+
+.tocList a {
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  display: block;
+}
+
+.tocList a::before {
+  counter-increment: toc;
+  content: counter(toc, decimal-leading-zero) '  ';
+  color: var(--fg-dim);
+}
+
+.tocList a:hover {
+  color: var(--fg);
+}
+
+.body {
+  min-width: 0;
+}
+
+.section {
+  padding: 2.25rem 2rem;
+  border-bottom: 1px solid var(--border);
+  scroll-margin-top: 60px;
+}
+
+.sectionNumber {
+  color: var(--fg-dim);
+  font-size: 0.64rem;
+  margin-bottom: 0.6rem;
+}
+
+.h2 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  margin: 0 0 1.1rem;
+  line-height: 1.3;
+}
+
+.h3 {
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin: 1.9rem 0 0.7rem;
+  color: var(--fg);
+}
+
+.p {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  line-height: 1.9;
+  max-width: 72ch;
+  margin: 0 0 1rem;
+}
+
+.p strong,
+.li strong {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.p code,
+.li code,
+.td code {
+  color: var(--fg);
+  background: var(--bg-raised);
+  border-radius: 2px;
+  padding: 0.05rem 0.3rem;
+  font-size: 0.92em;
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+  max-width: 72ch;
+}
+
+.li {
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  line-height: 1.85;
+  padding-left: 1.4rem;
+  position: relative;
+}
+
+/* A rule, not a bullet: this design language is drawn entirely in 1px lines and uses no
+   round shapes anywhere else. */
+.li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.85em;
+  width: 0.7rem;
+  height: 1px;
+  background: var(--fg-dim);
+}
+
+/* The two-phase flow, drawn as an ordered ladder — the single most important thing a
+   trader has to understand about this exchange, so it gets a shape of its own instead of
+   another bullet list. */
+.phases {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-width: 72ch;
+  margin: 0 0 1.2rem;
+}
+
+.phase {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.phase:last-child {
+  border-bottom: none;
+}
+
+.phaseIndex {
+  color: var(--fg-dim);
+  font-size: 0.64rem;
+  padding-top: 0.15rem;
+}
+
+.phaseTitle {
+  font-size: 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+.phaseBody {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  line-height: 1.8;
+}
+
+.phaseOutcome {
+  background: var(--bg-raised);
+}
+
+.formula {
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--fg-dim);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  padding: 1rem 1.1rem;
+  margin: 0 0 1.2rem;
+  overflow-x: auto;
+  color: var(--fg);
+  font-size: 0.72rem;
+  line-height: 1.9;
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
+  max-width: 72ch;
+}
+
+/* A stated limitation, not an error — same reasoning as the /points notice: colouring an
+   honest disclosure like an incident would misrepresent it. */
+.caveat {
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warning);
+  border-radius: 4px;
+  padding: 0.95rem 1.1rem;
+  margin: 0 0 1.2rem;
+  max-width: 72ch;
+}
+
+.caveatLabel {
+  color: var(--warning);
+  font-size: 0.62rem;
+  margin-bottom: 0.45rem;
+}
+
+.caveatBody {
+  color: var(--fg-muted);
+  font-size: 0.74rem;
+  line-height: 1.8;
+  margin: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  margin: 0 0 1.2rem;
+  max-width: 72ch;
+}
+
+.table th {
+  text-align: left;
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.td {
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  line-height: 1.65;
+  vertical-align: top;
+}
+
+.tdKey {
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.tdNum {
+  color: var(--fg);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wide {
+  max-width: none;
+}
+
+.addrTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.7rem;
+}
+
+.addr {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  word-break: break-all;
+  user-select: all;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.footNote {
+  color: var(--fg-dim);
+  font-size: 0.68rem;
+  line-height: 1.8;
+  max-width: 72ch;
+  margin: 1.2rem 0 0;
+}
+
+.sourceLine {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  line-height: 1.8;
+  max-width: 72ch;
+  margin: 1.4rem 0 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
