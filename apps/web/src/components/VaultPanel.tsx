@@ -36,6 +36,15 @@ export function VaultPanel() {
 
   const needsApproval = depositRaw !== null && depositRaw > 0n && erc20.allowance < depositRaw;
 
+  /**
+   * The vault pulls the deposit with `transferFrom`, so a request for more USDW than the
+   * wallet holds reverts inside the token with `ERC20InsufficientBalance` — on chain,
+   * after the gas is spent, with a message no wallet renders legibly. The order-entry form
+   * has always blocked this; this panel did not, and a real deposit of 1,000 USDW from a
+   * wallet holding 0 failed exactly that way. Cheaper to refuse here.
+   */
+  const insufficientBalance = depositRaw !== null && depositRaw > 0n && erc20.balance < depositRaw;
+
   async function handleFaucet() {
     setError(null);
     setMessage(null);
@@ -63,7 +72,7 @@ export function VaultPanel() {
   }
 
   async function handleRequestDeposit() {
-    if (depositRaw === null || depositRaw <= 0n) return;
+    if (depositRaw === null || depositRaw <= 0n || insufficientBalance) return;
     setError(null);
     setMessage(null);
     try {
@@ -101,6 +110,13 @@ export function VaultPanel() {
       <button type="button" data-testid="faucet-button" onClick={handleFaucet} disabled={faucetPending}>
         {faucetPending ? 'Claiming… confirm in your wallet' : 'Get testnet USDW'}
       </button>
+      {/* The two buttons on this panel do opposite things to your balance, and their
+          labels do not say so. "Request deposit" was read as "request USDW" and submitted
+          from an empty wallet; naming the direction of each is what prevents that. */}
+      <p className="vault-hint">
+        Mints 1,000 USDW to your wallet, once per 24h. Depositing below sends USDW the other
+        way — into the LP vault.
+      </p>
 
       <label>
         Deposit amount (USDW)
@@ -121,12 +137,20 @@ export function VaultPanel() {
         <button
           type="button"
           data-testid="request-deposit-button"
-          disabled={depositRaw === null || depositRaw <= 0n}
+          disabled={depositRaw === null || depositRaw <= 0n || insufficientBalance}
           onClick={handleRequestDeposit}
         >
           Request deposit
         </button>
       )}
+
+      {insufficientBalance ? (
+        <p role="alert" className="error-text" data-testid="vault-insufficient-balance">
+          You hold {formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW but this deposit needs{' '}
+          {formatMoney(depositRaw ?? 0n, COLLATERAL_DECIMALS)}. Use “Get testnet USDW” above first — depositing is a
+          transfer into the LP vault, not a way to obtain USDW.
+        </p>
+      ) : null}
 
       {pendingSettlementId !== null ? (
         <div data-testid="deposit-settlement-status" role="status">

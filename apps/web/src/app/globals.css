@@ -948,3 +948,12 @@ table.data-table td {
   color: var(--long);
   line-height: 1.5;
 }
+
+/* Explains which direction each vault control moves USDW — the faucet mints to you, the
+   deposit sends to the vault. Dim, because it is a one-time orientation note, not a value. */
+.vault-panel .vault-hint {
+  margin: -0.3rem 0 0;
+  color: var(--fg-dim);
+  font-size: 0.66rem;
+  line-height: 1.5;
+}
