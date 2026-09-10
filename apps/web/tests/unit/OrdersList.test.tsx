@@ -22,12 +22,15 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
       {
         orderId: '1',
         pairIndex: 0,
-        trader: '0xabc',
+        kind: 'open',
         buy: true,
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
         status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
       },
     ];
     render(<OrdersList />);
@@ -35,17 +38,56 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(screen.getByTestId('order-status-1')).not.toHaveTextContent(/executed/i);
   });
 
+  /**
+   * The shape `/orders/:address` really returns for an open order that has not been
+   * executed yet: no side, no collateral, no leverage, because
+   * `MarketOpenOrderInitiated` carries no Trade payload.
+   *
+   * This row used to crash the whole page — `<Money value={null}>` throws
+   * "money: not a decimal number: null" — and, one cell earlier, silently rendered a
+   * pending LONG as "Short" via `o.buy ? 'Long' : 'Short'`. The second is the worse of
+   * the two: it did not fail, it lied.
+   */
+  it('renders a pending open order whose side and size are not known yet, without crashing or guessing', () => {
+    ordersState = [
+      {
+        orderId: '8',
+        pairIndex: 0,
+        kind: 'open',
+        buy: null,
+        collateral: null,
+        leverage: null,
+        requestedAt: 1789033539,
+        status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
+      },
+    ];
+    render(<OrdersList />);
+
+    const row = screen.getByTestId('order-row-8');
+    expect(row).toBeInTheDocument();
+    expect(screen.getByTestId('order-status-8')).toHaveTextContent(/pending/i);
+    // Neither "Long" nor "Short" — the side genuinely is not known yet.
+    expect(row).not.toHaveTextContent(/Long/);
+    expect(row).not.toHaveTextContent(/Short/);
+    expect(row).toHaveTextContent('—');
+  });
+
   it('shows an executed order as executed', () => {
     ordersState = [
       {
         orderId: '2',
         pairIndex: 0,
-        trader: '0xabc',
+        kind: 'open',
         buy: true,
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
         status: 'executed',
+        resolvedAt: 10,
+        cancelReason: null,
         tradeId: '7',
       },
     ];
@@ -58,13 +100,15 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
       {
         orderId: '3',
         pairIndex: 0,
-        trader: '0xabc',
+        kind: 'open',
         buy: true,
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
         status: 'cancelled',
+        resolvedAt: 10,
         cancelReason: 'SLIPPAGE',
+        tradeId: null,
       },
     ];
     render(<OrdersList />);

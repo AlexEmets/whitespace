@@ -30,7 +30,7 @@ describe('confirmTx', () => {
   });
 
   it('names the action and the hash, and states that nothing moved', async () => {
-    const err = await confirmTx(clientReturning('reverted'), HASH, 'open the position').catch((e) => e as Error);
+    const err = (await confirmTx(clientReturning('reverted'), HASH, 'open the position').catch((e) => e)) as Error;
     expect(err.message).toContain('open the position');
     expect(err.message).toContain(HASH);
     // The trader's first question after a failure is whether they lost anything.

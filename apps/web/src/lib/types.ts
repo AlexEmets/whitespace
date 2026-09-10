@@ -64,18 +64,30 @@ export type OrderStatus = 'pending' | 'executed' | 'cancelled';
 export interface OrderSummary {
   orderId: string;
   pairIndex: number;
-  trader: string;
-  buy: boolean;
-  collateral: string;
-  leverage: string;
+  kind: string;
+  /**
+   * Null while an OPEN order is still pending, and that is not a defect in the API.
+   * `MarketOpenOrderInitiated` carries no Trade payload — the side, collateral and
+   * leverage only exist on chain once `MarketOpenExecuted` fires. Close and
+   * remove-collateral orders record them at request time and so have them throughout.
+   *
+   * These were typed as non-null, which is why nothing flagged the two consumers that
+   * mishandled them: `<Money value={null}>` threw at runtime, and `o.buy ? 'Long' :
+   * 'Short'` silently labelled a pending long as a short. A type that promises more than
+   * the wire delivers removes exactly the check that would have caught both.
+   */
+  buy: boolean | null;
+  collateral: string | null;
+  leverage: string | null;
   requestedAt: number;
   status: OrderStatus;
-  /** Present only once status is 'cancelled'. Raw IOstiumTradingCallbacks.CancelReason
+  /** Unix seconds when the order stopped being pending; null while it still is. */
+  resolvedAt: number | null;
+  /** Non-null only once status is 'cancelled'. Raw IOstiumTradingCallbacks.CancelReason
    * name, e.g. "SLIPPAGE". */
-  cancelReason?: string;
-  /** Present only once status is 'executed'. */
-  tradeId?: string;
-  executedAt?: number;
+  cancelReason: string | null;
+  /** Non-null only once status is 'executed'. */
+  tradeId: string | null;
 }
 
 export interface PriceResponse {

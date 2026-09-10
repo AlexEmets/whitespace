@@ -40,9 +40,22 @@ export function OrdersList() {
       <tbody>
         {orders.map((o) => (
           <tr key={o.orderId} data-testid={`order-row-${o.orderId}`} data-status={o.status}>
-            <td>{o.buy ? 'Long' : 'Short'}</td>
-            <td>
-              <Money value={o.collateral} decimals={COLLATERAL_DECIMALS} suffix="USDW" />
+            {/* buy/collateral/leverage are null while an open order is still pending:
+                `MarketOpenOrderInitiated` does not carry the Trade payload — only
+                `MarketOpenExecuted` does (see the indexer's trading handler and the note
+                on GET /orders/:address). Rendering them needs care in both directions:
+                `<Money value={null}>` throws, and `o.buy ? 'Long' : 'Short'` quietly
+                reports a pending LONG as "Short", because null is falsy. An unknown value
+                gets the same em-dash the rest of the app uses, never a guess. */}
+            <td className={o.buy === null ? 'dash' : ''} title={o.buy === null ? 'Not known until the keeper executes this order' : undefined}>
+              {o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}
+            </td>
+            <td className={o.collateral === null ? 'dash' : ''}>
+              {o.collateral === null ? (
+                <span title="Not known until the keeper executes this order">—</span>
+              ) : (
+                <Money value={o.collateral} decimals={COLLATERAL_DECIMALS} suffix="USDW" />
+              )}
             </td>
             <td data-testid={`order-status-${o.orderId}`}>{STATUS_LABEL[o.status] ?? o.status}</td>
             <td>
