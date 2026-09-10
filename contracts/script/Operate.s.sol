@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import {Script} from "forge-std/Script.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {USDW} from "../src/mocks/USDW.sol";
@@ -14,6 +15,7 @@ import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.s
 import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
 import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
 import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
+import {OstiumTradesUpKeep} from "../src/vendor/ostium/OstiumTradesUpKeep.sol";
 import {WhitespaceVerifier} from "../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../src/oracle/WhitespacePriceUpKeep.sol";
 
@@ -753,6 +755,97 @@ contract OperateScript is Script {
         for (uint256 i = 0; i < oracles.length; i++) {
             keys[i] = _upkeepKey(oracles[i]);
         }
+    }
+
+    // =======================================================================================
+    // Phase D — liquidation
+    //
+    // `Deploy.s.sol` never deploys `OstiumTradesUpKeep`, and `OstiumTrading.sol:123` gates the
+    // liquidation entrypoint on `msg.sender == registry.getContractAddress('tradesUpKeep')`.
+    // With that key unset the comparison can only ever fail, so on the deployed 1874 system
+    // NO address — not gov, not the owner, not a bot — can liquidate an underwater position.
+    // The vendored contract exists and is sound; it was simply never installed.
+    //
+    // That is not a cosmetic gap. The LP vault is the counterparty to every position, so an
+    // unliquidatable position that keeps losing is a position whose losses the vault absorbs
+    // past the collateral that was supposed to cover them.
+    // =======================================================================================
+
+    bytes32 internal constant TRADES_UPKEEP_KEY = "tradesUpKeep";
+
+    /// @param registry   The system registry. The upkeep resolves everything else through it.
+    /// @param liquidator The forwarder allowed to call `performUpkeep`. Liquidation here is
+    ///                   allowlisted, not permissionless — see `OstiumTradesUpKeep.sol:55`.
+    struct LiquidationConfig {
+        address registry;
+        address liquidator;
+    }
+
+    /// @dev Behind an `ERC1967Proxy` because `OstiumTradesUpKeep` is `initializer`-based with a
+    ///      disabled constructor — unlike the two hardened oracle contracts, which are ours and
+    ///      take constructor arguments. Same shape `Deploy.s.sol` uses for every vendored
+    ///      contract, so this one is not an exception to how the system is assembled.
+    function _proxy(address implementation, bytes memory initCall) internal returns (address) {
+        return address(new ERC1967Proxy(implementation, initCall));
+    }
+
+    /// @notice Deploys `OstiumTradesUpKeep` and registers it under the `tradesUpKeep` key.
+    /// @dev Caller must be `registry.gov()`. Idempotent on the registry read: a replayed run
+    ///      neither redeploys nor re-registers, because re-pointing the key would silently
+    ///      strip the forwarder allowlist the incumbent had accumulated.
+    function installTradesUpKeep(LiquidationConfig memory c) public returns (address upkeep) {
+        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        (bool found, address current) = _lookup(registry, TRADES_UPKEEP_KEY);
+        if (found && current != address(0)) return current;
+
+        upkeep = _proxy(
+            address(new OstiumTradesUpKeep()),
+            abi.encodeCall(OstiumTradesUpKeep.initialize, (registry))
+        );
+
+        _relay(msg.sender);
+        registry.registerContract(TRADES_UPKEEP_KEY, upkeep);
+    }
+
+    /// @notice Allowlists `c.liquidator` as a forwarder on the trades upkeep.
+    /// @dev Caller must be `IOwnable(c.registry).owner()` — `registerForwarder` is
+    ///      `onlyTimelock` (`OstiumTradesUpKeep.sol:74`), the same authority the price
+    ///      upkeep's forwarder list requires.
+    function authoriseLiquidator(LiquidationConfig memory c) public {
+        OstiumTradesUpKeep upkeep = OstiumTradesUpKeep(payable(_requireTradesUpKeep(c.registry)));
+        if (upkeep.isForwarder(c.liquidator)) return;
+        _relay(msg.sender);
+        upkeep.registerForwarder(c.liquidator);
+    }
+
+    function _requireTradesUpKeep(address registry) internal view returns (address upkeep) {
+        (bool found, address current) = _lookup(IOstiumRegistry(registry), TRADES_UPKEEP_KEY);
+        require(found && current != address(0), "trades upkeep not installed");
+        return current;
+    }
+
+    /// @notice Installs the trades upkeep and allowlists the liquidator. Separate entrypoint
+    ///         for the same reason `runOracle()` is one: different preconditions, and folding
+    ///         it into `run()` would invalidate the env block already recorded in
+    ///         `docs/runbooks/deploy-testnet.md`.
+    function runLiquidation() external {
+        require(block.chainid == 1874, "unsupported chain");
+        _broadcasting = true;
+
+        LiquidationConfig memory c = LiquidationConfig({
+            registry: vm.envAddress("REGISTRY_ADDRESS"),
+            liquidator: vm.envAddress("LIQUIDATOR_ADDRESS")
+        });
+        uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
+        uint256 ownerKey = vm.envUint("OWNER_PRIVATE_KEY");
+
+        vm.startBroadcast(govKey);
+        installTradesUpKeep(c);
+        vm.stopBroadcast();
+
+        vm.startBroadcast(ownerKey);
+        authoriseLiquidator(c);
+        vm.stopBroadcast();
     }
 
     /// @notice Migrates a deployed system from the vendored single-signer oracle to the
