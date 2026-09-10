@@ -13,33 +13,64 @@ type OrderRow = {
   leverage: number | null;
   status: string;
   requested_at: number;
+  resolved_at: number | null;
+  cancel_reason: string | null;
 };
 
-// GET /orders/:address -> pending (requested but not yet executed) orders.
+/** How far back a resolved order stays visible. Long enough that a trader who submitted
+ * an order and looked away still finds out what happened to it; short enough that this
+ * is a lifecycle view, not an unbounded history (that is what /positions/:address/history
+ * is for). */
+const RESOLVED_WINDOW_SECONDS = 3600;
+const MAX_ORDERS = 50;
+
+// GET /orders/:address -> pending orders, plus those resolved in the last hour.
+//
+// It used to be pending-only, and that made the order lifecycle unobservable from the
+// UI. Both consumers already render all three statuses — OrdersList has labels and a
+// cancel-reason column, OpenPositionForm has "Filled" and "Cancelled" branches — but an
+// order left the response the instant it stopped being pending, so those branches could
+// never be reached. The order-entry panel sat on "Nothing has happened yet" while the
+// position it had just opened was visible in the table underneath it. A trader could not
+// tell a fill from a cancellation from the panel that submitted it.
+//
+// `cancel_reason` is selected explicitly for the same reason: both consumers call
+// explainCancelReason() on it, and it was never in the payload at all.
+//
 // Note: 'open' orders don't carry collateral/leverage/buy at request time —
 // MarketOpenOrderInitiated doesn't emit the Trade payload, only
 // MarketOpenExecuted does (see src/handlers/trading.ts in the indexer). So
 // those fields are null for a still-pending open order, and only populated
 // for close/remove_collateral orders that recorded them directly.
-export const handleOrders: Handler = async (_req, params): Promise<RouteResult> => {
-  const trader = params.address.toLowerCase();
+/** Shared by the REST route and the WebSocket `orders:` channel, so a subscriber and a
+ * poller cannot disagree about which orders exist. */
+export async function resolveOrders(address: string): Promise<unknown[]> {
+  const trader = address.toLowerCase();
+  const cutoff = Math.floor(Date.now() / 1000) - RESOLVED_WINDOW_SECONDS;
   const rows = await query<OrderRow>(
-    `SELECT * FROM "order" WHERE trader = $1 AND status = 'pending' ORDER BY requested_at DESC`,
-    [trader],
+    `SELECT * FROM "order"
+      WHERE trader = $1
+        AND (status = 'pending' OR COALESCE(resolved_at, requested_at) >= $2)
+      ORDER BY requested_at DESC
+      LIMIT $3`,
+    [trader, cutoff, MAX_ORDERS],
   );
-  return {
-    code: 200,
-    body: rows.map((r) => ({
-      orderId: fmtId(r.order_id),
-      kind: r.kind,
-      pairIndex: r.pair_index,
-      tradeId: fmtId(r.trade_id),
-      index: r.index,
-      buy: r.buy,
-      collateral: collateral(r.collateral),
-      leverage: fmtLeverage(r.leverage),
-      status: r.status,
-      requestedAt: r.requested_at,
-    })),
-  };
+  return rows.map((r) => ({
+    orderId: fmtId(r.order_id),
+    kind: r.kind,
+    pairIndex: r.pair_index,
+    tradeId: fmtId(r.trade_id),
+    index: r.index,
+    buy: r.buy,
+    collateral: collateral(r.collateral),
+    leverage: fmtLeverage(r.leverage),
+    status: r.status,
+    requestedAt: r.requested_at,
+    resolvedAt: r.resolved_at,
+    cancelReason: r.cancel_reason,
+  }));
+}
+
+export const handleOrders: Handler = async (_req, params): Promise<RouteResult> => {
+  return { code: 200, body: await resolveOrders(params.address) };
 };
