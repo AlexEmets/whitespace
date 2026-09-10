@@ -136,6 +136,32 @@ describe('<OpenPositionForm>', () => {
     await waitFor(() => expect(claimFaucetMock).toHaveBeenCalled());
   });
 
+  /**
+   * The outcome banner describes one submitted order. Leaving it up while the trader
+   * composes the next one showed "Insufficient USDW balance", "Approve USDW" and
+   * "Filled — your position is now open." simultaneously, each about a different moment.
+   */
+  it('clears the previous order outcome as soon as the trader edits the next one', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+
+    // Any change to what would be submitted invalidates the banner.
+    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '150' } });
+    expect(screen.queryByTestId('order-pending-banner')).not.toBeInTheDocument();
+  });
+
+  it('clears the outcome when the side is flipped, not just when the size changes', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId('direction-short'));
+    expect(screen.queryByTestId('order-pending-banner')).not.toBeInTheDocument();
+  });
+
   it('hides the faucet when the wallet can already fund the order', () => {
     balanceState = 10_000_000_000n;
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);

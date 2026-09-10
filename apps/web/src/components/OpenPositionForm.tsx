@@ -121,6 +121,22 @@ export function OpenPositionForm({
 
   const orderValueRaw = collateralRaw !== null && collateralRaw > 0n ? (collateralRaw * leverageRaw) / 100n : 0n;
 
+  /**
+   * The outcome banner describes ONE submitted order, so it must not outlive the order it
+   * describes. Editing the size, flipping the side or switching market composes a new,
+   * unsubmitted order — and leaving "Filled — your position is now open." on screen while
+   * that happens tells the trader their pending edit has already executed.
+   *
+   * Seen exactly that: "Insufficient USDW balance", "Approve USDW" and "Filled — your
+   * position is now open." all visible at once, describing three different moments.
+   *
+   * Only settled phases are cleared. Wiping `submitting`/`approving`/`claiming` would
+   * discard the in-flight state of a transaction that is still running.
+   */
+  useEffect(() => {
+    setState((current) => (current.phase === 'submitted' || current.phase === 'error' ? { phase: 'idle' } : current));
+  }, [collateralInput, buy, leverageX, pairIndex, slippageBps]);
+
   const submittedOrder = state.phase === 'submitted' ? orders.find((o) => o.orderId === state.orderId) : undefined;
 
   // Evaluated at the current mark, because that is the price this order would open at —

@@ -208,6 +208,26 @@ select {
   margin-top: 2rem;
 }
 
+/* These are <Link>s, i.e. anchors. The global `a { color: inherit }` drops the colour but
+   not the underline, so both calls to action rendered as underlined text inside a box —
+   reading as links someone had boxed by accident rather than as buttons. */
+.btn-primary,
+.btn-secondary,
+.landing-cta a {
+  display: inline-block;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.88;
+}
+
+.btn-secondary:hover {
+  border-color: var(--fg-dim);
+  background: var(--bg-raised);
+}
+
 .btn-primary {
   background: var(--fg);
   color: var(--bg);

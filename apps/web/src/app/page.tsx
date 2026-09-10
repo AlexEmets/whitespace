@@ -47,9 +47,15 @@ export default function LandingPage() {
             <br />
             whole edge.
           </h1>
+          {/* The leverage figure comes from the same `/markets` read as the tile below.
+              It was the mockup's hardcoded "50×" while the tile said 100×, so the page
+              contradicted itself within one screen — and the invented number was the one
+              in the headline. With no market loaded the clause is dropped rather than
+              filled with a placeholder. */}
           <p>
-            Whitespace is a perpetuals exchange on Whitechain. Oracle-priced, 50× leverage, and an interface that
-            gets out of the way of the tape.
+            Whitespace is a perpetuals exchange on Whitechain. Oracle-priced
+            {maxLeverageRaw > 0n ? `, up to ${formatMoney(maxLeverageRaw, 2, { fractionDigits: 0, grouping: false })}× leverage,` : ','} and an
+            interface that gets out of the way of the tape.
           </p>
           <div className="cta-row">
             <Link href="/trade" className="btn-primary" data-testid="cta-start-trading">
@@ -88,11 +94,16 @@ export default function LandingPage() {
       <MarketsTable />
 
       <section className="landing-section">
-        <h2>Void Points, Season One</h2>
+        <h2>Void Points</h2>
+        {/* The mockup's copy described a live programme — weighting, fixed per-epoch
+            emissions, a publication schedule. None of that exists: there is no points
+            contract, no emission schedule and no snapshot, which is exactly what /points
+            says in full. Two pages of this app cannot describe the same programme in
+            incompatible tenses, and the page with the invented policy is the one to fix. */}
         <p style={{ color: 'var(--fg-muted)', maxWidth: '32em' }}>
-          Weighted by maker depth and time at risk, not raw churn. Emissions per epoch are fixed and published
-          before the epoch opens. <Link href="/points">See the points panel</Link> — live totals are not available
-          yet.
+          Not live yet. There is no points contract, no emission schedule and no snapshot — nothing traded today
+          carries a promised allocation. <Link href="/points">The points page</Link> shows the activity such a
+          programme would be computed from, drawn from your own trade history.
         </p>
       </section>
 
