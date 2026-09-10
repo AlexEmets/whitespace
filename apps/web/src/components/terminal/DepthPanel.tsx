@@ -75,7 +75,7 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
   const spread = (ladder.askRaw ?? 0n) - (ladder.bidRaw ?? 0n);
 
   return (
-    <div data-testid="depth-panel-ladder">
+    <div className={styles.ladder} data-testid="depth-panel-ladder">
       <div className={styles.cols}>
         <span>PRICE</span>
         <span className={styles.cell}>SIZE</span>
@@ -83,7 +83,7 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
       </div>
 
       <div className={styles.sideLabel}>OPEN LONG · fills at the oracle ask</div>
-      <div className={styles.side}>
+      <div className={`${styles.side} ${styles.sideAsk}`}>
         {rows.long.map((row) => (
           <Row key={`long-${row.notionalRaw}`} row={row} mark={mark} width={barWidth(row)} />
         ))}
@@ -101,14 +101,15 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
         </span>
       </div>
 
-      <div className={styles.side}>
+      <div className={`${styles.side} ${styles.sideBid}`}>
         {rows.short.map((row) => (
           <Row key={`short-${row.notionalRaw}`} row={row} mark={mark} width={barWidth(row)} />
         ))}
       </div>
       <div className={styles.sideLabel}>OPEN SHORT · fills at the oracle bid</div>
 
-      {ladder.staticOnly && (
+      <div className={styles.footNotes}>
+        {ladder.staticOnly && (
         <p className={styles.caveat} data-testid="depth-panel-static-note">
           Flat across size by design: this pair has no dynamic spread configured on-chain
           (<code>priceImpactK = 0</code>), so the contract fills every size at the oracle ask or bid. Your fill
@@ -119,6 +120,7 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
         IMPACT is the fill&apos;s distance from the mark in basis points: <strong>+</strong> is worse for your
         side, <strong>−</strong> better.
       </p>
+      </div>
     </div>
   );
 }

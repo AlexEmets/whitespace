@@ -91,24 +91,30 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}
       </td>
       <td>
-        <input
-          type="number"
-          min={1}
-          max={100}
-          value={closePercent}
-          data-testid="close-percent-input"
-          onChange={(e) => setClosePercent(Number(e.target.value))}
-          style={{ width: '3.5rem' }}
-        />
-        %
-        <button
-          type="button"
-          data-testid="close-position-button"
-          disabled={!price || isPending || status === 'submitting'}
-          onClick={() => handleClose(closePercent)}
-        >
-          {status === 'submitting' ? 'Closing…' : 'Close'}
-        </button>
+        {/* One control, not three loose ones: the percentage and the action that consumes
+            it belong together, and a bare number input beside a default button read as
+            debug affordances rather than a way to exit a leveraged position. */}
+        <div className="close-control">
+          <label className="close-percent">
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={closePercent}
+              data-testid="close-percent-input"
+              onChange={(e) => setClosePercent(Number(e.target.value))}
+            />
+            <span aria-hidden="true">%</span>
+          </label>
+          <button
+            type="button"
+            data-testid="close-position-button"
+            disabled={!price || isPending || status === 'submitting'}
+            onClick={() => handleClose(closePercent)}
+          >
+            {status === 'submitting' ? 'Closing…' : 'Close'}
+          </button>
+        </div>
         {status === 'submitted' ? (
           <span data-testid="close-pending" role="status">
             {' '}

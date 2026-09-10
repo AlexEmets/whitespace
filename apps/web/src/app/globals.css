@@ -737,11 +737,19 @@ table.markets-table td {
 
 /* ---------- Depth ladder / empty state panel ---------- */
 
+/* Full height, like a real book. The ladder used to sit at the top of its grid column
+   with the rest of the column empty below the notes — the panel read as unfinished
+   rather than as a market with this much depth in it. Flex column + growing sides press
+   the asks down onto the mid price and let the bids run from it, which is the shape the
+   eye expects, and pins the explanatory notes to the bottom. */
 .depth-panel {
   border-left: 1px solid var(--border);
   padding: 0.75rem;
   font-size: 0.72rem;
   color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .depth-panel .empty-state {
@@ -956,4 +964,94 @@ table.data-table td {
   color: var(--fg-dim);
   font-size: 0.66rem;
   line-height: 1.5;
+}
+
+/* ---------- Close control (positions table) ----------
+   The percentage and the button that acts on it are one control. Previously a bare
+   number input with an inline width, a stray "%" text node and a default button sat
+   loose in the cell — three unrelated-looking widgets for what is a single decision. */
+.close-control {
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.close-control .close-percent {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.35rem 0 0.5rem;
+  gap: 0.1rem;
+  color: var(--fg-muted);
+  font-size: 0.68rem;
+}
+
+.close-control .close-percent input {
+  width: 2.4rem;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-align: right;
+  padding: 0;
+}
+
+/* The spinners are noise at this size and push the digits off-centre. */
+.close-control .close-percent input::-webkit-outer-spin-button,
+.close-control .close-percent input::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+.close-control .close-percent input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.close-control button {
+  border: none;
+  border-left: 1px solid var(--border);
+  background: transparent;
+  color: var(--short);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  padding: 0 0.7rem;
+  cursor: pointer;
+}
+
+.close-control button:hover:not(:disabled) {
+  background: var(--short-dim);
+}
+
+.close-control button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+/* ---------- Order-panel secondary actions ----------
+   Approve is a required step before the real action, and the faucet is a way out of an
+   empty wallet. Both were flat grey slabs indistinguishable from a disabled control.
+   They now read as deliberate secondary actions: outlined, tinted, and clearly live. */
+.submit-row button:not(.long):not(.short):not(:disabled) {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.submit-row button:not(.long):not(.short):not(:disabled):hover {
+  background: rgba(91, 123, 255, 0.12);
+}
+
+.faucet-row button:not(:disabled) {
+  border-color: var(--long);
+  color: var(--long);
+  background: transparent;
+}
+
+.faucet-row button:not(:disabled):hover {
+  background: var(--long-dim);
 }

@@ -176,3 +176,43 @@
   overflow-wrap: anywhere;
   color: var(--fg-muted);
 }
+
+/* --- Full-height layout ---
+   The two sides share whatever vertical room the column has, so the ladder fills the
+   panel instead of clustering at the top. Asks are bottom-aligned and bids top-aligned,
+   which puts the mid price in the middle where a book's spread belongs. */
+.ladder {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Both halves share the spare height equally, which is what keeps the mid price in the
+   middle of the panel rather than wherever the row count happens to put it.
+   Classed explicitly, NOT via :first-of-type — that pseudo-class selects by element type,
+   and since every child here is a div it matched the column header instead of a side,
+   silently applying to neither. */
+.ladder .sideAsk,
+.ladder .sideBid {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The ROWS grow, not just their container.
+   Pinning six rows to the edge of a tall half only moves the void from one end to the
+   other — the panel is far taller than six natural-height rows. Letting each row take an
+   equal share fills the column evenly, keeps the mid price centred, and has the pleasant
+   side effect of making the depth bars tall enough to actually read as depth. */
+.ladder .sideAsk .row,
+.ladder .sideBid .row {
+  flex: 1;
+  align-items: center;
+  min-height: 0;
+}
+
+/* The sides already absorb the spare height, so the notes need no auto margin — adding
+   one made them compete for the same space and tore a gap under the last bid. */
+.footNotes {
+  padding-top: 0.6rem;
+}
