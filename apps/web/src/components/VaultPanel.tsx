@@ -22,6 +22,7 @@ export function VaultPanel() {
   const [pendingSettlementId, setPendingSettlementId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [faucetPending, setFaucetPending] = useState(false);
 
   const depositStatus = vault.useDepositStatus(pendingSettlementId);
 
@@ -37,12 +38,16 @@ export function VaultPanel() {
 
   async function handleFaucet() {
     setError(null);
+    setMessage(null);
+    setFaucetPending(true);
     try {
       await erc20.claimFaucet();
       await erc20.refetchBalance();
       setMessage('Testnet USDW claimed from the faucet.');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFaucetPending(false);
     }
   }
 
@@ -88,8 +93,13 @@ export function VaultPanel() {
   return (
     <div className="vault-panel" data-testid="vault-panel">
       <div data-testid="vault-usdw-balance">Wallet balance: {formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</div>
-      <button type="button" data-testid="faucet-button" onClick={handleFaucet}>
-        Get testnet USDW
+      {/* The pending state is not decoration. `claimFaucet` waits for its receipt (so the
+          balance it then refetches is the post-mint one), which on this chain is several
+          seconds of a button that used to look completely inert — indistinguishable from a
+          click that never registered, and the reason a claim that silently never reached
+          the wallet looked identical to one that did. */}
+      <button type="button" data-testid="faucet-button" onClick={handleFaucet} disabled={faucetPending}>
+        {faucetPending ? 'Claiming… confirm in your wallet' : 'Get testnet USDW'}
       </button>
 
       <label>

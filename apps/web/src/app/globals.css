@@ -866,3 +866,85 @@ table.data-table td {
 .terminal-tabs .tab-bar button.active .tab-count {
   color: var(--fg-muted);
 }
+
+/* ---------- LP vault panel ----------
+   This had no styling at all, which is why its controls flowed inline and the faucet
+   button sat on top of the deposit label. Everything here is layout only, reusing the
+   same tokens and control shapes as the order-entry panel so the two read as one product. */
+.vault-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel, var(--bg-raised));
+  padding: 1rem;
+  font-size: 0.78rem;
+}
+
+.vault-panel [data-testid='vault-usdw-balance'] {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+}
+
+.vault-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.vault-panel input {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.vault-panel button {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.vault-panel button:hover:not(:disabled) {
+  border-color: var(--fg-dim);
+}
+
+.vault-panel button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+/* The deposit action is the panel's primary control; the faucet next to it is a way out
+   of an empty wallet, not the thing the page is for. */
+.vault-panel [data-testid='request-deposit-button']:not(:disabled) {
+  background: var(--long);
+  border-color: var(--long);
+  color: #04241a;
+}
+
+.vault-panel [data-testid='deposit-settlement-status'] {
+  border-top: 1px solid var(--border);
+  padding-top: 0.7rem;
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
+.vault-panel [data-testid='vault-message'] {
+  color: var(--long);
+  line-height: 1.5;
+}
