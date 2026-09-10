@@ -8,7 +8,7 @@ import { TerminalTabs } from '@/components/terminal/TerminalTabs';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import { PriceChart } from '@/components/PriceChart';
 import { useMarkets } from '@/hooks/useMarkets';
-import { parseRawUnits } from '@/lib/money';
+import { leverageToRaw } from '@/lib/money';
 
 /** The trading terminal — layout follows terminal_design.pdf: markets rail, centre
  * chart + tabbed positions/orders/fills/funding table, an honest depth panel (see
@@ -24,7 +24,7 @@ export default function TradePage() {
   }, [markets, pairIndex]);
 
   const market = markets.find((m) => m.pairIndex === pairIndex);
-  const maxLeverage = market ? parseRawUnits(market.maxLeverage) : 0n;
+  const maxLeverage = market ? leverageToRaw(market.maxLeverage) : 0n;
 
   return (
     <div className="terminal-grid">
@@ -36,10 +36,12 @@ export default function TradePage() {
         <TerminalTabs />
       </div>
 
-      <DepthPanel />
+      {/* The ladder quotes fill prices for the market the trader is actually looking at,
+          so it follows the rail's selection rather than defaulting to the first market. */}
+      <DepthPanel pairIndex={pairIndex ?? undefined} />
 
       <div className="terminal-right">
-        <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} />
+        <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} market={market} />
       </div>
     </div>
   );

@@ -13,7 +13,25 @@
   --short-dim: rgba(255, 92, 92, 0.12);
   --warning: #e0a730;
   --accent: #5b7bff;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  /* `--font-jetbrains-mono` is defined by next/font in src/app/layout.tsx (self-hosted,
+     metric-matched fallback included). It is listed ahead of — not instead of — the
+     original stack, so the page still renders in a real monospace if the font asset is
+     unavailable. The inner var() fallback matters: without it, rendering a component
+     outside the root layout (unit tests, Storybook-style harnesses) would leave the
+     custom property invalid and drop the entire family declaration, not just this entry. */
+  --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Courier New', monospace;
+
+  /* Landing hero art (landing_design.pdf): the brand sphere is drawn purely with radial
+     gradients, so its two body tones, its diffuse top-left highlight and the ambient
+     bloom live here with the rest of the palette instead of being inlined in the
+     gradients. `--hero-grid`/`--hero-dot` are the ruled backdrop behind it. */
+  --sphere-lit: #1a1f4a;
+  --sphere-shadow: #0d0f28;
+  --sphere-highlight: rgba(140, 158, 235, 0.3);
+  --sphere-bloom: rgba(91, 123, 255, 0.16);
+  --hero-grid: rgba(232, 234, 237, 0.035);
+  --hero-dot: rgba(232, 234, 237, 0.28);
 }
 
 * {
@@ -210,33 +228,74 @@ select {
   font-size: 0.8rem;
 }
 
+/* The hero art is three paint-only layers on one element — ruled backdrop (::before),
+   sphere (.sphere), scattered dots (::after) — so it ships no image asset, nothing to
+   re-export when the palette moves, and no DOM beyond the single .sphere node. The
+   absolutely-positioned pseudo-elements would otherwise both paint above the static
+   .sphere, hence the explicit z-index ladder. */
 .landing-hero .brand-render {
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  background: radial-gradient(circle at 45% 40%, #2a3564 0%, #101322 55%, #08090b 80%);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Faint grid the sphere sits on. One repeating gradient per axis at a 68px cell; masked
+   to fade out toward the panel edges so it reads as texture, not as a table. */
+.landing-hero .brand-render::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--hero-grid) 0 1px, transparent 1px 68px),
+    repeating-linear-gradient(to bottom, var(--hero-grid) 0 1px, transparent 1px 68px);
+  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%);
+  mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%);
 }
 
 .landing-hero .brand-render .sphere {
+  position: relative;
+  z-index: 1;
   width: 260px;
   height: 260px;
   border-radius: 50%;
-  border: 1px solid #2a3050;
+  /* Body shading and highlight share the same 34%/28% light origin so the terminator
+     falls where the mockup puts it; the highlight stop is wider and softer than the body
+     gradient, which is what makes it read as a diffuse sheen rather than a specular dot. */
+  background:
+    radial-gradient(circle at 34% 28%, var(--sphere-highlight) 0%, transparent 58%),
+    radial-gradient(circle at 34% 28%, var(--sphere-lit) 0%, var(--sphere-shadow) 72%);
+  /* Inset rim keeps the shadow side of the sphere separated from the near-black panel;
+     the outer shadow is the ambient bloom around it. */
+  box-shadow:
+    inset 0 0 0 1px var(--sphere-bloom),
+    0 0 90px 12px var(--sphere-bloom);
 }
 
-.landing-hero .brand-render span {
+/* The scattered dots, one single-stop radial gradient each at a fixed position. Above the
+   sphere on purpose — the mockup has one dot falling across its face. */
+.landing-hero .brand-render::after {
+  content: '';
   position: absolute;
-  bottom: 1.5rem;
-  left: 1.5rem;
-  color: var(--fg-dim);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
+  inset: 0;
+  z-index: 2;
+  background-image:
+    radial-gradient(circle at 18% 20%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 72% 28%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 44% 58%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 86% 68%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 30% 80%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 62% 89%, var(--hero-dot) 0 1.5px, transparent 1.5px);
 }
 
+/* Two tiles, not the mockup's three: REFERRAL SHARE was cut from scope, and a tile row
+   that spans the viewport should divide by the tiles that actually exist. */
 .stat-tiles {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   border-bottom: 1px solid var(--border);
 }
 
@@ -362,9 +421,12 @@ table.markets-table td {
   background: var(--bg-raised);
 }
 
+/* Symbol and price share the first line, so the symbol is no longer a block of its own —
+   it sits at full contrast against the muted price, which is how the rail reads as a list
+   of markets rather than a list of numbers. */
 .terminal-rail .rail-row .symbol {
-  display: block;
   font-size: 0.78rem;
+  color: var(--fg);
 }
 
 .terminal-rail .rail-row .price-line {
@@ -373,6 +435,14 @@ table.markets-table td {
   font-size: 0.72rem;
   color: var(--fg-muted);
   margin-top: 0.15rem;
+}
+
+/* Second line: 24h volume and 24h change. Dimmer and smaller than the price line — it is
+   context for choosing a market, not something to read a value off. */
+.terminal-rail .rail-row .price-line.meta {
+  font-size: 0.66rem;
+  color: var(--fg-dim);
+  margin-top: 0.2rem;
 }
 
 .terminal-center {
@@ -745,4 +815,54 @@ table.data-table td {
 .stub-page h1 {
   color: var(--fg);
   font-weight: 500;
+}
+
+/* ---------- Faucet ----------
+   Shown only when the connected wallet cannot fund the order in front of it. Deliberately
+   quieter than the submit button — it is a way out of a dead end, not the action the
+   terminal wants you to take. */
+.faucet-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.faucet-row button {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.faucet-row button:hover:not(:disabled) {
+  border-color: var(--fg-dim);
+}
+
+.faucet-row button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+.faucet-note {
+  font-size: 0.65rem;
+  color: var(--fg-dim);
+  line-height: 1.4;
+}
+
+/* Count badge in the terminal's tab bar ("Positions · 2"). Dim on an inactive tab so the
+   number reads as a hint rather than competing with the selected tab's label. */
+.terminal-tabs .tab-bar button .tab-count {
+  color: var(--fg-dim);
+  margin-left: 0.25rem;
+}
+
+.terminal-tabs .tab-bar button.active .tab-count {
+  color: var(--fg-muted);
 }

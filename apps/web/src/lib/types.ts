@@ -81,9 +81,22 @@ export interface OrderSummary {
 export interface PriceResponse {
   index: string;
   mark: string;
+  /** The two-sided quote behind the index, human decimals like every other money field.
+   * Null on the chain fallback — a settled report is one price, not a book — and null
+   * whenever the publisher has no two-sided aggregate. Never substitute `mark`: "no
+   * spread" and "spread unknown" price a fill differently. */
+  bid: string | null;
+  ask: string | null;
   updatedAt: number;
-  healthyVenues: number;
-  degraded: boolean;
+  /** NAMES of the currently healthy venues (`["bybit","okx"]`), not a count — that is what
+   * `/price/:pairIndex` has always sent. This was typed as `number` and every consumer
+   * believed it; DegradedBanner rendered the array where it meant to print a tally. Null
+   * on the chain fallback, which carries no venue health at all. */
+  healthyVenues: string[] | null;
+  degraded: boolean | null;
+  /** Which source answered. `chain` means the price is the last settled report and is
+   * frozen until someone trades — the caller should treat it as stale, not live. */
+  source: 'publisher' | 'chain';
 }
 
 export type WsMessage =

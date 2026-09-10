@@ -10,17 +10,29 @@ const openPosition: PositionSummary = {
   pairIndex: 0,
   index: 0,
   buy: true,
-  collateral: '1000000000', // 1,000.00 USDW
-  leverage: '1000', // 10.00x
-  openPrice: '100000000000000000000', // 100.00
+  // Human decimals, exactly as /positions/:address emits them (services/api format.ts).
+  collateral: '1000.000000', // 1,000.00 USDW
+  leverage: '10.00', // 10.00x
+  openPrice: '100.000000000000000000', // 100.00
   tp: '0',
   sl: '0',
   openedAt: 0,
   tradeId: '7',
 };
 
+/** Raw PRECISION_18 liquidation price the mocked contract read returns: 90,909.09…, i.e.
+ * roughly a 10% adverse move on a 10x long opened at 100.00 in these fixtures. The exact
+ * figure is the contract's to decide — this suite only asserts the component renders what
+ * the chain returned rather than computing anything itself. */
+const LIQ_PRICE_RAW = 90909090909090909090n;
+
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
+  // PositionsList reads the liquidation price straight off OstiumPairInfos via
+  // useLiquidationPrice. Mocked at the wagmi boundary rather than at the hook, so the
+  // hook's own arg-gating (it must not fire with a zero price/collateral/leverage) still
+  // runs under test.
+  useReadContract: () => ({ data: LIQ_PRICE_RAW, isLoading: false }),
 }));
 
 vi.mock('@/hooks/usePositions', () => ({
@@ -29,7 +41,9 @@ vi.mock('@/hooks/usePositions', () => ({
 
 vi.mock('@/hooks/useMarkets', () => ({
   useMarkets: () => ({
-    markets: [{ pairIndex: 0, from: 'BTC', to: 'USD', feedId: '0x0', maxLeverage: '10000', maxOpenInterest: '0', openInterest: { long: '0', short: '0' } }],
+    // maxLeverage is PRECISION_2 on-chain but reaches us as /markets' human decimal:
+    // "100.00" is 100x, not the raw 10000.
+    markets: [{ pairIndex: 0, from: 'BTC', to: 'USD', feedId: '0x0', maxLeverage: '100.00', maxOpenInterest: '0.000000', openInterest: { long: '0.000000', short: '0.000000' } }],
     loading: false,
     error: null,
   }),
@@ -38,7 +52,7 @@ vi.mock('@/hooks/useMarkets', () => ({
 vi.mock('@/hooks/usePrice', () => ({
   // Mark price +10% vs the 100.00 open price above.
   usePrice: () => ({
-    data: { mark: '110000000000000000000', index: '110000000000000000000', degraded: false, healthyVenues: 4, updatedAt: 0 },
+    data: { mark: '110.000000000000000000', index: '110.000000000000000000', degraded: false, healthyVenues: 4, updatedAt: 0 },
     error: null,
     loading: false,
     refetch: vi.fn(),
@@ -55,6 +69,14 @@ beforeEach(() => {
 });
 
 describe('<PositionsList>', () => {
+  it('shows the liquidation price the contract returned, not a dash and not its own arithmetic', () => {
+    render(<PositionsList />);
+    // 90909090909090909090n at 18 decimals. Previously this cell was hardcoded to an
+    // em-dash with "requires on-chain state this app does not read" — the state was always
+    // readable; the app simply was not reading it.
+    expect(screen.getByTestId('liq-price')).toHaveTextContent('90.91');
+  });
+
   it('shows the exact estimated unrealised PnL for a 10x long, +10% price move', () => {
     render(<PositionsList />);
     // notional = 1,000 * 10x = 10,000; +10% price move * 10x leverage = +100% of

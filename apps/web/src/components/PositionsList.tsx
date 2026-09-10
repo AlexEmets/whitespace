@@ -7,11 +7,13 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
-import { formatLeverage, formatMoney, parseRawUnits } from '@/lib/money';
+import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
+import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, priceToRaw } from '@/lib/money';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
 
 function PositionRow({ position, market }: { position: PositionSummary; market: MarketSummary | undefined }) {
+  const { address } = useAccount();
   const { data: price } = usePrice(position.pairIndex);
   const { closeTrade, isPending } = useCloseTrade();
   const [closePercent, setClosePercent] = useState(100);
@@ -35,6 +37,20 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   });
   const signedSize = position.buy ? sizeBase : -sizeBase;
 
+  const liqPrice = useLiquidationPrice({
+    trader: address,
+    pairIndex: position.pairIndex,
+    index: position.index,
+    openPriceRaw: priceToRaw(position.openPrice),
+    long: position.buy,
+    collateralRaw: collateralToRaw(position.collateral),
+    leverageRaw: leverageToRaw(position.leverage),
+    // The pair's cap, not this trade's leverage — it is what the contract's liquidation
+    // margin scales against. Zero while /markets is still loading, which keeps the read
+    // disabled rather than firing with a wrong bound.
+    maxLeverageRaw: market ? leverageToRaw(market.maxLeverage) : 0n,
+  });
+
   async function handleClose(percent: number) {
     if (!price) return;
     setStatus('submitting');
@@ -44,7 +60,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         pairIndex: position.pairIndex,
         index: position.index,
         closePercentage: percent === 100 ? FULL_CLOSE_PERCENT : Math.round((percent / 100) * FULL_CLOSE_PERCENT),
-        marketPriceRaw: parseRawUnits(price.mark),
+        marketPriceRaw: priceToRaw(price.mark),
         slippageBps: DEFAULT_SLIPPAGE_BPS,
       });
       setStatus('submitted');
@@ -65,8 +81,11 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         {formatMoney(position.openPrice, PRICE_DECIMALS_NUM)}
       </td>
       <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</td>
-      <td className="dash" data-testid="liq-price" title="Not available: requires on-chain funding/rollover state this app does not currently read">
-        —
+      {/* Read from the contract for THIS trade slot, so it includes the funding and
+          rollover this position has actually accrued — see hooks/useLiquidationPrice.ts
+          for why the order form uses a different function for its estimate. */}
+      <td className={liqPrice !== null ? 'neg' : 'dash'} data-testid="liq-price">
+        {liqPrice !== null ? formatMoney(liqPrice, PRICE_DECIMALS_NUM) : '—'}
       </td>
       <td data-testid="unrealized-pnl" className={pnl !== null && pnl >= 0n ? 'pos' : 'neg'}>
         {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}

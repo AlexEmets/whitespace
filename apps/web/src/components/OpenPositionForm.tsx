@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useErc20 } from '@/hooks/useErc20';
+import { useEstimatedLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
 import { useOpenTrade } from '@/hooks/useOpenTrade';
 import { useOrders } from '@/hooks/useOrders';
@@ -16,12 +17,15 @@ import {
   PRICE_DECIMALS_NUM,
 } from '@/lib/config';
 import { TRADING_ADDRESS } from '@/lib/deployment';
-import { formatBps, formatMoney, parseHumanDecimal, parseRawUnits } from '@/lib/money';
+import { formatBps, formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
+import { estimatePositionSizeBase } from '@/lib/pnl';
+import type { MarketSummary } from '@/lib/types';
 
 const QUICK_FILL_FRACTIONS = [25, 50, 75, 100] as const;
 
 type SubmitState =
   | { phase: 'idle' }
+  | { phase: 'claiming' }
   | { phase: 'approving' }
   | { phase: 'submitting' }
   | { phase: 'submitted'; orderId: string }
@@ -41,7 +45,18 @@ type SubmitState =
  *    placeholder number.
  *  - Fee maker/taker is a real on-chain read (useMarketFees), not the mockup's numbers.
  */
-export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number | null; maxLeverage: bigint }) {
+export function OpenPositionForm({
+  pairIndex,
+  maxLeverage,
+  market,
+}: {
+  pairIndex: number | null;
+  maxLeverage: bigint;
+  /** Optional: only used to name the base asset in the derived size readout. Passed down
+   * from the page rather than re-fetched here, so this component keeps its single data
+   * dependency on the price feed. */
+  market?: MarketSummary;
+}) {
   const { address, isConnected } = useAccount();
   const { data: price } = usePrice(pairIndex);
   const erc20 = useErc20(TRADING_ADDRESS);
@@ -93,6 +108,31 @@ export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number
 
   const submittedOrder = state.phase === 'submitted' ? orders.find((o) => o.orderId === state.orderId) : undefined;
 
+  // Evaluated at the current mark, because that is the price this order would open at —
+  // the contract's own liquidation formula, not a copy of it. Null until there is a
+  // price, a collateral amount and a leverage to feed it.
+  const estLiqPrice = useEstimatedLiquidationPrice({
+    openPriceRaw: price ? priceToRaw(price.mark) : 0n,
+    long: buy,
+    collateralRaw: collateralRaw ?? 0n,
+    leverageRaw,
+    maxLeverageRaw: maxLeverage,
+  });
+
+  // The faucet is offered whenever the connected wallet cannot fund the order it is
+  // looking at — including the very common "connected with 0.00 USDW" case, where
+  // without this the terminal is a dead end: every control works and nothing can be
+  // submitted, with no route to collateral anywhere in the product. USDW.claim() is a
+  // testnet mint on the mock collateral token (contracts/src/mocks/USDW.sol).
+  const needsFunds = isConnected && (erc20.balance === 0n || insufficientBalance);
+
+  // Base-asset quantity this order works out to at the current reference price. Display
+  // only — the contract is never handed a size (see the readout's comment below).
+  const sizeBase =
+    price && collateralRaw !== null && collateralRaw > 0n
+      ? estimatePositionSizeBase({ collateral: collateralRaw, leverage: leverageRaw, openPrice: priceToRaw(price.mark) })
+      : 0n;
+
   const canSubmit =
     isConnected &&
     pairIndex !== null &&
@@ -110,6 +150,18 @@ export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number
   function setCollateralFraction(pct: number) {
     const amount = (erc20.balance * BigInt(pct)) / 100n;
     setCollateralInput(formatMoney(amount, COLLATERAL_DECIMALS, { grouping: false }));
+  }
+
+  async function handleClaim() {
+    setState({ phase: 'claiming' });
+    try {
+      await erc20.claimFaucet();
+      // claimFaucet waits for its receipt, so this refetch reads post-mint state.
+      await erc20.refetchBalance();
+      setState({ phase: 'idle' });
+    } catch (err) {
+      setState({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
+    }
   }
 
   async function handleApprove() {
@@ -134,7 +186,7 @@ export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number
         buy,
         collateralRaw,
         leverageRaw,
-        wantedPriceRaw: parseRawUnits(price.mark),
+        wantedPriceRaw: priceToRaw(price.mark),
         slippageBps,
       });
       setState({ phase: 'submitted', orderId: orderId !== undefined ? orderId.toString() : '' });
@@ -263,6 +315,15 @@ export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number
       {leverageTooHigh ? <p className="error-text">Leverage exceeds this market&apos;s maximum.</p> : null}
       {insufficientBalance ? <p className="error-text">Insufficient USDW balance.</p> : null}
 
+      {needsFunds ? (
+        <div className="faucet-row" data-testid="faucet-row">
+          <button type="button" data-testid="faucet-button" onClick={handleClaim} disabled={state.phase === 'claiming'}>
+            {state.phase === 'claiming' ? 'Claiming…' : 'Get testnet USDW'}
+          </button>
+          <span className="faucet-note">Testnet collateral, minted to your wallet. Not real value.</span>
+        </div>
+      ) : null}
+
       <div className="submit-row">
         {needsApproval ? (
           <button type="button" data-testid="approve-button" onClick={handleApprove} disabled={state.phase === 'approving'}>
@@ -287,9 +348,23 @@ export function OpenPositionForm({ pairIndex, maxLeverage }: { pairIndex: number
           </span>
         </div>
         <div className="row">
+          {/* The mockup's order panel leads with a SIZE field in the base asset. This
+              contract does not take one — `openTrade` takes collateral and leverage, and
+              the base-asset quantity is a consequence of those and the fill price. So it
+              is shown as a derived readout rather than an input, and marked "≈" because
+              the real fill price is the keeper's signed report, not this reference price. */}
+          <span>Position size</span>
+          <span data-testid="position-size">
+            {sizeBase > 0n && market ? `≈ ${formatMoney(sizeBase, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false })} ${market.from}` : '—'}
+          </span>
+        </div>
+        <div className="row">
           <span>Est. liq. price</span>
-          <span className="dash" data-testid="est-liq-price" title="Not available: requires on-chain funding/rollover state this app does not currently read">
-            —
+          {/* A real contract read (getTradeLiquidationPricePure at rollover=funding=0 —
+              see hooks/useLiquidationPrice.ts), not a formula reimplemented here. Still a
+              dash until there is a price, a size and a leverage to evaluate it at. */}
+          <span className={estLiqPrice !== null ? 'neg' : 'dash'} data-testid="est-liq-price">
+            {estLiqPrice !== null ? formatMoney(estLiqPrice, PRICE_DECIMALS_NUM) : '—'}
           </span>
         </div>
         <div className="row">

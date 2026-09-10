@@ -62,8 +62,32 @@ export const ERC20_ABI = parseAbi([
 // `pairOracleFee` (PRECISION_6 USDC, flat fee per order). Real reads, used instead of
 // the mockup's fee figures per the phase-5 design-honesty ruling: "show fees sourced
 // from chain/API, not the mockup's numbers."
+// Liquidation price comes from the contract, in two shapes, because the two questions the
+// UI asks are genuinely different:
+//
+//   getTradeLiquidationPrice     — for a position that EXISTS. It reads that trade's stored
+//                                  funding accumulator (`tradeInitialAccFees[trader][pair]
+//                                  [index]`) and its accrued rollover, so it is only
+//                                  meaningful for a real (trader, pairIndex, index) slot.
+//                                  This is the Liq. column in the positions table.
+//   getTradeLiquidationPricePure — takes rollover and funding as ARGUMENTS instead of
+//                                  reading them. A trade that does not exist yet has
+//                                  accrued neither, so passing 0/0 is exactly right for the
+//                                  order form's "if I opened this now" estimate — and it
+//                                  means the estimate is still the contract's own formula
+//                                  rather than a reimplementation of it here.
+//
+// Both are `view` in OstiumPairInfos.sol (:775 and :806) even though other members of
+// IOstiumPairInfos are not, so both are safe reads.
 export const PAIR_INFOS_ABI = parseAbi([
-  'function pairOpeningFees(uint16 pairIndex) returns (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilizationThresholdP, uint16 makerMaxLeverage, uint8 vaultFeePercent)',
+  // `view`, though IOstiumPairInfos.sol declares it without the modifier — it is the
+  // auto-generated getter for `mapping(uint16 => PairOpeningFees) public pairOpeningFees`
+  // (OstiumPairInfos.sol:54), which is always view. Copying the interface's omission made
+  // wagmi's useReadContract reject the whole ABI's read surface the moment a genuinely
+  // `view` entry was added alongside it.
+  'function pairOpeningFees(uint16 pairIndex) view returns (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilizationThresholdP, uint16 makerMaxLeverage, uint8 vaultFeePercent)',
+  'function getTradeLiquidationPrice(address trader, uint16 pairIndex, uint8 index, uint256 openPrice, bool long, uint256 collateral, uint32 leverage, uint32 maxLeverage) view returns (uint256)',
+  'function getTradeLiquidationPricePure(uint256 openPrice, bool long, uint256 collateral, uint32 leverage, int256 rolloverFee, int256 fundingFee, uint32 maxLeverage) view returns (uint256)',
 ]);
 
 export const PAIRS_STORAGE_ABI = parseAbi(['function pairOracleFee(uint16 pairIndex) view returns (uint64)']);
