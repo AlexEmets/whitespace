@@ -3,6 +3,7 @@
 import { usePublicClient, useWriteContract } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
+import { confirmTx } from '@/lib/tx';
 
 /** PRECISION_2 percent, PERCENT_BASE per contracts/src/vendor/ostium/OstiumTrading.sol:28. */
 export const FULL_CLOSE_PERCENT = 10000;
@@ -37,7 +38,7 @@ export function useCloseTrade() {
       args: [params.pairIndex, params.index, params.closePercentage, params.marketPriceRaw, Number(params.slippageBps)],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await confirmTx(publicClient, hash, 'close the position');
     return { hash, receipt };
   }
 

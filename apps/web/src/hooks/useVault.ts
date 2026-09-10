@@ -3,6 +3,7 @@
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
 import { VAULT_ABI, VAULT_REQUEST_STATUS, type VaultRequestStatus } from '@/lib/abi';
 import { VAULT_ADDRESS } from '@/lib/deployment';
+import { confirmTx } from '@/lib/tx';
 
 /**
  * LP deposit/withdraw flow (design: "Deposit/withdraw USDW to the vault (LP flow) —
@@ -32,7 +33,7 @@ export function useVault() {
       functionName: 'requestDeposit',
       args: [assetsRaw],
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    await confirmTx(publicClient, hash, 'complete the vault operation');
     return { hash, settlementId: Number(settlementId) };
   }
 
@@ -43,7 +44,7 @@ export function useVault() {
       functionName: 'claimDeposit',
       args: [settlementId],
     });
-    await publicClient?.waitForTransactionReceipt({ hash });
+    if (publicClient) await confirmTx(publicClient, hash, 'complete the vault operation');
     return hash;
   }
 
@@ -61,7 +62,7 @@ export function useVault() {
       functionName: 'requestWithdraw',
       args: [sharesRaw],
     });
-    await publicClient.waitForTransactionReceipt({ hash });
+    await confirmTx(publicClient, hash, 'complete the vault operation');
     return { hash, settlementId: Number(settlementId) };
   }
 
@@ -72,7 +73,7 @@ export function useVault() {
       functionName: 'claimWithdraw',
       args: [settlementId],
     });
-    await publicClient?.waitForTransactionReceipt({ hash });
+    if (publicClient) await confirmTx(publicClient, hash, 'complete the vault operation');
     return hash;
   }
 

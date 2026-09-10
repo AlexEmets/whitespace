@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import type { OpenTradeParams } from '@/hooks/useOpenTrade';
+import { TRADING_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 
 const openTradeMock = vi.fn(async (_params: OpenTradeParams) => ({ hash: '0xabc' as const, receipt: {}, orderId: 42n }));
 const approveMock = vi.fn(async () => {});
@@ -40,16 +41,22 @@ vi.mock('@/hooks/usePrice', () => ({
   usePrice: () => ({ data: priceState, error: null, loading: false, refetch: vi.fn() }),
 }));
 
+/** Records which contract the form asks for an allowance against — see the spender test. */
+const erc20Spenders: string[] = [];
+
 vi.mock('@/hooks/useErc20', () => ({
-  useErc20: () => ({
-    balance: balanceState,
-    allowance: allowanceState,
-    refetchBalance: vi.fn(async () => {}),
-    refetchAllowance: refetchAllowanceMock,
-    approve: approveMock,
-    claimFaucet: claimFaucetMock,
-    isWritePending: false,
-  }),
+  useErc20: (spender: string) => {
+    erc20Spenders.push(spender);
+    return {
+      balance: balanceState,
+      allowance: allowanceState,
+      refetchBalance: vi.fn(async () => {}),
+      refetchAllowance: refetchAllowanceMock,
+      approve: approveMock,
+      claimFaucet: claimFaucetMock,
+      isWritePending: false,
+    };
+  },
 }));
 
 vi.mock('@/hooks/useMarketFees', () => ({
@@ -86,6 +93,23 @@ describe('<OpenPositionForm>', () => {
     expect(screen.getByTestId('reference-price')).toHaveValue('65,001.00');
     // Default slippage is 50 bps = 0.50% — tight, and displayed, not hidden in a panel.
     expect(screen.getByTestId('slippage-value')).toHaveTextContent('0.50%');
+  });
+
+  /**
+   * `OstiumTrading.openTrade` does not move the collateral — `OstiumTradingStorage` does,
+   * via `safeTransferFrom` at OstiumTradingStorage.sol:486, so the token sees
+   * TradingStorage as the spender. Approving Trading instead granted an allowance nothing
+   * spends: the form showed a ready "Buy · Long" and the transaction reverted on chain
+   * with `ERC20InsufficientAllowance(tradingStorage, 0, collateral)` (real failure
+   * 0x356a2a3b… on 1874). It was invisible in testing because the one account used for
+   * end-to-end runs had an unlimited TradingStorage allowance from the deploy script.
+   */
+  it('checks the allowance against TradingStorage, which is what actually pulls the collateral', () => {
+    erc20Spenders.length = 0;
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(erc20Spenders.length).toBeGreaterThan(0);
+    expect(new Set(erc20Spenders)).toEqual(new Set([TRADING_STORAGE_ADDRESS]));
+    expect(erc20Spenders).not.toContain(TRADING_ADDRESS);
   });
 
   it('renders the contract’s estimated liquidation price once there is a size to evaluate', () => {

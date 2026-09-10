@@ -4,6 +4,7 @@ import { parseEventLogs, zeroAddress, type Address } from 'viem';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { OPEN_ORDER_TYPE_MARKET, TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
+import { confirmTx } from '@/lib/tx';
 
 export interface OpenTradeParams {
   pairIndex: number;
@@ -67,7 +68,7 @@ export function useOpenTrade() {
       ],
     });
 
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await confirmTx(publicClient, hash, 'open the position');
     const events = parseEventLogs({
       abi: TRADING_ABI,
       eventName: 'MarketOpenOrderInitiated',

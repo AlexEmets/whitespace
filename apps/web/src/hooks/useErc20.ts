@@ -4,6 +4,7 @@ import type { Address } from 'viem';
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
 import { ERC20_ABI } from '@/lib/abi';
 import { COLLATERAL_ADDRESS } from '@/lib/deployment';
+import { confirmTx } from '@/lib/tx';
 
 /** USDW balance + allowance for `spender`, and the approve/claim(faucet) writes. Every
  * value returned is a raw bigint (6-decimal) — format it with src/lib/money.ts, never
@@ -50,7 +51,7 @@ export function useErc20(spender: Address) {
       functionName: 'approve',
       args: [spender, amount],
     });
-    if (publicClient) await publicClient.waitForTransactionReceipt({ hash });
+    if (publicClient) await confirmTx(publicClient, hash, 'approve USDW');
     return hash;
   }
 
@@ -64,7 +65,7 @@ export function useErc20(spender: Address) {
       functionName: 'claim',
       args: [],
     });
-    if (publicClient) await publicClient.waitForTransactionReceipt({ hash });
+    if (publicClient) await confirmTx(publicClient, hash, 'claim from the faucet');
     return hash;
   }
 

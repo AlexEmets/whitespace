@@ -16,7 +16,7 @@ import {
   MIN_SLIPPAGE_BPS,
   PRICE_DECIMALS_NUM,
 } from '@/lib/config';
-import { TRADING_ADDRESS } from '@/lib/deployment';
+import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatBps, formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import { estimatePositionSizeBase } from '@/lib/pnl';
 import type { MarketSummary } from '@/lib/types';
@@ -59,7 +59,22 @@ export function OpenPositionForm({
 }) {
   const { address, isConnected } = useAccount();
   const { data: price } = usePrice(pairIndex);
-  const erc20 = useErc20(TRADING_ADDRESS);
+  /**
+   * The spender is TradingStorage, not Trading.
+   *
+   * `OstiumTrading.openTrade` does not move the collateral itself — it calls into
+   * `OstiumTradingStorage`, which runs `SafeERC20.safeTransferFrom(usdc, trader, …)` at
+   * OstiumTradingStorage.sol:486. The token therefore sees TradingStorage as `msg.sender`,
+   * and that is the address whose allowance must be set.
+   *
+   * This used to approve `TRADING_ADDRESS`, so the Approve button granted an allowance
+   * nothing ever spends: the form then showed a ready "Buy · Long", and the transaction
+   * reverted on chain with `ERC20InsufficientAllowance(tradingStorage, 0, collateral)`.
+   * It went unnoticed because the account used for end-to-end testing had been given an
+   * unlimited TradingStorage allowance by the deployment script — the one account for
+   * which the wrong approval could not matter. Every genuinely new wallet was blocked.
+   */
+  const erc20 = useErc20(TRADING_STORAGE_ADDRESS);
   const { openTrade, isPending } = useOpenTrade();
   const { orders } = useOrders(address);
   const fees = useMarketFees(pairIndex);
