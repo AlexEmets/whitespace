@@ -75,11 +75,41 @@ const SERVICES = [
     cwd: 'services/api',
     cmd: ['pnpm', 'exec', 'tsx', 'src/server.ts'],
     needs: ['indexer'],
-    env: { PORT: String(API_PORT) },
+    // The api reads the live index off the publisher (services/api/src/publisher.ts) and
+    // records it as the chart's candle series, so the same port pinned below has to reach
+    // it from here too — otherwise the api quietly falls back to last-trade prices.
+    env: { PORT: String(API_PORT), PUBLISHER_URL: `http://127.0.0.1:${PUBLISHER_PORT}` },
     // Body, not status. See the header.
+    //
+    // The two ways /health says "down" need different words, because they need different
+    // reactions. No `sync_status` row at all means the indexer has not committed its first
+    // block — usually a configuration fault, and waiting will not help. A row that is
+    // merely stale means backfill is still catching up, which is the normal state after
+    // the stack has been off for a while and resolves on its own. Reporting the second as
+    // the first sent a debugging session after an imaginary config problem while the
+    // indexer was, in fact, working correctly at 87%.
+    //
+    // Hence also 600s rather than 120s: catching up several hours of chain takes minutes,
+    // and a gate that gives up first turns a healthy boot into a red failure.
     ready: () =>
-      jsonReady(API_PORT, '/health', 120_000, (body) => {
-        if (body.status === 'down') return { ok: false, detail: 'indexer has written no sync_status row yet' };
+      jsonReady(API_PORT, '/health', 600_000, (body) => {
+        // The ONLY blocking condition. No `sync_status` row means the indexer has never
+        // committed a block — a configuration fault, and waiting will not fix it.
+        if (body.indexedBlock === null) {
+          return { ok: false, detail: 'indexer has written no sync_status row yet' };
+        }
+        // Lag deliberately does NOT block. The api can serve every request in this state;
+        // it just serves data that is behind, and /health says so on every call. Refusing
+        // to start turns a degradation into a total outage — and it did exactly that here:
+        // with the indexer 4.2 h behind, the whole stack stayed down while the price feed
+        // was healthy and the terminal would have worked for everything but history.
+        // Loud, because stale positions on a leveraged trading screen matter.
+        if (body.status !== 'ok') {
+          return {
+            ok: true,
+            detail: `\x1b[33mSTALE\x1b[0m status=${body.status} block=${body.indexedBlock} lag=${body.lagSeconds}s — serving behind the chain head`,
+          };
+        }
         return { ok: true, detail: `status=${body.status} block=${body.indexedBlock} lag=${body.lagSeconds}s` };
       }),
   },
@@ -91,11 +121,17 @@ const SERVICES = [
     needs: [],
     env: { PUBLISHER_PORT: String(PUBLISHER_PORT) },
     // A publisher that is up but has no healthy venues signs nothing, so the keeper would
-    // sit there timing out with no explanation. Surface the venue count at boot instead.
+    // sit there timing out with no explanation.
+    //
+    // This gate used to pass unconditionally — it returned `ok: true` for whatever /health
+    // said, and /health was a hardcoded `{ok:true}`. Both ends have been fixed: /health now
+    // answers 503 when no feed has a live venue, jsonReady treats a non-200 as not-ready,
+    // and the detail below reports the actual venue counts so a degraded-but-working boot
+    // is visibly different from a dead one.
     ready: () =>
       jsonReady(PUBLISHER_PORT, '/health', 90_000, (body) => ({
-        ok: true,
-        detail: typeof body.venues === 'object' ? JSON.stringify(body.venues) : JSON.stringify(body),
+        ok: body.ok === true,
+        detail: `${body.feedsWithVenues ?? 0}/${body.totalFeeds ?? 0} feed(s) with a live venue ${JSON.stringify(body.feeds ?? {})}`,
       })),
   },
   {
