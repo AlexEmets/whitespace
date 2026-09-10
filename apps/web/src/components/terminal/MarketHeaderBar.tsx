@@ -3,7 +3,7 @@
 import { useMarket24h } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
-import { formatMoney, parseRawUnits } from '@/lib/money';
+import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
 import type { MarketSummary } from '@/lib/types';
 
 /**
@@ -19,8 +19,8 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
 
   if (!market) return <div className="market-header">Select a market</div>;
 
-  const maxLeverageX = Math.round(Number(parseRawUnits(market.maxLeverage)) / 100);
-  const oiTotal = parseRawUnits(market.openInterest.long) + parseRawUnits(market.openInterest.short);
+  const maxLeverageX = Math.round(Number(leverageToRaw(market.maxLeverage)) / 100);
+  const oiTotal = collateralToRaw(market.openInterest.long) + collateralToRaw(market.openInterest.short);
 
   return (
     <div className="market-header" data-testid="market-header">

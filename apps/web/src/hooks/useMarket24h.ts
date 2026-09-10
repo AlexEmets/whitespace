@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { parseRawUnits } from '@/lib/money';
+import { collateralToRaw, priceToRaw } from '@/lib/money';
 
 export interface Market24h {
   /** Signed bps change from 24h-ago close to the latest close. */
@@ -45,10 +45,10 @@ export function useMarket24h(pairIndex: number | null): Market24h | null {
           setResult(null);
           return;
         }
-        const firstClose = parseRawUnits(first.c);
-        const lastClose = parseRawUnits(last.c);
+        const firstClose = priceToRaw(first.c);
+        const lastClose = priceToRaw(last.c);
         const changeBps = firstClose === 0n ? 0n : ((lastClose - firstClose) * 10_000n) / firstClose;
-        const volume = candles.reduce((sum, c) => sum + parseRawUnits(c.v), 0n);
+        const volume = candles.reduce((sum, c) => sum + collateralToRaw(c.v), 0n);
         setResult({ changeBps, volume });
       })
       .catch(() => {

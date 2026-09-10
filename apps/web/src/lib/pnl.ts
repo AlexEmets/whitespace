@@ -1,5 +1,5 @@
 import { COLLATERAL_DECIMALS, LEVERAGE_DECIMALS, PRICE_DECIMALS_NUM } from './config';
-import { parseRawUnits } from './money';
+import { collateralToRaw, leverageToRaw, priceToRaw } from './money';
 import type { MoneyInput } from './money';
 
 const LEVERAGE_SCALE = 10n ** BigInt(LEVERAGE_DECIMALS);
@@ -23,10 +23,10 @@ export function estimateUnrealisedPnl(params: {
   markPrice: MoneyInput;
   buy: boolean;
 }): bigint {
-  const collateral = parseRawUnits(params.collateral);
-  const leverage = parseRawUnits(params.leverage);
-  const openPrice = parseRawUnits(params.openPrice);
-  const markPrice = parseRawUnits(params.markPrice);
+  const collateral = collateralToRaw(params.collateral);
+  const leverage = leverageToRaw(params.leverage);
+  const openPrice = priceToRaw(params.openPrice);
+  const markPrice = priceToRaw(params.markPrice);
 
   if (openPrice <= 0n) return 0n;
 
@@ -49,9 +49,9 @@ export function estimateUnrealisedPnl(params: {
  * before dividing so the division is exact bigint arithmetic throughout.
  */
 export function estimatePositionSizeBase(params: { collateral: MoneyInput; leverage: MoneyInput; openPrice: MoneyInput }): bigint {
-  const collateral = parseRawUnits(params.collateral);
-  const leverage = parseRawUnits(params.leverage);
-  const openPrice = parseRawUnits(params.openPrice);
+  const collateral = collateralToRaw(params.collateral);
+  const leverage = leverageToRaw(params.leverage);
+  const openPrice = priceToRaw(params.openPrice);
   if (openPrice <= 0n) return 0n;
 
   const notional6dec = (collateral * leverage) / LEVERAGE_SCALE;

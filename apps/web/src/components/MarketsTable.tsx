@@ -5,7 +5,7 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { useMarket24h } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
-import { formatMoney, parseRawUnits } from '@/lib/money';
+import { collateralToRaw, formatMoney } from '@/lib/money';
 
 function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; from: string; to: string; openInterest: { long: string; short: string } }) {
   const { data: price } = usePrice(pairIndex);
@@ -13,7 +13,7 @@ function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; f
   // openInterest.{long,short} are collateral-denominated (6 decimals) per
   // IOstiumTradingStorage — same assumption as elsewhere in this app; see
   // docs/decisions/phase-5-frontend.md for the note that this is not spelled out by D3.
-  const oiTotal = parseRawUnits(openInterest.long) + parseRawUnits(openInterest.short);
+  const oiTotal = collateralToRaw(openInterest.long) + collateralToRaw(openInterest.short);
 
   return (
     <tr data-testid={`markets-table-row-${pairIndex}`}>

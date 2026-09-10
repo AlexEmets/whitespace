@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { OrdersList } from '@/components/OrdersList';
 import type { OrderSummary } from '@/lib/types';
 
+// The order fixtures below carry money as /orders emits it: human decimal strings with
+// their full fraction digits ("100.000000" is 100 USDW at 6 decimals, "10.00" is 10x at
+// PRECISION_2), never the raw scaled integers the contract stores.
 let ordersState: OrderSummary[] = [];
 
 vi.mock('wagmi', () => ({
@@ -21,8 +24,8 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         pairIndex: 0,
         trader: '0xabc',
         buy: true,
-        collateral: '100000000',
-        leverage: '1000',
+        collateral: '100.000000',
+        leverage: '10.00',
         requestedAt: 0,
         status: 'pending',
       },
@@ -39,8 +42,8 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         pairIndex: 0,
         trader: '0xabc',
         buy: true,
-        collateral: '100000000',
-        leverage: '1000',
+        collateral: '100.000000',
+        leverage: '10.00',
         requestedAt: 0,
         status: 'executed',
         tradeId: '7',
@@ -57,8 +60,8 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         pairIndex: 0,
         trader: '0xabc',
         buy: true,
-        collateral: '100000000',
-        leverage: '1000',
+        collateral: '100.000000',
+        leverage: '10.00',
         requestedAt: 0,
         status: 'cancelled',
         cancelReason: 'SLIPPAGE',

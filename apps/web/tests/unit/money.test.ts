@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MoneyTypeError,
   formatBps,
+  formatCompactMoney,
   formatExact,
   formatLeverage,
   formatMoney,
@@ -11,14 +12,16 @@ import {
 
 // Real numbers from deployments/1874-operational.json's proofTrade — an actual executed
 // open+close on Whitechain testnet 1874, not synthetic fixtures.
-const REAL_OPEN_PRICE = '65001000000000000000000'; // 18 decimals -> 65,001.00
-const REAL_COLLATERAL = '999000000'; // 6 decimals -> 999.00
+// The artifact records the raw, scale-carrying on-chain integers, so they are bigints
+// here — the module header's rule: a bigint is raw, a string would be a human decimal.
+const REAL_OPEN_PRICE = 65001000000000000000000n; // raw, 18 decimals -> 65,001.00
+const REAL_COLLATERAL = 999000000n; // raw, 6 decimals -> 999.00
 // The deployment report stores this as a bare JSON number (1000) — this test file reads
-// it back as a string, exactly as the API contract (D3) requires ("never a JSON
-// number"), rather than passing the deployment file's own number type through.
-const REAL_LEVERAGE = '1000'; // PRECISION_2 -> 10.00x
-const REAL_TRADER_BEFORE = '10000000000'; // 6 decimals -> 10,000.00
-const REAL_TRADER_AFTER = '9998692628'; // 6 decimals -> 9,998.692628 (exact), 9,998.69 (2dp)
+// it back as a bigint, the raw PRECISION_2 value the chain holds, rather than passing the
+// deployment file's own number type through (API contract D3: never a JSON number).
+const REAL_LEVERAGE = 1000n; // PRECISION_2 -> 10.00x
+const REAL_TRADER_BEFORE = 10000000000n; // raw, 6 decimals -> 10,000.00
+const REAL_TRADER_AFTER = 9998692628n; // raw, 6 decimals -> 9,998.692628 (exact), 9,998.69 (2dp)
 
 describe('formatMoney against deployments/1874-operational.json real numbers', () => {
   it('formats the real open price (18 decimals) as 65,001.00', () => {
@@ -39,7 +42,7 @@ describe('formatMoney against deployments/1874-operational.json real numbers', (
   });
 
   it('formatExact preserves the full 6-decimal precision of the real post-trade balance', () => {
-    expect(formatExact(BigInt(REAL_TRADER_AFTER), 6)).toBe('9998.692628');
+    expect(formatExact(REAL_TRADER_AFTER, 6)).toBe('9998.692628');
   });
 
   it('accepts a bigint directly, not only a string', () => {
@@ -132,10 +135,11 @@ describe('parseHumanDecimal (user-typed input)', () => {
   });
 });
 
-describe('parseRawUnits (API decimal-string ingestion)', () => {
-  it('parses the exact raw integer string from the API/deployment file', () => {
-    expect(parseRawUnits(REAL_OPEN_PRICE)).toBe(65001000000000000000000n);
-    expect(parseRawUnits(REAL_COLLATERAL)).toBe(999000000n);
+describe('parseRawUnits (raw integer-string ingestion)', () => {
+  it('parses the exact raw integer string from the deployment file', () => {
+    // The digits of the same two proofTrade values, as the JSON artifact stores them.
+    expect(parseRawUnits('65001000000000000000000')).toBe(65001000000000000000000n);
+    expect(parseRawUnits('999000000')).toBe(999000000n);
   });
 
   it('rejects a string containing a decimal point (that is parseHumanDecimal territory)', () => {
@@ -151,5 +155,32 @@ describe('round-trip exactness', () => {
   it('parseHumanDecimal -> formatExact round-trips without precision loss', () => {
     const raw = parseHumanDecimal('12345.678901', 6);
     expect(formatExact(raw, 6)).toBe('12345.678901');
+  });
+});
+
+describe('formatCompactMoney', () => {
+  // Raw 6-decimal collateral, the scale /markets and the candle volume field use.
+  it('abbreviates millions, thousands and billions without touching a float', () => {
+    expect(formatCompactMoney(38_200_000_000000n, 6)).toBe('38.2M');
+    expect(formatCompactMoney(1_400_000000n, 6)).toBe('1.4K');
+    expect(formatCompactMoney(2_500_000_000_000000n, 6)).toBe('2.5B');
+  });
+
+  it('leaves anything under a thousand in full, grouped form', () => {
+    expect(formatCompactMoney(999_000000n, 6)).toBe('999.00');
+    expect(formatCompactMoney(0n, 6)).toBe('0.00');
+  });
+
+  it('keeps the sign', () => {
+    expect(formatCompactMoney(-38_200_000_000000n, 6)).toBe('-38.2M');
+  });
+
+  it('accepts the API human-decimal string form too, at the same scale', () => {
+    expect(formatCompactMoney('38200000.000000', 6)).toBe('38.2M');
+  });
+
+  it('rejects a JS number like every other money function here', () => {
+    // @ts-expect-error deliberately passing the one type this module refuses
+    expect(() => formatCompactMoney(38_200_000, 6)).toThrow();
   });
 });
