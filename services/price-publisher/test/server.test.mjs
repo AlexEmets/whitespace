@@ -38,11 +38,41 @@ function newEngine() {
   });
 }
 
-test('GET /health', async () => {
+/**
+ * Health used to be a hardcoded `{ ok: true }`, and this test asserted exactly that. That
+ * pairing is how a nine-hour total outage went unnoticed on the live stack: every venue
+ * socket was half-open, `/status` showed `healthyCount: 0`, and the one endpoint the
+ * supervisor and any monitor look at kept reporting success. A health check that cannot
+ * fail is not a health check, so the contract is now "can this publisher produce a
+ * signable price at all", and these two tests pin both answers.
+ */
+test('GET /health fails with 503 when no feed has a live venue — nothing can be signed', async () => {
   await withServer(newEngine(), async (base) => {
     const res = await fetch(`${base}/health`);
+    assert.equal(res.status, 503);
+    const body = await res.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.feedsWithVenues, 0);
+    assert.equal(body.totalFeeds, 1);
+  });
+});
+
+test('GET /health is 200 once a venue is live, and names what it can see', async () => {
+  const engine = newEngine();
+  engine.ingestTick('BTC/USD', { venue: 'binance', bid: 65_000n * SCALE, ask: 65_001n * SCALE, ts: NOW });
+  await withServer(engine, async (base) => {
+    const res = await fetch(`${base}/health`);
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { ok: true });
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.feedsWithVenues, 1);
+    // A single venue is below the k-of-N threshold, so the feed is degraded — but the
+    // service is working and honestly says so. Only "no venue at all" is a failed check;
+    // whether a degraded feed is good enough to trade on is the signing gate's decision,
+    // not this endpoint's.
+    assert.equal(body.feeds['BTC/USD'].degraded, true);
+    assert.equal(body.feeds['BTC/USD'].healthyCount, 1);
+    assert.deepEqual(body.feeds['BTC/USD'].healthyVenues, ['binance']);
   });
 });
 
