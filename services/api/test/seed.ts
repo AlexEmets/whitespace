@@ -16,6 +16,33 @@ export async function truncateAll(): Promise<void> {
   await pool.query(
     `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status`,
   );
+  // Not in the list above: that TRUNCATE names Ponder's tables, and this one is the
+  // API's own (src/indexSeries.ts). Guarded because a test file may run before any
+  // server has bootstrapped the schema — and guarded with to_regclass rather than a
+  // swallowed error, so a genuine failure here still surfaces instead of leaving rows
+  // to leak into the next test.
+  await pool.query(`
+    DO $$ BEGIN
+      IF to_regclass('api_series.index_candle') IS NOT NULL THEN
+        TRUNCATE api_series.index_candle;
+      END IF;
+    END $$;
+  `);
+}
+
+/** An index-series candle, as the recorder would have written it. */
+export async function seedIndexCandle(
+  interval: string,
+  bucketStart: number,
+  ohlc: { open: string; high: string; low: string; close: string },
+  pairIndex = 0,
+): Promise<void> {
+  const pool = getPool();
+  await pool.query(
+    `INSERT INTO api_series.index_candle (pair_index, interval, bucket_start, open, high, low, close, tick_count, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $3)`,
+    [pairIndex, interval, bucketStart, ohlc.open, ohlc.high, ohlc.low, ohlc.close],
+  );
 }
 
 export async function seedMarket(): Promise<void> {

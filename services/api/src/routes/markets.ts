@@ -1,6 +1,7 @@
 import { query, queryOne } from '../db.js';
 import { price, collateral, leverage as fmtLeverage } from '../format.js';
 import { INTERVALS } from '@whitespace/shared/candles';
+import { readIndexCandles } from '../indexSeries.js';
 import type { RouteResult, Handler } from '../router.js';
 
 type MarketRow = {
@@ -70,24 +71,34 @@ export const handleCandles: Handler = async (_req, params, searchParams) => {
 
   const fromParam = searchParams.get('from');
   const toParam = searchParams.get('to');
+  const from = fromParam !== null ? Number(fromParam) : 0;
+  const to = toParam !== null ? Number(toParam) : Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) {
+    return { code: 400, body: { error: 'from/to must be unix seconds (integers)' } };
+  }
 
-  let rows: CandleRow[];
-  if (fromParam !== null || toParam !== null) {
-    const from = fromParam !== null ? Number(fromParam) : 0;
-    const to = toParam !== null ? Number(toParam) : Math.floor(Date.now() / 1000);
-    if (!Number.isFinite(from) || !Number.isFinite(to)) {
-      return { code: 400, body: { error: 'from/to must be unix seconds (integers)' } };
+  // The index series first — it is sampled continuously from the publisher, so it is the
+  // only source that has a candle in a bucket where nobody happened to trade. See
+  // src/indexSeries.ts for why the on-chain candle table alone cannot draw a chart.
+  //
+  // The fallback is not dead code: on a database that has never run the recorder (a fresh
+  // clone, or the API started while the publisher was down) the on-chain series is all
+  // there is, and a sparse chart beats an empty one.
+  let rows: CandleRow[] = await readIndexCandles(pairIndex, interval, from, to);
+
+  if (rows.length === 0) {
+    if (fromParam !== null || toParam !== null) {
+      rows = await query<CandleRow>(
+        'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 AND bucket_start >= $3 AND bucket_start <= $4 ORDER BY bucket_start ASC',
+        [pairIndex, interval, from, to],
+      );
+    } else {
+      rows = await query<CandleRow>(
+        'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 ORDER BY bucket_start DESC LIMIT $3',
+        [pairIndex, interval, DEFAULT_CANDLE_LIMIT],
+      );
+      rows.reverse();
     }
-    rows = await query<CandleRow>(
-      'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 AND bucket_start >= $3 AND bucket_start <= $4 ORDER BY bucket_start ASC',
-      [pairIndex, interval, from, to],
-    );
-  } else {
-    rows = await query<CandleRow>(
-      'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 ORDER BY bucket_start DESC LIMIT $3',
-      [pairIndex, interval, DEFAULT_CANDLE_LIMIT],
-    );
-    rows.reverse();
   }
 
   return {

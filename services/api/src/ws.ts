@@ -2,6 +2,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'node:http';
 import { query, queryOne } from './db.js';
 import { price as fmtPrice, collateral as fmtCollateral, leverage as fmtLeverage, id as fmtId } from './format.js';
+import { readLatestIndexCandle } from './indexSeries.js';
+import { resolveOrders } from './routes/orders.js';
+import { resolvePrice } from './routes/price.js';
 
 type ChannelKind = 'price' | 'positions' | 'orders' | 'candles';
 const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles'];
@@ -26,19 +29,9 @@ export function parseChannel(channel: string): ParsedChannel | null {
 async function fetchChannelData(parsed: ParsedChannel): Promise<unknown> {
   switch (parsed.kind) {
     case 'price': {
-      const pairIndex = Number(parsed.args[0]);
-      const row = await queryOne<{ price: string; block_timestamp: number }>(
-        'SELECT price, block_timestamp FROM price_report WHERE pair_index = $1 ORDER BY block_timestamp DESC, order_id DESC LIMIT 1',
-        [pairIndex],
-      );
-      if (!row) return null;
-      return {
-        index: fmtPrice(row.price),
-        mark: fmtPrice(row.price),
-        updatedAt: row.block_timestamp,
-        healthyVenues: null,
-        degraded: null,
-      };
+      // Same resolver the REST route uses — publisher first, last on-chain report as
+      // fallback. See routes/price.ts for why these must not be two separate queries.
+      return resolvePrice(Number(parsed.args[0]));
     }
     case 'positions': {
       const trader = parsed.args[0].toLowerCase();
@@ -68,38 +61,29 @@ async function fetchChannelData(parsed: ParsedChannel): Promise<unknown> {
       }));
     }
     case 'orders': {
-      const trader = parsed.args[0].toLowerCase();
-      const rows = await query<{
-        order_id: string;
-        kind: string;
-        pair_index: number;
-        trade_id: string | null;
-        status: string;
-        requested_at: number;
-      }>(`SELECT * FROM "order" WHERE trader = $1 AND status = 'pending' ORDER BY requested_at DESC`, [trader]);
-      return rows.map((r) => ({
-        orderId: fmtId(r.order_id),
-        kind: r.kind,
-        pairIndex: r.pair_index,
-        tradeId: fmtId(r.trade_id),
-        status: r.status,
-        requestedAt: r.requested_at,
-      }));
+      // Same resolver the REST route uses. These were two independent queries with
+      // different WHERE clauses and different columns, so whether an order appeared to
+      // exist depended on which transport last answered.
+      return resolveOrders(parsed.args[0]);
     }
     case 'candles': {
       const pairIndex = Number(parsed.args[0]);
       const interval = parsed.args[1];
-      const row = await queryOne<{
-        bucket_start: number;
-        open: string;
-        high: string;
-        low: string;
-        close: string;
-        volume: string;
-      }>(
-        'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 ORDER BY bucket_start DESC LIMIT 1',
-        [pairIndex, interval],
-      );
+      // The index series, so the in-progress candle this pushes keeps moving between
+      // trades — the whole point of the live channel.
+      const row =
+        (await readLatestIndexCandle(pairIndex, interval)) ??
+        (await queryOne<{
+          bucket_start: number;
+          open: string;
+          high: string;
+          low: string;
+          close: string;
+          volume: string;
+        }>(
+          'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 ORDER BY bucket_start DESC LIMIT 1',
+          [pairIndex, interval],
+        ));
       if (!row) return null;
       return {
         t: row.bucket_start,

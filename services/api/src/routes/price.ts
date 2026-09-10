@@ -1,39 +1,105 @@
 import { queryOne } from '../db.js';
 import { price as fmtPrice } from '../format.js';
+import { feedNameOf, getPublisherFeed } from '../publisher.js';
 import type { RouteResult, Handler } from '../router.js';
 
 type PriceReportRow = { price: string; block_timestamp: number };
 
-// GET /price/:pairIndex -> { index, mark, updatedAt, healthyVenues, degraded }
-//
-// This project has no price-publisher service running yet (services/
-// price-publisher is phase 3 scope; this is phase 4). Per the task's
-// explicit instruction, this endpoint does NOT invent healthyVenues/
-// degraded data — it serves `index`/`mark`/`updatedAt` from the latest
-// indexed on-chain PriceReceived report and returns healthyVenues/degraded
-// as `null`, honestly reflecting "no publisher data source exists." `mark`
-// currently mirrors `index` for the same reason (no publisher-computed EMA
-// mark price to serve) — see docs/decisions/phase-4-indexer-api.md.
+/**
+ * GET /price/:pairIndex -> { index, mark, updatedAt, healthyVenues, degraded, source }
+ *
+ * Two sources, in priority order, and the response says which one answered.
+ *
+ *   "publisher" — the live index and EMA mark, straight from services/price-publisher,
+ *     with the real venue health behind them. This is the number the order form quotes
+ *     and the keeper signs against, so it is the only correct thing to show a trader
+ *     about to open a position.
+ *
+ *   "chain" — the last signed report that actually landed on chain, from `price_report`.
+ *     Used only when the publisher is unreachable. It is not a live price: it is frozen
+ *     at the last order and drifts further from the market the longer nobody trades
+ *     (measured 517 USD apart when this fallback was still the primary source). Callers
+ *     can tell the difference from `source`, and `updatedAt` shows the staleness
+ *     directly — nothing here dresses one up as the other.
+ *
+ * `healthyVenues`/`degraded` stay null on the chain path rather than being guessed: the
+ * chain carries no venue-health information, and a fabricated "healthy" is worse than an
+ * admitted unknown.
+ */
+export type PricePayload = {
+  index: string | null;
+  mark: string | null;
+  /** The two-sided quote behind the index. Null on the chain fallback (a settled report
+   * carries a single price, not a book) and null whenever the publisher has no two-sided
+   * aggregate. A consumer pricing a fill needs to tell "no spread" from "spread unknown",
+   * so the mark is never substituted here. */
+  bid: string | null;
+  ask: string | null;
+  updatedAt: number;
+  healthyVenues: string[] | null;
+  degraded: boolean | null;
+  source: 'publisher' | 'chain';
+};
+
+/**
+ * The price resolution itself, separated from the HTTP shell so the WebSocket `price:`
+ * channel pushes byte-identical payloads to what the REST route returns. When these were
+ * two copies of the same query, a change to one silently gave a polling client and a
+ * subscribing client different answers for the same market.
+ */
+export async function resolvePrice(pairIndex: number): Promise<PricePayload | null> {
+  const market = await queryOne<{ from_symbol: string; to_symbol: string }>(
+    'SELECT from_symbol, to_symbol FROM market WHERE pair_index = $1',
+    [pairIndex],
+  );
+
+  if (market) {
+    const feed = await getPublisherFeed(feedNameOf(market.from_symbol, market.to_symbol));
+    // `noData` means the publisher is up but has no venue answering; there is no price
+    // to report and falling through to the last on-chain one is the honest move.
+    if (feed && !feed.noData && feed.mark !== null && feed.index !== null) {
+      return {
+        index: fmtPrice(feed.index),
+        mark: fmtPrice(feed.mark),
+        // `?? null`, not a bare pass-through: a publisher that predates these fields sends
+        // `undefined`, and the formatter only short-circuits on `null`. Normalising here
+        // keeps a version skew between the two services from becoming a 500.
+        bid: fmtPrice(feed.indexBid ?? null),
+        ask: fmtPrice(feed.indexAsk ?? null),
+        updatedAt: Math.floor(Date.now() / 1000),
+        healthyVenues: feed.healthyVenues,
+        degraded: feed.degraded,
+        source: 'publisher',
+      };
+    }
+  }
+
+  const row = await queryOne<PriceReportRow>(
+    'SELECT price, block_timestamp FROM price_report WHERE pair_index = $1 ORDER BY block_timestamp DESC, order_id DESC LIMIT 1',
+    [pairIndex],
+  );
+  if (!row) return null;
+  return {
+    index: fmtPrice(row.price),
+    mark: fmtPrice(row.price),
+    // A settled on-chain report is one number. There is no bid or ask to recover from it.
+    bid: null,
+    ask: null,
+    updatedAt: row.block_timestamp,
+    healthyVenues: null,
+    degraded: null,
+    source: 'chain',
+  };
+}
+
 export const handlePrice: Handler = async (_req, params): Promise<RouteResult> => {
   const pairIndex = Number(params.pairIndex);
   if (!Number.isInteger(pairIndex)) {
     return { code: 400, body: { error: 'invalid pairIndex' } };
   }
-  const row = await queryOne<PriceReportRow>(
-    'SELECT price, block_timestamp FROM price_report WHERE pair_index = $1 ORDER BY block_timestamp DESC, order_id DESC LIMIT 1',
-    [pairIndex],
-  );
-  if (!row) {
-    return { code: 404, body: { error: 'no price reports indexed for this market yet' } };
+  const payload = await resolvePrice(pairIndex);
+  if (!payload) {
+    return { code: 404, body: { error: 'no price available: publisher unreachable and no price reports indexed' } };
   }
-  return {
-    code: 200,
-    body: {
-      index: fmtPrice(row.price),
-      mark: fmtPrice(row.price),
-      updatedAt: row.block_timestamp,
-      healthyVenues: null,
-      degraded: null,
-    },
-  };
+  return { code: 200, body: payload };
 };

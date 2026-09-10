@@ -7,6 +7,7 @@ import { handlePositions, handlePositionsHistory } from './routes/positions.js';
 import { handleOrders } from './routes/orders.js';
 import { handlePrice } from './routes/price.js';
 import { createWsManager, type WsManager } from './ws.js';
+import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 
 const router = new Router();
 router.get('/health', handleHealth);
@@ -91,8 +92,21 @@ const isMain = process.argv[1] && import.meta.url === new URL(process.argv[1], '
 if (isMain) {
   const port = Number(process.env.PORT ?? 3001);
   const { server } = createApp();
+
+  // Only the long-running process records the index series — never `createApp()`, which
+  // the test suite calls many times per run and which must not start background timers
+  // or reach for a publisher that is not there.
+  await ensureIndexSeriesSchema();
+  const recorder = startIndexRecorder();
+  const stop = () => {
+    recorder.stop();
+    server.close(() => process.exit(0));
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
   server.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`services/api listening on :${port}`);
+    console.log(`services/api listening on :${port} (index recorder sampling ${process.env.PUBLISHER_URL ?? 'http://127.0.0.1:8787'})`);
   });
 }

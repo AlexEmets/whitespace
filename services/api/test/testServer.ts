@@ -1,6 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { createApp, type App } from '../src/server.js';
 import { resetPool } from '../src/db.js';
+import { ensureIndexSeriesSchema } from '../src/indexSeries.js';
 
 export type TestServer = {
   app: App;
@@ -11,6 +12,12 @@ export type TestServer = {
 
 export async function startTestServer(opts: { wsPollIntervalMs?: number } = {}): Promise<TestServer> {
   resetPool(); // pick up the current DATABASE_URL (globalSetup sets it once, but be defensive)
+  // The index series is this service's own storage (src/indexSeries.ts), created by the
+  // real entrypoint at boot. Tests need it for the same reason: the candles route reads
+  // it first, and an absent table is a 500, not an empty result. Creating it here rather
+  // than seeding rows means the suite exercises the empty-series fallback to the
+  // indexer's on-chain candles, which is what a fresh deployment actually does.
+  await ensureIndexSeriesSchema();
   const app = createApp({ wsPollIntervalMs: opts.wsPollIntervalMs ?? 50 });
   await new Promise<void>((resolve) => app.server.listen(0, resolve));
   const { port } = app.server.address() as AddressInfo;
