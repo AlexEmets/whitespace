@@ -1,0 +1,178 @@
+/* Scoped to DepthPanel. A CSS Module rather than more rules in app/globals.css so this
+   panel's layout cannot collide with the rest of the terminal's global class names. The
+   outer element keeps the global `.depth-panel` class because that is what the
+   `.terminal-grid` column and its <=1200px hide-rule target. */
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.headerNote {
+  font-size: 0.6rem;
+  color: var(--fg-dim);
+  letter-spacing: 0.04em;
+}
+
+.blurb {
+  margin: 0.35rem 0 0.7rem;
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 0.9fr;
+  gap: 0.25rem;
+  padding: 0 0.25rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  padding: 0.15rem 0;
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 0.9fr;
+  gap: 0.25rem;
+  padding: 0.22rem 0.25rem;
+  font-size: 0.68rem;
+  color: var(--fg-muted);
+}
+
+/* The mockup's faint depth bar: grows from the right edge, width proportional to this
+   row's size as a fraction of the deepest level on the ladder. Purely decorative — the
+   numbers in the row are the claim, the bar is not. */
+.row::before {
+  content: '';
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  right: 0;
+  width: var(--depth-width, 0%);
+  border-radius: 2px;
+  background: var(--depth-color, transparent);
+  pointer-events: none;
+}
+
+.cell {
+  position: relative;
+  text-align: right;
+}
+
+.cell:first-child {
+  text-align: left;
+}
+
+.long {
+  --depth-color: var(--long-dim);
+}
+
+.short {
+  --depth-color: var(--short-dim);
+}
+
+.long .price {
+  color: var(--long);
+}
+
+.short .price {
+  color: var(--short);
+}
+
+.sideLabel {
+  padding: 0.35rem 0.25rem 0.1rem;
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+}
+
+.mid {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.15rem 0;
+  padding: 0.45rem 0.25rem;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.midPrice {
+  font-size: 0.95rem;
+  color: var(--fg);
+}
+
+.midLabel {
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+
+.caveat {
+  margin: 0.6rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.58rem;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+.degraded {
+  color: var(--warning);
+}
+
+/* ---- honest unavailable state ---- */
+
+.notice {
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 0.85rem 0.7rem;
+  font-size: 0.64rem;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
+.noticeTitle {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--warning);
+}
+
+.reasons {
+  margin: 0;
+  padding-left: 0.9rem;
+}
+
+.reasons li + li {
+  margin-top: 0.4rem;
+}
+
+.readout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  margin-top: 0.75rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.58rem;
+  color: var(--fg-dim);
+}
+
+.readoutValue {
+  text-align: right;
+  overflow-wrap: anywhere;
+  color: var(--fg-muted);
+}
