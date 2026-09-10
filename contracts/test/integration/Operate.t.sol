@@ -7,6 +7,8 @@ import {DeployScript} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
 import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
 import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
+import {IOstiumPairInfos} from "../../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
+import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
 import {IOstiumVerifier} from "../../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
 import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
 
@@ -203,5 +205,148 @@ contract OperateTest is Test {
         );
         operator.addMarket(_config());
         vm.stopPrank();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Phase E — additional markets
+    // ---------------------------------------------------------------------------------------
+
+    function _marketConfig(string memory name) internal view returns (OperateScript.MarketConfig memory) {
+        return OperateScript.MarketConfig({
+            registry: d.registry, name: name, maxLeverage: 10_000,
+            maxOi: 1_000_000e6, groupIndex: 0, feeIndex: 0
+        });
+    }
+
+    /// @dev Drives one extra market with the sender each step requires, in the order
+    ///      `runAddMarkets()` uses: the upkeep key first, so the pair is never listed with an
+    ///      unresolvable `<oracle>PriceUpkeep`.
+    function _addMarket(string memory name) internal returns (uint16 pairIndex) {
+        OperateScript.MarketConfig memory m = _marketConfig(name);
+        vm.prank(gov);     operator.registerUpkeepFor(m);
+        vm.prank(gov);     pairIndex = operator.addMarketFor(m);
+        vm.prank(manager); operator.setMaxOiFor(m, pairIndex);
+    }
+
+    /// @dev The point of deriving all four pair fields from one name string: `feed` is what the
+    ///      report must carry, `oracle` is what the registry key is built from, and `from`/`to`
+    ///      are what `services/api/src/publisher.ts` re-joins into a feed name. This asserts all
+    ///      four, because a single wrong one is the failure that lists cleanly and breaks later.
+    function _assertPairFields(uint16 pairIndex, bytes32 from, bytes32 to, string memory name) internal view {
+        IOstiumPairsStorage ps = IOstiumPairsStorage(d.pairsStorage);
+        (bytes32 pairFrom, bytes32 pairTo, bytes32 feed,,,,,, string memory oracle) = ps.pairs(pairIndex);
+        assertEq(pairFrom, from);
+        assertEq(pairTo, to);
+        assertEq(feed, bytes32(bytes(name)));
+        assertEq(oracle, name);
+    }
+
+    function test_addMarketForListsPairsBesideBtc() public {
+        _configureAll();
+
+        uint16 ethIndex = _addMarket("ETH/USD");
+        uint16 solIndex = _addMarket("SOL/USD");
+
+        assertEq(ethIndex, 1);
+        assertEq(solIndex, 2);
+        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 3);
+        _assertPairFields(ethIndex, bytes32("ETH"), bytes32("USD"), "ETH/USD");
+        _assertPairFields(solIndex, bytes32("SOL"), bytes32("USD"), "SOL/USD");
+        // BTC/USD must be exactly where it was; a new listing must not disturb pair 0.
+        assertEq(IOstiumPairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
+    }
+
+    /// @dev The step with no equivalent in `addMarket`, and the one whose absence is invisible
+    ///      until the first trade. Asserts the new key resolves to the SAME instance BTC uses —
+    ///      one upkeep serving every feed is what `installHardenedUpkeep` documents.
+    function test_addMarketForRegistersItsOwnUpkeepKey() public {
+        _configureAll();
+        _addMarket("ETH/USD");
+
+        IOstiumRegistry registry = IOstiumRegistry(d.registry);
+        assertEq(
+            registry.getContractAddress(bytes32("ETH/USDPriceUpkeep")),
+            registry.getContractAddress(bytes32("BTC/USDPriceUpkeep"))
+        );
+    }
+
+    /// @dev The two silent traps, asserted directly on storage rather than inferred from "the
+    ///      calls succeeded": a zero `springFactor` panics division-by-zero inside
+    ///      `performUpkeep` on the first trade, and a zero max OI cancels every trade with no
+    ///      revert and no position.
+    function test_addMarketForConfiguresFundingAndMaxOi() public {
+        _configureAll();
+        uint16 pairIndex = _addMarket("ETH/USD");
+
+        IOstiumPairInfos pairInfos =
+            IOstiumPairInfos(IOstiumRegistry(d.registry).getContractAddress("pairInfos"));
+        (,,,,, uint64 springFactor,,,,,,) = pairInfos.pairFundingFees(pairIndex);
+        assertGt(springFactor, 0, "springFactor is a divisor; zero panics on the first trade");
+
+        IOstiumTradingStorage ts =
+            IOstiumTradingStorage(IOstiumRegistry(d.registry).getContractAddress("tradingStorage"));
+        assertGt(ts.openInterest(pairIndex, 2), 0, "zero max OI silently cancels every trade");
+    }
+
+    /// @dev A live run that dies partway must be safe to resume, exactly as for `run()`. The
+    ///      assertion that matters is `pairsCount`: a non-idempotent `addMarketFor` would list
+    ///      ETH/USD a second time at a new index rather than reverting, since
+    ///      `PairAlreadyListed` is the only thing standing between the two and it is checked on
+    ///      (from,to) — so a silent duplicate is the failure this catches.
+    function test_addMarketForIsIdempotent() public {
+        _configureAll();
+        uint16 firstIndex = _addMarket("ETH/USD");
+        uint16 secondIndex = _addMarket("ETH/USD");
+
+        assertEq(secondIndex, firstIndex);
+        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 2);
+    }
+
+    /// @dev A name with no `/` would otherwise list a pair whose `to` is `bytes32(0)`: `addPair`
+    ///      validates leverage and nothing else, so nothing on-chain rejects it. Pinned to the
+    ///      exact message — a bare `expectRevert()` cannot tell this apart from any other revert
+    ///      on the path, including `NotGov`.
+    function test_addMarketForRejectsANameWithoutASlash() public {
+        _configureAll();
+        vm.prank(gov);
+        vm.expectRevert(bytes("market name must be '<FROM>/<TO>'"));
+        operator.addMarketFor(_marketConfig("ETHUSD"));
+    }
+
+    function test_addMarketForRejectsANameWithTwoSlashes() public {
+        _configureAll();
+        vm.prank(gov);
+        vm.expectRevert(bytes("market name has more than one '/'"));
+        operator.addMarketFor(_marketConfig("ETH/USD/X"));
+    }
+
+    /// @dev `MARKETS` is a comma-separated env string and `vm.envString` does not trim, so
+    ///      `MARKETS=ETH/USD, SOL/USD` produces `" SOL/USD"`. That name lists fine on chain and
+    ///      is wrong everywhere else — the publisher never signs `bytes32(" SOL/USD")` — so a
+    ///      single pasted space would otherwise cost a market that looks live and cannot trade.
+    function test_addMarketForRejectsANamePaddedWithASpace() public {
+        _configureAll();
+        vm.prank(gov);
+        vm.expectRevert(bytes("market name must not contain spaces or control characters"));
+        operator.addMarketFor(_marketConfig(" SOL/USD"));
+    }
+
+    /// @dev `addMarketFor` deliberately does NOT create a group or a fee tier, so that adding a
+    ///      market can never mint an unreviewed group as a side effect. On a system where
+    ///      configuration never ran, it must say which piece is missing rather than surfacing
+    ///      the vendored `GroupNotListed(0)`.
+    function test_addMarketForRequiresAnExistingGroup() public {
+        vm.prank(gov);
+        vm.expectRevert(bytes("group not listed; add it before adding a market to it"));
+        operator.addMarketFor(_marketConfig("ETH/USD"));
+    }
+
+    /// @dev The upkeep address is read from the registry, never supplied, so on a system where
+    ///      no market has ever been registered there is nothing to reuse and this must refuse
+    ///      loudly — the alternative is registering `address(0)` under the new feed's key.
+    function test_registerUpkeepForRequiresAnIncumbentUpkeep() public {
+        vm.prank(gov);
+        vm.expectRevert(bytes("no incumbent upkeep to reuse: run() or runOracle() first"));
+        operator.registerUpkeepFor(_marketConfig("ETH/USD"));
     }
 }

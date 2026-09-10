@@ -896,4 +896,336 @@ contract OperateScript is Script {
         configureOracleRails(c);
         vm.stopBroadcast();
     }
+
+    // =======================================================================================
+    // Phase E — additional markets
+    //
+    // `addMarket()` above lists exactly one pair, because every field it writes is a file-scope
+    // constant (`PAIR_FROM` … `PAIR_MAX_LEVERAGE`). Listing ETH/USD or SOL/USD through it would
+    // mean editing those constants — i.e. changing the meaning of a function that has already
+    // run against 1874. The three functions below are the same on-chain steps with those
+    // constants lifted into arguments, plus the one step `addMarket()` never had to think about:
+    // the per-oracle upkeep registry key, which is a constant only while there is one market.
+    //
+    // Nothing here refactors the twelve functions above. `addMarket`, `setMaxOi` and
+    // `registerUpkeep` keep their exact bodies and their exact meaning, because the env block in
+    // `docs/runbooks/deploy-testnet.md` was executed against 1874 with them, and a "harmless"
+    // generalisation of code that has run on a live chain is an unreviewed edit to a recorded
+    // procedure.
+    //
+    // ORDER, per market: register the upkeep key FIRST, then list the pair, then lift its OI
+    // ceiling. Registering a key for a pair that does not exist yet is inert — nothing resolves
+    // `<oracle>PriceUpkeep` until some pair carries that oracle string — whereas the reverse
+    // order leaves a window in which the pair is listed and `OstiumPriceRouter.sol:81-84` cannot
+    // resolve its upkeep, so every `openTrade` on it reverts `NotFound` inside
+    // `OstiumRegistry.sol:118-121`. That window is loud rather than lossy, but it is free not to
+    // have.
+    //
+    // NOT per-pair, and therefore not repeated here: `approveVaultAllowance` (one allowance on
+    // the one collateral token, `OstiumTradingCallbacks.setVaultMaxAllowance`) and the LP
+    // deposit. Both are properties of the system, both are already satisfied on 1874 — but note
+    // that `groupMaxCollateral` (`OstiumPairsStorage.sol:268-271`) is
+    // `maxCollateralP * vault.currentBalance() / 100_00`, so a vault drained to zero silently
+    // cancels every trade on EVERY market in the group, new ones included.
+    // =======================================================================================
+
+    /// @param registry    The system registry. `pairsStorage`, `pairInfos` and `tradingStorage`
+    ///                    are all resolved through it — the way the vendored contracts locate
+    ///                    each other (`OstiumPriceRouter.sol:81`) and the way `setMaxOi` above
+    ///                    already does — so it is the only address the operator supplies.
+    /// @param name        The market as ONE string, e.g. `"ETH/USD"`. `from`, `to`, `feed` and
+    ///                    `oracle` are all DERIVED from it rather than supplied separately,
+    ///                    because those four fields are not independent and every way they can
+    ///                    disagree fails late or silently:
+    ///                      - `feed` must equal the `feedId` the publisher signs, or delivery
+    ///                        reverts `InvalidPrice` at `WhitespacePriceUpKeep.sol:223`. On the
+    ///                        off-chain side that id is `asciiToBytes32Hex('ETH/USD')`
+    ///                        (`packages/shared/src/markets.mjs`), which is byte-identical to
+    ///                        Solidity's `bytes32("ETH/USD")`.
+    ///                      - `oracle` alone determines the upkeep registry key
+    ///                        (`OstiumPriceRouter.sol:81-84`), and a key that differs by one
+    ///                        character lists cleanly and only fails at the first trade.
+    ///                      - `from`/`to` are re-joined as `` `${from}/${to}` `` by
+    ///                        `services/api/src/publisher.ts:106-108` to find a market row's
+    ///                        publisher feed; if that string is not the feed name, `/price`
+    ///                        silently degrades to the stale on-chain path with no error.
+    ///                    One source string makes all three agree by construction.
+    /// @param maxLeverage PRECISION_2, so `10_000` is 100.00x. Must be `<= MAX_LEVERAGE`
+    ///                    (100000) and `>= groups[groupIndex].minLeverage`, per `_pairOk`
+    ///                    (`OstiumPairsStorage.sol:107-117`). Zero is legal and means "inherit
+    ///                    the group's `maxLeverage`" (`OstiumPairsStorage.sol:262-266`).
+    /// @param maxOi       PRECISION_6 open-interest ceiling. Zero is the trap `setMaxOi`
+    ///                    documents at length: trades are CANCELLED, not reverted.
+    /// @param groupIndex  Existing group. Not created here — see `addMarketFor`.
+    /// @param feeIndex    Existing fee tier. Not created here — see `addMarketFor`.
+    struct MarketConfig {
+        address registry;
+        string name;
+        uint32 maxLeverage;
+        uint256 maxOi;
+        uint8 groupIndex;
+        uint8 feeIndex;
+    }
+
+    /// @dev Splits `"ETH/USD"` into `bytes32("ETH")` and `bytes32("USD")`.
+    ///
+    ///      `bytes32(bytes memory)` left-aligns and zero-pads exactly as the literal
+    ///      `bytes32("ETH")` does — the same explicit bytes→bytesNN conversion `_upkeepKey`
+    ///      above relies on — but it TRUNCATES past 32 bytes instead of reverting, so both
+    ///      halves are length-checked rather than trusted.
+    ///
+    ///      Exactly one `/` is required. Zero would leave `to` empty and list a pair whose `to`
+    ///      is `bytes32(0)`; two would make the split ambiguous. Neither is caught by `addPair`,
+    ///      which validates leverage and nothing else (`OstiumPairsStorage.sol:142-160`), so it
+    ///      is caught here — before a transaction is built, not after a market is live.
+    ///
+    ///      The whole name is bounded to 32 bytes as well, not just each half: it is also used
+    ///      whole as the `feed`, where the same silent truncation applies, and its JS counterpart
+    ///      `asciiToBytes32Hex` throws past 32 bytes rather than truncating — so the two sides
+    ///      agree on rejection, not just on encoding.
+    ///
+    ///      Spaces and control characters are rejected outright. `MARKETS` is a comma-separated
+    ///      env string, and `vm.envString` does not trim, so `MARKETS=ETH/USD, SOL/USD` yields a
+    ///      second entry of `" SOL/USD"` — which is a perfectly listable market whose `from` is
+    ///      `" SOL"`, whose feed no publisher will ever sign, and whose registry key differs from
+    ///      the one anybody would later look for. That is a whole-run silent failure caused by a
+    ///      space, so it fails here instead.
+    function _splitFeedName(string memory name) internal pure returns (bytes32 from, bytes32 to) {
+        bytes memory raw = bytes(name);
+        require(raw.length <= 32, "market name must fit in bytes32 to be used as the feed id");
+
+        uint256 slash = type(uint256).max;
+        for (uint256 i = 0; i < raw.length; i++) {
+            require(raw[i] > bytes1(0x20), "market name must not contain spaces or control characters");
+            if (raw[i] != bytes1("/")) continue;
+            require(slash == type(uint256).max, "market name has more than one '/'");
+            slash = i;
+        }
+        require(slash != type(uint256).max, "market name must be '<FROM>/<TO>'");
+
+        uint256 toLength = raw.length - slash - 1;
+        require(slash > 0 && slash <= 32, "market base symbol must be 1-32 bytes");
+        require(toLength > 0 && toLength <= 32, "market quote symbol must be 1-32 bytes");
+
+        bytes memory fromBytes = new bytes(slash);
+        for (uint256 i = 0; i < slash; i++) {
+            fromBytes[i] = raw[i];
+        }
+        bytes memory toBytes = new bytes(toLength);
+        for (uint256 i = 0; i < toLength; i++) {
+            toBytes[i] = raw[slash + 1 + i];
+        }
+
+        return (bytes32(fromBytes), bytes32(toBytes));
+    }
+
+    /// @dev The parameterised twin of `_findPairIndex`: same linear scan, same reason (there is
+    ///      no reverse (from,to) -> index lookup in `OstiumPairsStorage`), but for a pair whose
+    ///      symbols are not known at compile time. Written as a twin rather than folded into
+    ///      `_findPairIndex` so that function — reached from `addMarket` on the idempotent skip
+    ///      path — keeps its exact body and its exact revert string.
+    function _findPairIndexFor(IOstiumPairsStorage ps, bytes32 from, bytes32 to)
+        internal
+        view
+        returns (uint16)
+    {
+        uint16 count = ps.pairsCount();
+        for (uint16 i = 0; i < count; i++) {
+            (bytes32 pairFrom, bytes32 pairTo,,,,,,,) = ps.pairs(i);
+            if (pairFrom == from && pairTo == to) {
+                return i;
+            }
+        }
+        revert("pair not found despite isPairListed() == true");
+    }
+
+    /// @notice Lists an arbitrary pair and configures its funding params, idempotently.
+    /// @dev Caller must be `registry.gov()` — `addPair` is `onlyGov`
+    ///      (`OstiumPairsStorage.sol:144`), as is `setPairFundingFees`.
+    ///
+    ///      Unlike `addMarket`, this does NOT lazily create the group and the fee tier. Any
+    ///      system that has ever listed a market already has them (measured on 1874:
+    ///      `groupsCount() == 1`, `feesCount() == 1`), and creating one here would mean a
+    ///      SECOND group — with parameters nobody reviewed — appearing as a side effect of
+    ///      adding a market. The two sentinels the contract itself uses are asserted instead, so
+    ///      a misconfigured index names the missing thing rather than surfacing as the
+    ///      vendored `GroupNotListed(index)`: `groupListed` is `groups[i].minLeverage != 0`
+    ///      (`OstiumPairsStorage.sol:80-82`), `feeListed` is `fees[i].name != bytes32(0)`
+    ///      (`:89-91`).
+    ///
+    ///      Sharing one group and one fee tier across every crypto market is the intended shape,
+    ///      not a shortcut: `maxCollateralP` is a share of the ONE vault and `oracleFee` is a
+    ///      property of the price pipeline, so both belong to the venue rather than to the pair.
+    ///      `Fee.name` is `"BTC-USD"` for historical reasons and is read by nothing but that
+    ///      non-zero check — a label, not a binding.
+    ///
+    ///      `tradeSizeRef: 0` and `overnightMaxLeverage: 0` match `addMarket`'s choices and are
+    ///      both meaningful at zero: `tradeSizeRef` has no reader anywhere in `src/`, and
+    ///      `overnightMaxLeverage == 0` means "no day/overnight distinction", which
+    ///      `TradingLib.sol:28-31` resolves to `pairMaxLeverage` and `OstiumTrading.sol:227`
+    ///      resolves to `isDayTrade = false`. Neither is a divisor.
+    function addMarketFor(MarketConfig memory m) public returns (uint16 pairIndex) {
+        IOstiumPairsStorage ps =
+            IOstiumPairsStorage(IOstiumRegistry(m.registry).getContractAddress("pairsStorage"));
+        (bytes32 from, bytes32 to) = _splitFeedName(m.name);
+
+        (,, uint16 groupMinLeverage,) = ps.groups(m.groupIndex);
+        require(groupMinLeverage != 0, "group not listed; add it before adding a market to it");
+        (bytes32 feeName,,,) = ps.fees(m.feeIndex);
+        require(feeName != bytes32(0), "fee tier not listed; add it before adding a market to it");
+
+        if (ps.isPairListed(from, to)) {
+            pairIndex = _findPairIndexFor(ps, from, to);
+        } else {
+            _relay(msg.sender);
+            ps.addPair(
+                IOstiumPairsStorage.Pair({
+                    from: from,
+                    to: to,
+                    feed: bytes32(bytes(m.name)),
+                    tradeSizeRef: 0,
+                    overnightMaxLeverage: 0,
+                    maxLeverage: m.maxLeverage,
+                    groupIndex: m.groupIndex,
+                    feeIndex: m.feeIndex,
+                    oracle: m.name
+                })
+            );
+            pairIndex = ps.pairsCount() - 1;
+        }
+
+        // `_setFundingParams` reads exactly ONE field of `Config` — `c.registry` — so it is
+        // reused verbatim through a zero-initialised stub rather than copied. Copying it would
+        // put the division-by-zero rationale and the `setPairFundingFees` validation limits in
+        // two places that must never drift; the stub keeps one implementation of both. The
+        // dependency is real and the compiler cannot see it: were `_setFundingParams` ever to
+        // read a second `Config` field it would read a zero here, so it must stay registry-only.
+        Config memory stub;
+        stub.registry = m.registry;
+        _setFundingParams(stub, pairIndex);
+
+        return pairIndex;
+    }
+
+    /// @notice Lifts an arbitrary pair's open-interest ceiling off zero.
+    /// @dev Caller must be `registry.manager()`, exactly as for `setMaxOi` — the difference is
+    ///      only that the ceiling comes from `m` instead of the `PAIR_MAX_OI` constant, so a
+    ///      market can be listed with a ceiling sized to its own liquidity.
+    ///
+    ///      The zero default is the silent trap `setMaxOi`'s comment describes in full:
+    ///      `TradingCallbacksLib.withinExposureLimits` fails, the open transaction SUCCEEDS, the
+    ///      collateral is refunded minus the oracle fee, and no position and no error exist.
+    ///      A second, louder consequence applies once a position does open: a zero ceiling makes
+    ///      `openInterestCap` zero in `OstiumPairInfos.getOiDelta` (`:597-604`), whose final line
+    ///      divides by it — `Panic(0x12)` on any path that settles funding.
+    function setMaxOiFor(MarketConfig memory m, uint16 pairIndex) public {
+        IOstiumTradingStorage ts =
+            IOstiumTradingStorage(IOstiumRegistry(m.registry).getContractAddress("tradingStorage"));
+        if (ts.openInterest(pairIndex, 2) > 0) return;
+        _relay(msg.sender);
+        ts.setMaxOpenInterest(pairIndex, m.maxOi);
+    }
+
+    /// @notice Points this market's own `<oracle>PriceUpkeep` registry key at the upkeep the
+    ///         system is already using.
+    /// @dev Caller must be `registry.gov()` (`registerContract` is `onlyGov`).
+    ///
+    ///      This is the step with no equivalent in `addMarket`, and the one whose absence is
+    ///      invisible: a pair lists successfully with no key registered, and only the first
+    ///      `openTrade` on it fails — reverting inside `OstiumRegistry.getContractAddress`
+    ///      (`:118-121`), which reverts `NotFound(bytes32)` rather than returning zero.
+    ///
+    ///      The address is READ from the registry, never supplied. `installHardenedUpkeep`
+    ///      (phase 2) states the invariant this depends on: ONE upkeep instance serves every
+    ///      feed, because the two pieces of per-market state it owns — `isFeedHalted[feedId]`
+    ///      and the deviation baseline `lastPrice[feedId]` — are already keyed by feed inside
+    ///      the contract. So the right address for a new feed is by definition whatever the
+    ///      incumbent feed resolves to, and reading it removes the only way an operator could
+    ///      point a new market at a stale or wrong instance by typing an address.
+    ///
+    ///      Deliberately NOT implemented by calling `installHardenedUpkeep(c, feedKeys)`, which
+    ///      would do the same registration: that function DEPLOYS an upkeep when no key resolves
+    ///      to a hardened one, and "list a market" must never be able to deploy an oracle as a
+    ///      side effect. It also needs the full `OracleConfig` — signers, threshold, guardian —
+    ///      none of which listing a market has any business requiring.
+    function registerUpkeepFor(MarketConfig memory m) public {
+        IOstiumRegistry registry = IOstiumRegistry(m.registry);
+        bytes32 key = _upkeepKey(m.name);
+        (bool found,) = _lookup(registry, key);
+        if (found) return;
+        address incumbent = _incumbentUpkeep(registry);
+        _relay(msg.sender);
+        registry.registerContract(key, incumbent);
+    }
+
+    /// @dev The upkeep the live system is actually delivering prices through, read from the
+    ///      anchor market's key. Not `_requireHardenedUpkeep`, which additionally probes for
+    ///      `maxAge()`: this path must keep working on a system that has not been migrated to
+    ///      the hardened oracle yet, and in that case the correct answer for a new feed is still
+    ///      "the same instance BTC/USD uses". Requiring hardening here would refuse to list a
+    ///      market on a system that trades perfectly well.
+    function _incumbentUpkeep(IOstiumRegistry registry) internal view returns (address) {
+        (bool found, address current) = _lookup(registry, PRICE_UPKEEP_KEY);
+        require(found && current != address(0), "no incumbent upkeep to reuse: run() or runOracle() first");
+        return current;
+    }
+
+    /// @notice Lists every market named in `MARKETS`, each fully configured and each skipped if
+    ///         already present. Invoked with `forge script ... --sig "runAddMarkets()"`.
+    /// @dev A separate entrypoint for the same reason `runOracle()` and `runLiquidation()` are:
+    ///      `run()`'s env block is a recorded procedure that has been executed against 1874, and
+    ///      adding a required variable to it would silently invalidate that record.
+    ///
+    ///      Needs two keys and one address. `LP_PRIVATE_KEY`, `LP_AMOUNT`, `USDW_ADDRESS`,
+    ///      `VAULT_ADDRESS`, `SIGNER_ADDRESS` and the rest of `Config` are all absent on
+    ///      purpose: none of them is per-market, and demanding them would make listing a market
+    ///      require the LP's key.
+    ///
+    ///      `MARKETS` is a comma-separated list of market names, e.g. `MARKETS=ETH/USD,SOL/USD`,
+    ///      each written exactly as it appears in `packages/shared/src/markets.mjs`. It has NO
+    ///      default, unlike `ORACLE_FEEDS`: a default would let an unset variable list a market
+    ///      nobody asked for, and there is no unlisting — `removePair`
+    ///      (`OstiumPairsStorage.sol:188-199`) requires zero traders and still never frees the
+    ///      index. Replay is safe: every step below returns early when its work is already done.
+    ///
+    ///      The four optional variables apply to EVERY market in one run. Markets needing
+    ///      different ceilings should be listed in separate runs rather than by adding a
+    ///      per-market encoding to an env string.
+    function runAddMarkets() external {
+        require(block.chainid == 1874, "unsupported chain");
+        _broadcasting = true;
+
+        string[] memory names = vm.envString("MARKETS", ",");
+        address registry = vm.envAddress("REGISTRY_ADDRESS");
+        uint32 maxLeverage = uint32(vm.envOr("MARKET_MAX_LEVERAGE", uint256(PAIR_MAX_LEVERAGE)));
+        uint256 maxOi = vm.envOr("MARKET_MAX_OI", PAIR_MAX_OI);
+        uint8 groupIndex = uint8(vm.envOr("MARKET_GROUP_INDEX", uint256(0)));
+        uint8 feeIndex = uint8(vm.envOr("MARKET_FEE_INDEX", uint256(0)));
+
+        uint256 govKey = vm.envUint("GOV_PRIVATE_KEY");
+        uint256 managerKey = vm.envUint("MANAGER_PRIVATE_KEY");
+
+        for (uint256 i = 0; i < names.length; i++) {
+            MarketConfig memory m = MarketConfig({
+                registry: registry,
+                name: names[i],
+                maxLeverage: maxLeverage,
+                maxOi: maxOi,
+                groupIndex: groupIndex,
+                feeIndex: feeIndex
+            });
+
+            vm.startBroadcast(govKey);
+            registerUpkeepFor(m);
+            vm.stopBroadcast();
+
+            vm.startBroadcast(govKey);
+            uint16 pairIndex = addMarketFor(m);
+            vm.stopBroadcast();
+
+            vm.startBroadcast(managerKey);
+            setMaxOiFor(m, pairIndex);
+            vm.stopBroadcast();
+        }
+    }
 }

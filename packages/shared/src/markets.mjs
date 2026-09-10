@@ -4,6 +4,13 @@
  * and services/keeper read this instead of hardcoding feed strings or venue symbols.
  *
  * BTC and ETH are the launch markets per the design spec §1 ("BTC and ETH are fixed").
+ * SOL was added afterwards; the bar for a new entry here is not "the pair exists" but
+ * "at least MIN_HEALTHY_VENUES of the four venues quote it", since below that threshold
+ * the aggregator marks the feed degraded and it never signs a report (see
+ * services/price-publisher/src/aggregator.mjs and @whitespace/shared/bounds). That is why
+ * WBT-PERP is absent despite appearing in the landing mockup — it trades on WhiteBIT
+ * alone. Every symbol below was verified to return live two-sided quotes on all four
+ * venues on 2026-09-10.
  */
 
 /**
@@ -44,6 +51,16 @@ export const MARKETS = {
       bybit: 'ETHUSDT',
       okx: 'ETH-USDT',
       whitebit: 'ETH_USDT',
+    },
+  },
+  'SOL/USD': {
+    feed: 'SOL/USD',
+    feedId: asciiToBytes32Hex('SOL/USD'),
+    venueSymbols: {
+      binance: 'SOLUSDT',
+      bybit: 'SOLUSDT',
+      okx: 'SOL-USDT',
+      whitebit: 'SOL_USDT',
     },
   },
 };
