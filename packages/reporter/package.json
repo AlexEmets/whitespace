@@ -8,5 +8,10 @@
     ".": "./src/report.mjs",
     "./report-v2": "./src/report-v2.mjs"
   },
-  "dependencies": { "viem": "^2.21.0" }
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  }
 }

@@ -20,5 +20,8 @@
     "./venues": "./src/venues.mjs",
     "./keys": "./src/keys.mjs",
     "./orderTypes": "./src/orderTypes.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/"
   }
 }
