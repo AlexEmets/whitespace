@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { OrdersList } from '@/components/OrdersList';
 import type { OrderSummary } from '@/lib/types';
@@ -8,8 +8,17 @@ import type { OrderSummary } from '@/lib/types';
 // PRECISION_2), never the raw scaled integers the contract stores.
 let ordersState: OrderSummary[] = [];
 
+/** Chain head the reclaim countdown compares against. `marketOrdersTimeout` is 30 blocks
+ * on 1874, so a request at 7437171 unlocks at 7437201. */
+let headBlock = 7_437_400n;
+const reclaimMock = vi.fn(async (_config: { functionName: string; args: unknown[] }) => '0xreclaim' as const);
+
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
+  useBlockNumber: () => ({ data: headBlock }),
+  useReadContract: () => ({ data: 30 }), // marketOrdersTimeout
+  usePublicClient: () => ({ waitForTransactionReceipt: vi.fn(async () => ({ status: 'success' })) }),
+  useWriteContract: () => ({ writeContractAsync: reclaimMock, isPending: false }),
 }));
 
 vi.mock('@/hooks/useOrders', () => ({
@@ -27,6 +36,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
+        requestedAtBlock: '7437171',
         status: 'pending',
         resolvedAt: null,
         cancelReason: null,
@@ -58,6 +68,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         collateral: null,
         leverage: null,
         requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
         status: 'pending',
         resolvedAt: null,
         cancelReason: null,
@@ -85,6 +96,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
+        requestedAtBlock: '7437171',
         status: 'executed',
         resolvedAt: 10,
         cancelReason: null,
@@ -105,6 +117,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         collateral: '100.000000',
         leverage: '10.00',
         requestedAt: 0,
+        requestedAtBlock: '7437171',
         status: 'cancelled',
         resolvedAt: 10,
         cancelReason: 'SLIPPAGE',
@@ -115,6 +128,65 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(screen.getByTestId('order-status-3')).toHaveTextContent(/cancelled/i);
     expect(screen.getByTestId('order-row-3')).toHaveTextContent(/SLIPPAGE/);
     expect(screen.getByTestId('order-row-3')).toHaveTextContent(/refunded/i);
+  });
+
+  /**
+   * `openTrade` takes the collateral up front. When a keeper never delivers a report the
+   * order stays pending and that money is locked in TradingStorage — and only the trader
+   * can call `openTradeMarketTimeout` to get it back. With no control for it in the app,
+   * a real outage left an order pending with 250 USDW behind it and no way to recover.
+   */
+  it('offers to reclaim the collateral once the timeout has passed', async () => {
+    headBlock = 7_438_551n; // well past 7437171 + 30
+    reclaimMock.mockClear();
+    ordersState = [
+      {
+        orderId: '8',
+        pairIndex: 0,
+        kind: 'open',
+        buy: null,
+        collateral: null,
+        leverage: null,
+        requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
+        status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
+      },
+    ];
+    render(<OrdersList />);
+
+    const button = screen.getByTestId('order-reclaim-8');
+    fireEvent.click(button);
+    await waitFor(() => expect(reclaimMock).toHaveBeenCalled());
+    expect(reclaimMock).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: 'openTradeMarketTimeout', args: [8n] }),
+    );
+  });
+
+  it('counts down instead of offering a reclaim the contract would reject', () => {
+    headBlock = 7_437_181n; // 20 blocks short of 7437171 + 30
+    ordersState = [
+      {
+        orderId: '9',
+        pairIndex: 0,
+        kind: 'open',
+        buy: null,
+        collateral: null,
+        leverage: null,
+        requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
+        status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
+      },
+    ];
+    render(<OrdersList />);
+
+    expect(screen.queryByTestId('order-reclaim-9')).not.toBeInTheDocument();
+    expect(screen.getByTestId('order-reclaim-wait-9')).toHaveTextContent('20 blocks');
   });
 
   it('renders a no-orders message when there are none', () => {

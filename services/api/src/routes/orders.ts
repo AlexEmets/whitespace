@@ -13,6 +13,7 @@ type OrderRow = {
   leverage: number | null;
   status: string;
   requested_at: number;
+  requested_at_block: string;
   resolved_at: number | null;
   cancel_reason: string | null;
 };
@@ -66,6 +67,11 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
     leverage: fmtLeverage(r.leverage),
     status: r.status,
     requestedAt: r.requested_at,
+    // The BLOCK, not just the timestamp: `OstiumTrading.openTradeMarketTimeout` gates the
+    // trader's refund on `block.number >= requestBlock + marketOrdersTimeout`, so a client
+    // deciding whether that refund is available yet needs the same unit the contract
+    // compares in. Deriving it from a timestamp would be a guess about block time.
+    requestedAtBlock: fmtId(r.requested_at_block),
     resolvedAt: r.resolved_at,
     cancelReason: r.cancel_reason,
   }));

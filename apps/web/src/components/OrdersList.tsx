@@ -1,9 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useOrders } from '@/hooks/useOrders';
+import { useIsReclaimable, useReclaimOrder } from '@/hooks/useReclaimOrder';
 import { explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
+import type { OrderSummary } from '@/lib/types';
 import { Money } from './Money';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -11,6 +14,61 @@ const STATUS_LABEL: Record<string, string> = {
   executed: 'Executed',
   cancelled: 'Cancelled',
 };
+
+/**
+ * The escape hatch for an order the keeper never came back for.
+ *
+ * A pending order is holding the trader's collateral. If no signed report ever arrives,
+ * `openTradeMarketTimeout` returns it in full — but only the trader can call it, and only
+ * after `marketOrdersTimeout` blocks. Before this existed the money was simply stuck with
+ * no route to it from the product; a keeper outage left an order pending with 250 USDW
+ * behind it and nothing on screen even acknowledged the fact.
+ *
+ * While the wait is still running the countdown is shown rather than a disabled button
+ * with no explanation, because "why can't I click this" is the next question otherwise.
+ */
+function ReclaimCell({ order }: { order: OrderSummary }) {
+  const { reclaim, isPending } = useReclaimOrder();
+  const { reclaimable, blocksRemaining } = useIsReclaimable(order);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  if (done) return <span data-testid={`order-reclaimed-${order.orderId}`}>Collateral returned.</span>;
+
+  if (!reclaimable) {
+    if (blocksRemaining === null) return <span className="dash">Waiting for a keeper report…</span>;
+    return (
+      <span className="dash" data-testid={`order-reclaim-wait-${order.orderId}`}>
+        Waiting for a keeper report — reclaimable in {blocksRemaining} block{blocksRemaining === 1 ? '' : 's'}.
+      </span>
+    );
+  }
+
+  async function handleReclaim() {
+    setError(null);
+    try {
+      await reclaim(order.orderId);
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <>
+      <span>No keeper report arrived. </span>
+      <button type="button" data-testid={`order-reclaim-${order.orderId}`} onClick={handleReclaim} disabled={isPending}>
+        {isPending ? 'Reclaiming…' : 'Reclaim collateral'}
+      </button>
+      {error ? (
+        <span role="alert" className="error-text">
+          {' '}
+          {error}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 /**
  * The two-phase order lifecycle, made explicit (design §5.1/§7): "a trade is not done
@@ -65,6 +123,7 @@ export function OrdersList() {
                 </span>
               ) : null}
               {o.status === 'executed' ? 'Position opened.' : null}
+              {o.status === 'pending' ? <ReclaimCell order={o} /> : null}
             </td>
           </tr>
         ))}

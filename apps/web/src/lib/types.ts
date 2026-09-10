@@ -80,6 +80,10 @@ export interface OrderSummary {
   collateral: string | null;
   leverage: string | null;
   requestedAt: number;
+  /** Block the request landed in, as digits. In BLOCKS because that is the unit
+   * `openTradeMarketTimeout` compares against when deciding whether the trader may
+   * reclaim their collateral. */
+  requestedAtBlock: string | null;
   status: OrderStatus;
   /** Unix seconds when the order stopped being pending; null while it still is. */
   resolvedAt: number | null;

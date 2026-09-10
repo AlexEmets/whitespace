@@ -38,6 +38,10 @@ describe('GET /orders/:address', () => {
         leverage: null,
         status: 'pending',
         requestedAt: 1788882000,
+        // The block, not just the timestamp: the trader's timeout refund is gated on
+        // `block.number >= requestBlock + marketOrdersTimeout`, so the client needs the
+        // same unit the contract compares in.
+        requestedAtBlock: '7285600',
         resolvedAt: null,
         cancelReason: null,
       },
