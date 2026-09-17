@@ -49,13 +49,37 @@ work — see §6 for the one consequence that has on this change.
 
 ## 3. Host
 
-**Hetzner CX22** — 2 vCPU x86, 4 GB RAM, 40 GB NVMe, Nuremberg. About €3.79/mo
-plus €0.50/mo for the IPv4 address, so roughly **$4.60/mo**. A domain adds
-$1–12/yr.
+**Netcup VPS 500 G12** — 2 vCPU, 4 GB DDR5 ECC, 128 GB NVMe, Nuremberg or
+Vienna. €5.91/mo incl. VAT, 12-month minimum term, no setup fee. Plus a domain
+at $1–12/yr and Cloudflare at $0 (§4). Call it **$7/mo all-in**.
 
-x86 rather than the similarly priced CAX11 (ARM): the price difference is
-negligible and ARM introduces avoidable risk around native binaries in the
-dependency tree (SWC, Postgres client bindings, anything Ponder pulls in).
+Hetzner was the obvious default and is now the wrong answer. It raised prices
+twice in 2026 — a portfolio-wide +30–37% on 1 April, then an uneven adjustment
+on 15 June that hit the RAM-heavy lines hardest: **CPX22 went €7.99 → €19.49/mo
+ex-VAT, +144%**, which is 3.9× Netcup for the same 4 GB. The cheaper CX and CAX
+lines would still be competitive at €5.49–5.99, but Hetzner has carried an open
+"Limited availability of cloud instances" notice since 26 June and lists all
+eight CX/CAX plans as unavailable in every EU location. Planning around a SKU
+that cannot be ordered is planning on hope.
+
+Two runners-up and why they lost, both for reasons specific to this codebase:
+
+- **OVHcloud VPS-1, €3.81/mo** — cheapest verifiably orderable EU box, but its
+  40 GB disk is exactly the floor with nothing spare. §8 notes that `candle` and
+  `api_series.index_candle` grow without any retention or pruning; 128 GB
+  removes a problem that 40 GB merely postpones, for €14/yr.
+- **Contabo Cloud VPS 4, ~€4.62/mo for 8 GB** — rejected not for its documented
+  I/O contention but because Contabo is reported to assign recycled,
+  abuse-flagged IPs to some new accounts. The price publisher must hold four
+  long-lived WSS sessions to Binance, Bybit, OKX and WhiteBIT, all of which
+  filter on IP reputation. The failure mode is no price feed at all.
+
+ECC is a genuine tiebreaker for a long-lived Postgres: the failure mode of a
+silent bit-flip is corrupt data discovered a week later, not a crash.
+
+Prices verified 2026-09-17. Hetzner's figures come from its published
+price-adjustment changelog, since hetzner.com renders prices client-side; the
+Netcup ex-VAT figure is computed from the VAT-inclusive price at 19%.
 
 Add **2 GB of swap**. Steady-state usage is roughly 2 GB (Postgres ~256 MB,
 Ponder 512 MB–1 GB, `next start` ~250 MB, `tsx`-hosted API ~150 MB, three small
@@ -73,10 +97,26 @@ serves the frontend, the API, the WebSocket and the RPC proxy. Because the
 browser then talks to one origin only, CORS never engages and
 `CORS_ALLOWED_ORIGINS` stops mattering.
 
+**Cloudflare Tunnel is the front door.** `cloudflared` runs on the VPS and dials
+out to Cloudflare; no inbound port is opened, the firewall allows only SSH, and
+the server's IP is never published. Cloudflare terminates TLS, absorbs DDoS and
+serves cached static assets. This is free with no metered bandwidth — the
+per-GB charge people associate with it belongs to Argo Smart Routing, a separate
+opt-in product that stays off. WebSockets proxy fine on the free plan, subject
+to the idle timeout handled in §6.
+
+Caddy stays, bound to `127.0.0.1` only, doing path routing rather than TLS.
+Keeping it means the whole topology is reproducible locally without Cloudflare
+in the loop, and swapping the front door later touches one config file.
+
 ```
                     https://DOMAIN
           ┌──────────────────────────────┐
-          │ Caddy — automatic TLS        │
+          │ Cloudflare — TLS, CDN, DDoS  │
+          └──────────────┬───────────────┘
+                         │ cloudflared tunnel (outbound only)
+          ┌──────────────┴───────────────┐
+          │ Caddy on 127.0.0.1 — routing │
           └──────────────┬───────────────┘
                          │
   /            ────────► 127.0.0.1:3000   apps/web (next start)
@@ -101,10 +141,11 @@ Two routing details are load-bearing and were verified against the source:
   `new WebSocketServer({ server, path: '/ws' })` (`services/api/src/ws.ts:188`),
   which matches the literal path. So `/ws` is proxied **without** stripping.
 
-Caddyfile:
+Caddyfile — note it binds a plain local port, not a domain, because Cloudflare
+already terminated TLS upstream:
 
 ```
-DOMAIN {
+:8080 {
 	encode gzip zstd
 
 	handle /ws {
@@ -157,10 +198,20 @@ keyed on `(method, params)` with per-method TTLs (`eth_chainId` forever,
 seventh systemd unit. The Caddy route and the frontend change are identical
 either way, so this swap costs nothing downstream.
 
+**Why not a Cloudflare Worker.** Caching JSON-RPC at the edge is appealing and
+was evaluated. The blocker is that the Workers Cache API accepts GET and HEAD
+only — `cache.put()` throws on anything else — and the request body is never
+part of the cache key. JSON-RPC is POST, so caching it means hashing the body
+into a synthetic GET URL by hand, classifying methods and assigning TTLs: real
+code to write and own, where eRPC is configuration. Cache Rules cannot help
+either, since they are evaluated before the body is available. This stays
+documented as a later optimisation for when edge locality actually matters,
+not a launch dependency.
+
 ## 6. Code changes
 
-Three lines of product code. Everything else is new files that sit outside the
-application.
+Three one-line changes plus one small function. Everything else is new files
+that sit outside the application.
 
 1. **`apps/web/src/lib/wagmiConfig.ts`** — let the RPC URL be overridden:
    `http(process.env.NEXT_PUBLIC_RPC_URL ?? CHAIN_INFO.rpc)`. Absent the env var
@@ -170,6 +221,36 @@ application.
 3. **`services/indexer/.env.example`** — document `HEARTBEAT_START_BLOCK`. The
    variable is already read at `services/indexer/ponder.config.ts:41` and is
    load-bearing (§7), but is absent from the example file.
+4. **`services/api/src/ws.ts`** — add a server-side ping every 30 s. This is the
+   one behavioural change, and it exists only because of Cloudflare.
+
+### Why the WebSocket needs a heartbeat
+
+Cloudflare closes a proxied WebSocket when no data crosses it in either
+direction for a period the docs decline to publish; the figure consistently
+reported by users and Cloudflare staff is **100 seconds**. Cloudflare also warns
+that network code releases restart servers and terminate connections outright.
+
+The current server never sends unprompted traffic. `pollOnce()` deduplicates on
+payload — `services/api/src/ws.ts:165` skips the send when the serialised
+payload is unchanged — so a quiet channel emits nothing at all. A trader
+subscribed to `positions:` or `orders:` with no activity receives literal
+silence, and Cloudflare drops the socket at ~100 s.
+
+This does not currently manifest, because local development has no proxy in the
+path. It would appear only in production, as sockets that die roughly every two
+minutes.
+
+The client already handles the symptom: `apps/web/src/lib/ws.ts:71-76`
+reconnects with exponential backoff capped at 30 s, resetting the counter on a
+successful open (`:45`). So the visible failure is not a dead UI but a
+connect-silence-drop-reconnect cycle, wasting connections and stalling updates
+for up to a second each round.
+
+Fix at the source: a 30-second `ws.ping()` interval per socket in `attach()`,
+with the timer cleared on close. Roughly ten lines. Browser WebSocket clients
+answer pings at the protocol level with no page-side code, so
+`apps/web/src/lib/ws.ts` needs no change.
 
 **Consequence of change 3.** `tools/stack/run.mjs` refuses to boot when a
 service's `.env` does not cover every key in its `.env.example`. Adding
@@ -237,7 +318,10 @@ alert rather than a surprise.
 
 ## 9. Operations
 
-**Process supervision.** One systemd unit per service, `Restart=always`,
+**Process supervision.** `cloudflared` runs as its own systemd unit, installed
+from Cloudflare's repository and independent of the deploy script — it must
+survive an application deploy untouched, since it is the only path in. Then one
+unit per service, `Restart=always`,
 `RestartSec=5`, `WantedBy=multi-user.target` for start-on-boot. Ordering via
 `After=`/`Requires=`: Postgres before indexer, indexer before api, api before
 web; publisher before keeper and liquidator. Each unit sets
@@ -288,14 +372,25 @@ The publisher opens outbound WebSockets to Binance, Bybit, OKX and WhiteBIT
 connections from data-centre IP ranges. If any venue is blocked, the weighted
 median degrades or the publisher fails outright.
 
-Hetzner bills by the hour, so the first implementation step is: create the CX22,
-and from it verify all five outbound dependencies — `wss://stream.binance.com:9443`,
-`wss://stream.bybit.com`, `wss://ws.okx.com:8443`, `wss://api.whitebit.com/ws`,
-and `https://rpc.testnet.whitechain.io`. Only then buy the domain and proceed.
-If a venue is blocked, the decision is whether to drop it from
-`PUBLISHER_VENUES` (the k-of-N threshold is 3 of 5 signers, but venue count is
-separate) or choose a different provider. Aborting at this point costs about
-€0.01.
+The original plan was to rent an hourly Hetzner box, test, and discard it for
+€0.01. Netcup's 12-month minimum term removes that escape hatch, so the
+verification moves to the first hour of the real server's life:
+
+1. Before anything else is installed, open all five outbound dependencies from
+   the box — `wss://stream.binance.com:9443`, `wss://stream.bybit.com`,
+   `wss://ws.okx.com:8443`, `wss://api.whitebit.com/ws`, and
+   `https://rpc.testnet.whitechain.io`.
+2. If a venue is blocked, decide whether to drop it from `PUBLISHER_VENUES` —
+   note the k-of-N threshold of 3 governs *signers*, not venues, so the venue
+   count is a separate, softer constraint — or to change provider.
+3. Changing provider means invoking the 14-day withdrawal right that EU distance
+   selling grants on a consumer contract. **Confirm before ordering** that
+   Netcup's terms do not waive it on service commencement, which such terms
+   commonly do.
+
+The residual risk is low: exchange IP restrictions target US ranges, and German
+data centres are not typically affected. But it is now a €71 bet rather than a
+€0.01 one, so it gets checked first and deliberately.
 
 ## 11. Accepted limitations, to be stated in the UI
 
@@ -317,7 +412,10 @@ discovered:
 | Keeper runs out of gas | Orders silently stop filling | Balance alert (§9); manual refill |
 | eRPC misbehaves on 1874 | RPC proxy unusable | Documented fallback to an in-repo LRU proxy (§5) |
 | Exchange blocks Hetzner IPs | Degraded or dead price feed | Verified before purchase (§10) |
-| Disk fills from unbounded candles | Postgres stops accepting writes | Disk alert; retention is a separate future change |
+| Disk fills from unbounded candles | Postgres stops accepting writes | 128 GB buys years; disk alert; retention is a separate future change |
+| Cloudflare becomes a single point of failure | Site unreachable even though the VPS is healthy | Accepted for a testnet demo. Caddy already binds a plain port, so falling back to a direct A record plus Let's Encrypt is a config change, not a redesign |
+| Cloudflare drops idle WebSockets | Reconnect churn, stalled updates | Server-side 30 s ping (§6) |
+| Netcup 12-month minimum term | Cannot walk away mid-year | ~€71 total exposure; accepted |
 | Key compromise on a public host | Testnet funds only; no mainnet exposure | Non-deploy keys never copied; 600/700 permissions |
 | `NEXT_PUBLIC_API_BASE_URL=/api` is relative | Frontend cannot reach the API if the client does `new URL(base)` without a base argument | Verify the fetch helper in `apps/web/src/lib` accepts a relative base before building; if it does not, set the absolute `https://DOMAIN/api` instead — same-origin either way |
 
@@ -326,12 +424,20 @@ discovered:
 1. `https://DOMAIN` loads the trading terminal over valid TLS.
 2. `https://DOMAIN/api/health` returns ok; `wss://DOMAIN/ws` accepts a
    subscription and pushes a price tick.
-3. The browser's network panel shows chain calls going to `DOMAIN/rpc`, not to
+3. A `wss://DOMAIN/ws` subscription to a **deliberately quiet** channel survives
+   **10 minutes** without a disconnect. This is the direct test of §6; a channel
+   that happens to be busy proves nothing, because traffic masks the idle
+   timeout.
+4. The VPS has no inbound ports open to the internet — `nmap` from off-host
+   shows nothing, and the site still works.
+5. The browser's network panel shows chain calls going to `DOMAIN/rpc`, not to
    `rpc.testnet.whitechain.io`.
-4. A wallet with WBT and claimed USDW opens and closes a BTC/USD position end to
+6. A wallet with WBT and claimed USDW opens and closes a BTC/USD position end to
    end, with the keeper fulfilling the price request.
-5. `systemctl restart` of any single service is recovered automatically, and the
+7. `systemctl restart` of any single service is recovered automatically, and the
    full stack returns after `reboot`.
-6. Indexer `/health` reports ok within 15 minutes of a cold start, not 6 hours.
-7. A `pg_dump -n api_series` artifact exists and restores into a scratch
+8. Indexer `/health` reports ok within 15 minutes of a cold start, not 6 hours.
+9. A `pg_dump -n api_series` artifact exists and restores into a scratch
    database.
+10. RSS of every unit is recorded after 24 h of uptime, replacing the estimates
+    in §3 with a measured memory profile.
