@@ -1105,3 +1105,44 @@ table.data-table td {
 .vault-panel [data-testid='faucet-button']:not(:disabled):hover {
   background: var(--long-dim);
 }
+
+/* ---------------------------------------------------------------------------
+ * Chrome typography, matched against docs/design/terminal_design.pdf.
+ *
+ * The mockup sets every *label* in letter-spaced uppercase and leaves values and
+ * prose alone — `MARKETS 38`, `PRICE`, `SIZE`, `AVAIL.`, `LEVERAGE`,
+ * `DEPTH INDICATORS LOG SCALE`, `POSITIONS · 2`, `LONG`/`SHORT`,
+ * `LIMIT MARKET STOP TWAP`, and the positions table headers
+ * `MARKET SIZE ENTRY MARK LIQ. UPNL`.
+ *
+ * Note what it does NOT uppercase, because copying it wholesale would be wrong:
+ * the order summary reads "Order value", "Margin required", "Est. liq. price",
+ * "Fee · maker/taker" in sentence case in the reference, so `.order-summary` is
+ * deliberately absent from the list below.
+ *
+ * Expressed as `text-transform` rather than by rewriting the strings in the
+ * components. The rendered DOM text then stays exactly as authored, so the
+ * tests that query by label keep matching, and casing remains a presentation
+ * decision living in one place instead of being spread across a dozen files.
+ * ------------------------------------------------------------------------ */
+.terminal-rail .rail-header,
+.market-header .chip,
+.market-header .stat-cell,
+.chart-toolbar button,
+.terminal-tabs .tab-bar button,
+.side-toggle button,
+.order-type-tabs button,
+.field-label-row,
+.leverage-row,
+.bounds,
+.data-table th {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* A price is not a label: numbers keep their natural tracking so the digits do
+ * not drift apart under the tracking applied to the label above them. */
+.market-header .stat-cell .stat-value,
+.data-table td {
+  letter-spacing: normal;
+}
