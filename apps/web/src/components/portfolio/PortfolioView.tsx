@@ -14,6 +14,7 @@ import { COLLATERAL_DECIMALS } from '@/lib/config';
 import { formatMoney } from '@/lib/money';
 import { estimateUnrealisedPnl } from '@/lib/pnl';
 import type { PositionSummary, PriceResponse } from '@/lib/types';
+import { FundingButtons } from '@/components/FundingButtons';
 import {
   AccountState,
   DefRow,
@@ -262,6 +263,62 @@ export function PortfolioView() {
           }
         />
       </TileRow>
+
+      {/* Sits directly under the tiles, because the question the tiles provoke is "can I
+          move any of that?". The two balances repeated here are the two this section acts
+          on — free wallet USDW in, vault position out — and they come from reads the page
+          has already done, not new ones. */}
+      <Section
+        title="Funding"
+        testId="portfolio-funding"
+        aside="Both directions are requests. The vault settles them on its own schedule, then you claim — nothing here is instant."
+      >
+        <div className={styles.funding}>
+          <Defs>
+            <DefRow
+              testId="funding-free"
+              label="Free in wallet"
+              value={
+                balances.walletRaw === null ? (
+                  <Dash reason="the USDW balanceOf call has not returned" />
+                ) : (
+                  `${formatMoney(balances.walletRaw, COLLATERAL_DECIMALS)} USDW`
+                )
+              }
+            />
+            <DefRow
+              testId="funding-vault"
+              label="In the LP vault"
+              value={
+                balances.vaultAssetsRaw === null ? (
+                  <Dash reason="the vault share balance has not been read yet" />
+                ) : (
+                  <>
+                    {formatMoney(balances.vaultAssetsRaw, COLLATERAL_DECIMALS)} USDW
+                    {balances.vaultSharesRaw === null ? null : (
+                      <span className={styles.subtle}>
+                        {' · '}
+                        {formatMoney(balances.vaultSharesRaw, COLLATERAL_DECIMALS)} shares
+                      </span>
+                    )}
+                  </>
+                )
+              }
+            />
+          </Defs>
+
+          <FundingButtons idPrefix="portfolio" className={styles.fundingActions} />
+
+          {/* Which way each button moves money, said once. "Request deposit" was read as
+              "request USDW" and submitted from an empty wallet — naming the direction is
+              what stops that. The faucet is the other way entirely, and is its own page. */}
+          <p className={styles.fundingNote}>
+            <strong>Deposit</strong> sends USDW from your wallet into the LP vault and returns shares.{' '}
+            <strong>Withdraw</strong> redeems those shares back into USDW. Neither mints anything — for testnet
+            collateral use the <Link href="/faucet">faucet</Link>.
+          </p>
+        </div>
+      </Section>
 
       {failure ? (
         <Section title="Account value">

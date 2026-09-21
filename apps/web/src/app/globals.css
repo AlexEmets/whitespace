@@ -103,6 +103,16 @@ select {
   color: var(--fg);
 }
 
+/* Six destinations since FAUCET was added, against a header that also carries the chain
+   readout and the wallet chip. Tighten the gap before anything is forced to wrap — a nav
+   that wraps to a second line moves the whole terminal down. */
+@media (max-width: 1100px) {
+  .nav-links {
+    gap: 1rem;
+    margin-left: 1.5rem;
+  }
+}
+
 .nav-right {
   display: flex;
   align-items: center;
@@ -121,40 +131,6 @@ select {
   cursor: pointer;
   font-size: 0.72rem;
   letter-spacing: 0.06em;
-}
-
-/* DEPOSIT / WITHDRAW, in the Aster/Hyperliquid position: header chrome, beside the
-   wallet, not buried on a /vaults page nothing in the terminal links to. Outlined rather
-   than filled — the filled green in this app is reserved for the order-entry submit, and
-   two competing primaries in one viewport is how a trader clicks the wrong one. */
-.nav-right .funding-buttons {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.nav-right .funding-buttons button {
-  padding: 0.4rem 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--fg);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.nav-right .funding-buttons button:hover {
-  border-color: var(--accent);
-}
-
-/* The header is crowded; these are the first controls to collapse to icons' worth of
-   space when the viewport narrows, ahead of the wallet name. */
-@media (max-width: 900px) {
-  .nav-right .funding-buttons {
-    display: none;
-  }
 }
 
 .nav-right .wallet-chip {

@@ -5,29 +5,34 @@ import { useAccount } from 'wagmi';
 import { FundingModal, type FundingMode } from './FundingModal';
 
 /**
- * The `DEPOSIT` / `WITHDRAW` pair in the header chrome, as on Aster and Hyperliquid.
+ * A `DEPOSIT` / `WITHDRAW` pair wired to one `FundingModal`.
  *
- * Both open the same dialog on the matching tab — one component owns the mode so the
- * dialog can switch between them without closing, which is what makes the pair feel like
- * two views of one thing rather than two unrelated screens.
+ * The pair and the dialog are one unit: both buttons open the same dialog on their own
+ * tab, and the dialog can switch between them without closing, which is what makes them
+ * feel like two views of one thing rather than two screens. Keeping that wiring here
+ * means `/portfolio` and `/vaults` do not each carry their own copy of the mode state —
+ * two copies is how one of them ends up opening the wrong tab.
  *
- * Rendered only when a wallet is connected. The dialog handles the disconnected case too,
- * but putting money controls in front of someone with no wallet is an invitation to a
- * dead end, and the connect button is right beside them.
+ * `idPrefix` scopes the test ids per call site so a test can name the button it means.
+ * `className` is the caller's, because the two contexts want different geometry: a
+ * two-column grid on the portfolio funding card, an inline pair on the vault panel.
  */
-export function FundingButtons() {
+export function FundingButtons({ idPrefix, className }: { idPrefix: string; className?: string }) {
   const { isConnected } = useAccount();
   const [mode, setMode] = useState<FundingMode | null>(null);
 
+  // Money controls in front of someone with no wallet are an invitation to a dead end.
+  // Both current call sites already sit inside a connected branch; this is the backstop
+  // for the next one that does not.
   if (!isConnected) return null;
 
   return (
     <>
-      <div className="funding-buttons">
-        <button type="button" onClick={() => setMode('deposit')} data-testid="deposit-button">
+      <div className={className}>
+        <button type="button" onClick={() => setMode('deposit')} data-testid={`${idPrefix}-deposit-button`}>
           Deposit
         </button>
-        <button type="button" onClick={() => setMode('withdraw')} data-testid="withdraw-button">
+        <button type="button" onClick={() => setMode('withdraw')} data-testid={`${idPrefix}-withdraw-button`}>
           Withdraw
         </button>
       </div>

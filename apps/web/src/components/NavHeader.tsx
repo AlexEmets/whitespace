@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useHealth } from '@/hooks/useHealth';
 import { ChainGuard } from './ChainGuard';
-import { FundingButtons } from './FundingButtons';
 import { WalletConnect } from './WalletConnect';
 
 const NAV_LINKS: Array<{ href: string; label: string }> = [
@@ -13,6 +12,7 @@ const NAV_LINKS: Array<{ href: string; label: string }> = [
   { href: '/points', label: 'POINTS' },
   { href: '/portfolio', label: 'PORTFOLIO' },
   { href: '/docs', label: 'DOCS' },
+  { href: '/faucet', label: 'FAUCET' },
 ];
 
 /** Shared header across every page: wordmark, nav, and the live chain/health readout —
@@ -44,7 +44,11 @@ export function NavHeader() {
           <span data-testid="chain-health">
             WHITECHAIN · BLOCK {indexedBlock ?? '—'} · {latencyMs ?? '—'} MS
           </span>
-          <FundingButtons />
+          {/* Deposit/withdraw are NOT here. They were, briefly, in the Aster/Hyperliquid
+              header position; they now live on /portfolio, where the balances they act on
+              already are. The header was carrying the block height, the latency, the
+              wallet chip and two money controls — one of those is a navigation bar and
+              the rest is a dashboard. */}
           <WalletConnect />
         </div>
       </header>

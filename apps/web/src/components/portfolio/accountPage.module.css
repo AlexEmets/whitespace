@@ -259,6 +259,75 @@
   }
 }
 
+/* ---------- Funding (deposit / withdraw) ----------
+   The controls moved here from the header, where they competed with the block height and
+   the wallet chip. On this page they sit under the balances they act on. */
+
+.funding {
+  display: grid;
+  gap: 0.9rem;
+  max-width: 46em;
+}
+
+/* Two equal actions, not a primary and a secondary: depositing and withdrawing are the
+   same size of decision, and styling one as the default is a nudge this page has no
+   business making. Green is reserved for the terminal's submit. */
+.fundingActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  max-width: 24em;
+}
+
+.fundingActions button {
+  padding: 0.7rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+
+.fundingActions button:hover,
+.fundingActions button:focus-visible {
+  color: var(--fg);
+  border-color: var(--accent);
+  outline: none;
+}
+
+.fundingNote {
+  margin: 0;
+  max-width: 46em;
+  font-size: 0.68rem;
+  line-height: 1.6;
+  color: var(--fg-dim);
+}
+
+.fundingNote strong {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+
+.fundingNote a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.fundingNote a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 560px) {
+  .fundingActions {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Definition rows (account-value breakdown, fee schedule) ---------- */
 
 .defs {

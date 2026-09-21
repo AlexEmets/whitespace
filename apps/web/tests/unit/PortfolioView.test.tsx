@@ -56,8 +56,20 @@ const markPrice: PriceResponse = {
 
 const hasPrice = vi.hoisted(() => ({ value: true }));
 
+/**
+ * The write-side hooks are here because the page now renders the Funding section, and
+ * `FundingButtons` mounts a (closed) `FundingModal` whose `useErc20`/`useVault` hooks run
+ * on every render regardless.
+ *
+ * Mocked at the wagmi boundary rather than by stubbing out `FundingButtons`, so the real
+ * component stays in the tree and the "deposit and withdraw are reachable from here"
+ * assertion below is about the actual buttons, not a test double of them.
+ */
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0x2b8ba090DEdF879f8045c0dDA5a78762cED90D19' as const, isConnected: true }),
+  useReadContract: () => ({ data: undefined, isLoading: false, refetch: vi.fn() }),
+  usePublicClient: () => undefined,
+  useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock('@/hooks/usePositions', () => ({
@@ -164,6 +176,31 @@ describe('<PortfolioView> connected', () => {
     const dashes = screen.getAllByTestId('honest-dash');
     expect(dashes.length).toBeGreaterThan(0);
     expect(dashes.some((d) => (d.getAttribute('title') ?? '').includes('funding/rollover'))).toBe(true);
+  });
+
+  /**
+   * Deposit and withdraw moved here from the header (owner decision 2026-09-21). The
+   * portfolio is the page that already reports the two balances they move, so this is
+   * where they belong — and it is now the only place in the chrome that offers them.
+   */
+  it('offers deposit and withdraw beside the balances they move', () => {
+    render(<PortfolioView />);
+
+    expect(screen.getByTestId('portfolio-funding')).toBeInTheDocument();
+    expect(screen.getByTestId('portfolio-deposit-button')).toBeInTheDocument();
+    expect(screen.getByTestId('portfolio-withdraw-button')).toBeInTheDocument();
+  });
+
+  /** "Request deposit" was once read as "request USDW" and submitted from an empty
+   * wallet. The section has to say which way each control moves money, and point at the
+   * faucet for the direction neither of them covers. */
+  it('names the direction of each control and sends minting to the faucet', () => {
+    render(<PortfolioView />);
+    const funding = screen.getByTestId('portfolio-funding');
+
+    expect(funding).toHaveTextContent(/deposit.*from your wallet into the LP vault/i);
+    expect(funding).toHaveTextContent(/withdraw.*redeems those shares back into USDW/i);
+    expect(funding.querySelector('a[href="/faucet"]')).not.toBeNull();
   });
 
   it('refuses to print an account total when a mark price is missing', () => {
