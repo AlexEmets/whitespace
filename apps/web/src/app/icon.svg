@@ -1,0 +1,23 @@
+<!--
+  Tab icon. Next.js App Router serves any `app/icon.*` as the favicon automatically, so
+  this file needs no registration in layout.tsx and no <link rel="icon">.
+
+  SVG rather than a raster .ico on purpose: the mark is three primitives, so it stays sharp
+  at every tab and bookmark size instead of shipping several PNG sizes, and the two brand
+  colours stay editable as text.
+
+  The crescent is a filled disc with a second disc knocked out of it via a mask, rather
+  than a hand-drawn path — the cut circle's offset is then the only number controlling how
+  thick the moon reads, which is far easier to adjust than re-fitting bezier arcs.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <mask id="crescent">
+    <rect width="512" height="512" fill="#000" />
+    <circle cx="250" cy="258" r="152" fill="#fff" />
+    <circle cx="324" cy="190" r="143" fill="#000" />
+  </mask>
+
+  <rect x="7" y="7" width="498" height="498" rx="118" fill="#08080a" stroke="#2b2c33" stroke-width="14" />
+  <rect width="512" height="512" fill="#ecedee" mask="url(#crescent)" />
+  <circle cx="368" cy="168" r="31" fill="#4a5cf0" />
+</svg>
