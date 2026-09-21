@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { maxUint256 } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import type { OpenTradeParams } from '@/hooks/useOpenTrade';
@@ -245,9 +246,21 @@ describe('<OpenPositionForm>', () => {
     expect(screen.queryByTestId('submit-open-button')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('approve-button'));
-    // Approves the DERIVED collateral, not the typed size — approving 0.01 would
-    // authorise a hundredth of a USDW against an order needing sixty-five.
-    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(COLLATERAL_FOR_0_01_BTC));
+    /**
+     * Approves MAX, not this order's collateral.
+     *
+     * Approving the exact amount made every order larger than the last one demand a
+     * second transaction before it could be submitted — which reads as the terminal
+     * refusing to trade. The allowance itself is unavoidable: `openTrade` pulls collateral
+     * out of the wallet with `safeTransferFrom` (there is no exchange balance to spend
+     * from), and USDW has no `permit` to sign instead.
+     *
+     * Asserting max rather than "some bigint" is the point — a regression back to the
+     * exact amount would restore the repeated prompt and this test would still pass if it
+     * only checked that approve ran.
+     */
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(maxUint256));
+    expect(approveMock).not.toHaveBeenCalledWith(COLLATERAL_FOR_0_01_BTC);
     expect(refetchAllowanceMock).toHaveBeenCalled();
   });
 

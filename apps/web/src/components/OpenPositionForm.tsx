@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { maxUint256 } from 'viem';
 import { useAccount } from 'wagmi';
 import { useErc20 } from '@/hooks/useErc20';
 import { useFaucet } from '@/hooks/useFaucet';
@@ -223,11 +224,27 @@ export function OpenPositionForm({
     setSizeInput(formatMoney(size, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false }));
   }
 
+  /**
+   * Approves the maximum, not this order's collateral.
+   *
+   * The allowance is what lets `OstiumTradingStorage` pull collateral out of the wallet
+   * at open time (safeTransferFrom, OstiumTradingStorage.sol:486). There is no account
+   * balance on this exchange to spend from — every order moves USDW straight from the
+   * wallet — so the approval is unavoidable; USDW is a plain OpenZeppelin ERC20 with no
+   * `permit` (contracts/src/mocks/USDW.sol), which rules out signing instead of sending.
+   *
+   * Approving the exact amount meant every order LARGER than the last one demanded a
+   * second transaction before it could be submitted, which reads as the terminal refusing
+   * to trade. Approving max makes it a one-time step: the trader sees it once per wallet,
+   * ever. This is what every major DEX front-end does, and the downside — TradingStorage
+   * being authorised for an unbounded amount — is bounded here by the token being a
+   * testnet mock with an open faucet.
+   */
   async function handleApprove() {
     if (collateralRaw === null) return;
     setState({ phase: 'approving' });
     try {
-      await erc20.approve(collateralRaw);
+      await erc20.approve(maxUint256);
       await erc20.refetchAllowance();
       setState({ phase: 'idle' });
     } catch (err) {
