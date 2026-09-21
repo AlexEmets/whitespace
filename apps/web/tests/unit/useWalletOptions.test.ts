@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Connector } from 'wagmi';
-import { deriveWalletOptions } from '@/hooks/useWalletOptions';
+import { deriveWalletOptions, describeProvider } from '@/hooks/useWalletOptions';
 
 /**
  * Regression cover for the bug this module exists to fix: `WalletConnect` used to
@@ -87,5 +87,43 @@ describe('deriveWalletOptions', () => {
 
     expect(options).toHaveLength(2);
     expect(options.every((option) => option.kind === 'install')).toBe(true);
+  });
+
+  /**
+   * The near-miss this design walked into: a wallet too old for EIP-6963 announces
+   * nothing and exists only at window.ethereum. With a newer MetaMask installed beside
+   * it, "something announced" is true — and hiding the generic row on that basis would
+   * have left the older wallet unreachable, which is worse than the connectors[0] bug.
+   */
+  it('keeps a wallet that never announced reachable beside one that did', () => {
+    const options = deriveWalletOptions([GENERIC, METAMASK], {
+      isDistinct: true,
+      name: 'Trust Wallet',
+      brandColor: '#3375bb',
+    });
+
+    expect(options.map((option) => option.key)).toEqual(['metamask', 'injected', 'trust']);
+    expect(options[1]).toMatchObject({ kind: 'detected', name: 'Trust Wallet', connector: GENERIC });
+  });
+
+  it('still drops the generic row when it is the same provider an announced wallet wraps', () => {
+    const options = deriveWalletOptions([GENERIC, METAMASK], { isDistinct: false, name: 'MetaMask' });
+
+    expect(options.map((option) => option.key)).toEqual(['metamask', 'trust']);
+  });
+});
+
+describe('describeProvider', () => {
+  it('believes isTrust over isMetaMask, because Trust sets both', () => {
+    expect(describeProvider({ isMetaMask: true, isTrust: true })).toMatchObject({ name: 'Trust Wallet' });
+  });
+
+  it('names a plain MetaMask provider', () => {
+    expect(describeProvider({ isMetaMask: true })).toMatchObject({ name: 'MetaMask' });
+  });
+
+  it('falls back to a neutral label for an unrecognised provider', () => {
+    expect(describeProvider({})).toMatchObject({ name: 'Browser wallet' });
+    expect(describeProvider(null)).toMatchObject({ name: 'Browser wallet' });
   });
 });

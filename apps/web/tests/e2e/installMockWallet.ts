@@ -45,6 +45,17 @@ export type MockWalletOptions = {
    * existing specs keep the behaviour they were written against.
    */
   startsUnauthorized?: boolean;
+  /**
+   * Put a wallet at `window.ethereum` that announces nothing, identified only by a vendor
+   * flag (e.g. `'isTrust'`). Models an extension too old for EIP-6963: the picker cannot
+   * match it by rdns and has to fall back to offering the generic connector, labelled
+   * from the flag.
+   *
+   * Without this, `window.ethereum` is the *same object* as the first announced wallet's
+   * provider, which is what a real browser looks like when the extension that won the
+   * injection race also announces itself.
+   */
+  silentWallet?: { flag: string };
 };
 
 /** A 1×1 transparent SVG. EIP-6963 requires `info.icon`; its content is irrelevant here. */
@@ -60,7 +71,12 @@ export async function installMockWallet(
   await page.exposeFunction('__mockRpc', (payload: { method: string; params?: unknown[] }) => chain.handleRequest(payload));
 
   await page.addInitScript(
-    ([announce, icon, startsUnauthorized]: [readonly AnnouncedWallet[], string, boolean]) => {
+    ([announce, icon, startsUnauthorized, silentWallet]: [
+      readonly AnnouncedWallet[],
+      string,
+      boolean,
+      { flag: string } | null,
+    ]) => {
       function makeProvider() {
         const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
         let authorized = !startsUnauthorized;
@@ -83,11 +99,6 @@ export async function installMockWallet(
         };
       }
 
-      // @ts-expect-error injecting a fake EIP-1193 provider for tests
-      window.ethereum = makeProvider();
-
-      if (announce.length === 0) return;
-
       // Each announced wallet gets its OWN provider object. wagmi keys connectors by the
       // announced rdns, so distinct objects are what let a test prove the picker connected
       // the row that was clicked rather than whatever owns window.ethereum.
@@ -97,6 +108,16 @@ export async function installMockWallet(
           provider: makeProvider(),
         }),
       );
+
+      // Identity matters here, not just presence: the picker decides whether to offer the
+      // generic connector by comparing window.ethereum against the announced providers.
+      const first = details[0];
+      // @ts-expect-error injecting a fake EIP-1193 provider for tests
+      window.ethereum = silentWallet
+        ? Object.assign(makeProvider(), { [silentWallet.flag]: true })
+        : (first?.provider ?? makeProvider());
+
+      if (details.length === 0) return;
       const announceAll = () => {
         for (const detail of details) {
           window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail }));
@@ -107,11 +128,12 @@ export async function installMockWallet(
       window.addEventListener('eip6963:requestProvider', announceAll);
       announceAll();
     },
-    [options.announce ?? [], BLANK_ICON, options.startsUnauthorized ?? false] as [
-      readonly AnnouncedWallet[],
-      string,
-      boolean,
-    ],
+    [
+      options.announce ?? [],
+      BLANK_ICON,
+      options.startsUnauthorized ?? false,
+      options.silentWallet ?? null,
+    ] as [readonly AnnouncedWallet[], string, boolean, { flag: string } | null],
   );
 
   await page.route(CHAIN_INFO.rpc, async (route) => {
