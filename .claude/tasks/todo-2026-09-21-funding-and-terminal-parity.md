@@ -193,3 +193,41 @@ Three claims in the two task files are stale. Recorded here because each one cha
    remain outstanding from the VPS plan.
 5. **Stale claim corrected:** `todo-2026-09-21-vps-deploy.md` says the `market` table is
    empty. It is not — `/api/markets` returns BTC/USD as of this deploy.
+
+---
+
+## Follow-up 2026-09-21 — faucet page, funding moved to /portfolio
+
+Owner decisions, taken before the code:
+- **Header DEPOSIT/WITHDRAW removed.** They lasted one iteration in the Aster/Hyperliquid
+  position. The header was carrying the block height, latency, wallet chip and two money
+  controls; the balances those controls act on are already on /portfolio.
+- **`/vaults` stays** as the LP-product page (TVL, your shares, its own funding buttons).
+
+Changed — `29b3885`, `49cf9d5`:
+- `app/faucet/page.tsx` + `components/FaucetPage.tsx`: new route, last in the nav after
+  DOCS. Built on the `AccountPage` shell so /faucet, /points and /portfolio are visibly
+  one kind of screen. States what USDW is *not* (unbacked, non-redeemable, uncapped mint)
+  before offering it. `FaucetPanel` moved here off `/vaults`.
+- `FundingButtons` generalised (`idPrefix` + `className`) and is now the single owner of
+  the button-pair → modal wiring, consumed by both `PortfolioView` and `VaultPanel`. Two
+  copies of the mode state is how one of them ends up opening the wrong tab.
+- `PortfolioView`: a `Funding` section directly under the tiles, reusing balances the page
+  already reads (no new contract calls), naming the direction of each control and pointing
+  minting at `/faucet`.
+- Dead `.nav-right .funding-buttons` rules removed; `.nav-links` gap tightened at 1100px
+  for the sixth destination.
+- The order form keeps its inline faucet button: a wallet holding 0 in front of a live
+  terminal is a dead end, and sending that trader away mid-order is worse than minting in
+  place.
+
+Verified: **293/293 in 23 files**, `tsc --noEmit` exit 0, `next build` 11/11 pages,
+deploy printed `OK: the running server postdates the build`, all 5 units active. Live
+probe: `/faucet` 200 with its copy; nav order `TRADE VAULTS POINTS PORTFOLIO DOCS FAUCET`;
+`Testnet faucet` **gone** from `/vaults`; `funding-buttons` **gone** from `/trade`.
+
+`portfolio-funding` is absent from `/portfolio`'s SSR because the section sits inside the
+connected branch — confirmed shipped by grepping the deployed client bundle
+(`.next/static/chunks/app/portfolio/page-6bc8baeb3ff47550.js` contains `portfolio-funding`
+and the direction copy), not by assuming. Still **not seen in a browser**, and still **no
+funding transaction has been broadcast on chain**.
