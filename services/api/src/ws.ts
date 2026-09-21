@@ -118,8 +118,9 @@ export type WsManager = {
  * push. See docs/decisions/phase-4-indexer-api.md for the tradeoff — this
  * is a deliberate, disclosed limitation, not an oversight.
  */
-export function createWsManager(opts: { pollIntervalMs?: number } = {}): WsManager {
+export function createWsManager(opts: { pollIntervalMs?: number; pingIntervalMs?: number } = {}): WsManager {
   const pollIntervalMs = opts.pollIntervalMs ?? 2000;
+  const pingIntervalMs = opts.pingIntervalMs ?? 30_000;
   const subscribers = new Map<string, Set<WebSocket>>();
   const lastPayload = new Map<string, string>();
 
@@ -187,6 +188,20 @@ export function createWsManager(opts: { pollIntervalMs?: number } = {}): WsManag
   function attach(server: Server): WebSocketServer {
     const wss = new WebSocketServer({ server, path: '/ws' });
     wss.on('connection', (ws) => {
+      // Cloudflare closes a proxied WebSocket once no data has crossed it in EITHER
+      // direction for ~100 s, and pollOnce deliberately sends nothing while a channel's
+      // payload is unchanged (see the dedup at `lastPayload.get(channel) === payload`
+      // above). So a trader subscribed to a quiet `positions:` or `orders:` channel emits
+      // and receives literal silence, and the tunnel drops the socket roughly every two
+      // minutes. This never reproduces locally, where no proxy sits in the path.
+      //
+      // A protocol-level ping counts as traffic for the proxy, and browsers answer it
+      // inside their WebSocket stack, so apps/web/src/lib/ws.ts needs no matching change.
+      // Hosting design §6.
+      const keepAlive = setInterval(() => {
+        if (ws.readyState === ws.OPEN) ws.ping();
+      }, pingIntervalMs);
+
       ws.on('message', (raw) => {
         let msg: unknown;
         try {
@@ -218,7 +233,10 @@ export function createWsManager(opts: { pollIntervalMs?: number } = {}): WsManag
           ws.send(JSON.stringify({ type: 'error', channel, error: `unknown type "${type}"` }));
         }
       });
-      ws.on('close', () => unsubscribeAll(ws));
+      ws.on('close', () => {
+        clearInterval(keepAlive);
+        unsubscribeAll(ws);
+      });
     });
     start();
     return wss;
