@@ -70,6 +70,32 @@ export async function seedMarketsFromChain(
       const fromSymbol = bytes32ToSymbol(from);
       const toSymbol = bytes32ToSymbol(to);
 
+      // `MaxOpenInterestUpdated` is pruned along with everything else from the listing
+      // era, and a market whose cap reads zero has no capacity at all — the order form
+      // and the price-impact ladder both size themselves against it. Slot 2 of the
+      // contract's `openInterest` mapping holds that cap in the same units the event
+      // carries, so this read is interchangeable with the event that is missing.
+      //
+      // Slots 0 and 1 (live long/short notional) are deliberately NOT seeded: the
+      // contract stores them with 18 decimals while this table keeps PRECISION_6, and the
+      // conversion the trade handlers apply was not verified here. A wrong occupancy
+      // figure would misinform a trader about available capacity, where a zero merely
+      // starts the counter fresh and lets the trade events fill it in.
+      let maxOpenInterest = 0n;
+      try {
+        maxOpenInterest = (await latestClient.readContract({
+          address: contracts.TradingStorage.address,
+          abi: contracts.TradingStorage.abi,
+          functionName: 'openInterest',
+          args: [pairIndex, 2n],
+        })) as bigint;
+      } catch (error) {
+        console.warn(
+          `[indexer] seedMarkets: openInterest(${pairIndex},2) read failed, leaving cap at 0 —`,
+          (error as Error).message,
+        );
+      }
+
       await db
         .insert(market)
         .values({
@@ -81,9 +107,7 @@ export async function seedMarketsFromChain(
           groupIndex,
           feeIndex,
           maxLeverage,
-          // Seeded at zero exactly as the PairAdded handler does; MaxOpenInterestUpdated
-          // and the open-interest deltas accumulated from trade events own these.
-          maxOpenInterest: 0n,
+          maxOpenInterest,
           openInterestLong: 0n,
           openInterestShort: 0n,
           updatedAtBlock: block.number,
@@ -96,13 +120,14 @@ export async function seedMarketsFromChain(
           groupIndex,
           feeIndex,
           maxLeverage,
+          maxOpenInterest,
           updatedAtBlock: block.number,
           updatedAt: Number(block.timestamp),
         });
 
       console.log(
         `[indexer] seedMarkets: seeded pair ${pairIndex} ${fromSymbol}/${toSymbol} from contract state ` +
-          `(maxLeverage=${maxLeverage}) — PairAdded is in the pruned log range`,
+          `(maxLeverage=${maxLeverage}, maxOpenInterest=${maxOpenInterest}) — the listing logs are pruned`,
       );
     } catch (error) {
       console.warn(`[indexer] seedMarkets: pairs(${pairIndex}) read failed, will retry —`, (error as Error).message);
