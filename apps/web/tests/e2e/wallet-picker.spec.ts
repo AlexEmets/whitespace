@@ -100,6 +100,35 @@ test('lists an unknown wallet and still links Trust to its download page', async
   );
 });
 
+/**
+ * A wallet too old for EIP-6963 announces nothing and lives only at `window.ethereum`.
+ * Beside a newer MetaMask that does announce, the naive rule "hide the generic connector
+ * whenever anything announced" would strand it — unreachable, which is worse than the
+ * connectors[0] bug this picker replaced. The rule is provider identity instead.
+ */
+test('reaches a wallet that owns window.ethereum but announces nothing', async ({ page, baseURL }) => {
+  const state = new TestState();
+  await installMockWallet(page, state, {
+    announce: [METAMASK],
+    silentWallet: { flag: 'isTrust' },
+    startsUnauthorized: true,
+  });
+  await installMockBackend(page, state, `${baseURL}/__api`);
+
+  await page.goto('/');
+  await page.getByTestId('connect-wallet-button').click();
+
+  const silent = page.getByTestId('wallet-option-injected');
+  await expect(silent).toBeVisible();
+  // Named from its vendor flag, since there is no rdns to match on.
+  await expect(silent).toContainText('Trust Wallet');
+
+  await silent.click();
+
+  await expect(page.getByTestId('wallet-connected')).toBeVisible();
+  await expect(page.getByTestId('wallet-connected')).toContainText('Trust Wallet');
+});
+
 test('skips the dialog when only one wallet is present', async ({ page, baseURL }) => {
   const state = new TestState();
   await installMockWallet(page, state, { announce: [METAMASK], startsUnauthorized: true });

@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { useWalletOptions } from '@/hooks/useWalletOptions';
+import { GENERIC_INJECTED_ID } from '@/lib/wallets';
 import { WalletPicker } from './WalletPicker';
 
 function shortenAddress(address: string): string {
@@ -13,8 +14,14 @@ export function WalletConnect() {
   const { address, isConnected, connector } = useAccount();
   const { connect, isPending, error } = useConnect();
   const { disconnect } = useDisconnect();
-  const { connectable } = useWalletOptions();
+  const { connectable, genericInfo } = useWalletOptions();
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // wagmi names the untargeted connector "Injected", which tells a trader nothing. When
+  // that is what connected — a wallet too old to announce over EIP-6963 — fall back to
+  // the vendor-flag label so the chip still says which wallet is signing.
+  const walletName =
+    connector?.id === GENERIC_INJECTED_ID ? (genericInfo?.name ?? connector.name) : connector?.name;
 
   /**
    * With one wallet there is no choice to make, so Connect goes straight to it rather
@@ -40,7 +47,7 @@ export function WalletConnect() {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={connector.icon} alt="" className="wallet-chip-icon" width={14} height={14} />
         ) : null}
-        {connector?.name ? <span className="wallet-chip-name">{connector.name}</span> : null}
+        {walletName ? <span className="wallet-chip-name">{walletName}</span> : null}
         <span data-testid="wallet-address">{shortenAddress(address)}</span>
         <button type="button" onClick={() => disconnect()} data-testid="disconnect-button">
           Disconnect
