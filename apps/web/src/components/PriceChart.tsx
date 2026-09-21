@@ -38,11 +38,28 @@ export interface ChartView {
   endOffset: number;
 }
 
+/**
+ * The widest the window may get: the whole series, or `MIN_VISIBLE_CANDLES` slots when the
+ * series is shorter than that.
+ *
+ * That floor is the whole point. The window counts SLOTS, not candles, and bar width is
+ * `plotW / visible` — so pinning `visible` to the number of candles that happen to exist
+ * made width a function of history length. With two buckets the plot became two hairlines
+ * four hundred pixels apart. A fixed slot count gives a fixed bar width and lets a short
+ * series sit in the right-hand slots with empty space to its left, which is what every
+ * trading chart does (TradingView spells the same idea `barSpacing`, and warns that
+ * `fitContent()` — fit-to-data, exactly what this used to be — silently overrides it).
+ */
+export function maxVisible(total: number): number {
+  return Math.max(total, MIN_VISIBLE_CANDLES);
+}
+
 export function clampView(view: ChartView, total: number): ChartView {
   if (total <= 0) return { visible: 0, endOffset: 0 };
-  const minVisible = Math.min(MIN_VISIBLE_CANDLES, total);
-  const visible = Math.min(total, Math.max(minVisible, Math.round(view.visible)));
-  const endOffset = Math.min(total - visible, Math.max(0, Math.round(view.endOffset)));
+  const visible = Math.min(maxVisible(total), Math.max(MIN_VISIBLE_CANDLES, Math.round(view.visible)));
+  // `total - visible` goes negative once the window is wider than the series; a window
+  // that already shows everything has nowhere to scroll, so the range collapses to [0, 0].
+  const endOffset = Math.min(Math.max(0, total - visible), Math.max(0, Math.round(view.endOffset)));
   return { visible, endOffset };
 }
 
@@ -68,7 +85,7 @@ export function panView(view: ChartView, total: number, deltaCandles: number): C
 /** "Everything, pinned to the live edge" — the state the reset affordance returns to. */
 export function isDefaultView(view: ChartView, total: number): boolean {
   const v = clampView(view, total);
-  return v.visible === total && v.endOffset === 0;
+  return v.visible === maxVisible(total) && v.endOffset === 0;
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -257,10 +274,20 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
 
   /* ---- view ------------------------------------------------------------- */
   const view = clampView(rawView, total);
+  // `first` goes negative as soon as the window holds more slots than there are candles.
+  // Those missing slots are drawn as empty space on the LEFT, so the newest bar stays
+  // pinned to the right edge where a trader looks for it, rather than the series being
+  // left-aligned with a void trailing it.
+  //
+  // The guard is not cosmetic: `Array#slice` treats a negative start as an offset from the
+  // END of the array, so passing `first` straight through would quietly return a different
+  // window than the one the view describes.
   const first = total - view.visible - view.endOffset;
+  const leadingSlots = Math.max(0, -first);
+  const sliceStart = Math.max(0, first);
   const visibleCandles = useMemo(
-    () => candles.slice(first, first + view.visible),
-    [candles, first, view.visible],
+    () => candles.slice(sliceStart, sliceStart + view.visible - leadingSlots),
+    [candles, sliceStart, view.visible, leadingSlots],
   );
 
   // Show the whole series the first time one arrives, and again whenever the series is
@@ -273,7 +300,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     }
     if (!seeded.current) {
       seeded.current = true;
-      setRawView({ visible: total, endOffset: 0 });
+      setRawView({ visible: maxVisible(total), endOffset: 0 });
     }
   }, [total]);
 
@@ -336,8 +363,11 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       return;
     }
     if (step <= 0) return;
-    const idx = Math.floor(ratioFromClientX(event.clientX) * view.visible);
-    setHover(idx >= 0 && idx < view.visible ? idx : null);
+    // Pointer position resolves to a slot; subtract the empty leading slots to get the
+    // candle index. Hovering the blank left-hand area must clear the crosshair, not clamp
+    // it onto the oldest bar.
+    const idx = Math.floor(ratioFromClientX(event.clientX) * view.visible) - leadingSlots;
+    setHover(idx >= 0 && idx < visibleCandles.length ? idx : null);
   };
 
   const endDrag = (event: React.PointerEvent<SVGSVGElement>) => {
@@ -384,11 +414,19 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     return { min, max, toY };
   }, [visibleCandles, logScale, layout.plotH, markRaw]);
 
-  const xOf = (i: number) => PAD.left + (i + 0.5) * step;
+  /** Centre of a slot, counted from the left edge of the plot. */
+  const xOf = (slot: number) => PAD.left + (slot + 0.5) * step;
+  /** Centre of the slot a visible candle sits in, past however many slots lead it. */
+  const xOfCandle = (i: number) => xOf(leadingSlots + i);
 
   const geometry = useMemo(() => {
     if (!scale) return [];
-    const bodyWidth = Math.max(1, Math.min(16, step * 0.62));
+    // 62% of the slot, the same fill ratio the design used before. The upper bound exists
+    // only to stop a body ballooning when a slot is very wide; now that the window never
+    // holds fewer than MIN_VISIBLE_CANDLES slots, `step` is capped at `plotW / 20` (~40px
+    // on a full-width pane) and the ratio governs throughout. The old 16px ceiling clipped
+    // that to a 40%-filled slot, which read as thin and gappy at the minimum zoom.
+    const bodyWidth = Math.max(1, Math.min(26, step * 0.62));
     return visibleCandles.map((c, i) => {
       const open = priceToRaw(c.o);
       const close = priceToRaw(c.c);
@@ -397,7 +435,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       const bodyBottom = scale.toY(up ? open : close);
       return {
         key: c.t,
-        x: PAD.left + (i + 0.5) * step,
+        x: PAD.left + (leadingSlots + i + 0.5) * step,
         wickTop: scale.toY(priceToRaw(c.h)),
         wickBottom: scale.toY(priceToRaw(c.l)),
         bodyY: Math.min(bodyTop, bodyBottom),
@@ -406,7 +444,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
         up,
       };
     });
-  }, [visibleCandles, scale, step]);
+  }, [visibleCandles, scale, step, leadingSlots]);
 
   const yTicks = useMemo(() => (scale ? priceTicks(scale.min, scale.max) : []), [scale]);
   const xTicks = useMemo(() => timeTickIndices(visibleCandles.length, TIME_TICK_TARGET), [visibleCandles.length]);
@@ -495,10 +533,10 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                 height={CHART_HEIGHT}
                 viewBox={`0 0 ${layout.width} ${CHART_HEIGHT}`}
                 role="img"
-                aria-label={`Price chart, ${view.visible} of ${total} candles`}
+                aria-label={`Price chart, ${visibleCandles.length} of ${total} candles`}
                 className={styles.svg}
                 data-testid="price-svg"
-                data-visible-candles={view.visible}
+                data-visible-candles={visibleCandles.length}
                 data-total-candles={total}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
@@ -515,7 +553,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     <line key={`h${t}`} x1={PAD.left} x2={PAD.left + layout.plotW} y1={scale.toY(t)} y2={scale.toY(t)} />
                   ))}
                   {xTicks.map((i) => (
-                    <line key={`v${i}`} x1={xOf(i)} x2={xOf(i)} y1={PAD.top} y2={PAD.top + layout.plotH} />
+                    <line key={`v${i}`} x1={xOfCandle(i)} x2={xOfCandle(i)} y1={PAD.top} y2={PAD.top + layout.plotH} />
                   ))}
                 </g>
 
@@ -531,7 +569,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                   {xTicks.map((i) => {
                     const c = visibleCandles[i];
                     return c ? (
-                      <text key={`xl${c.t}`} x={xOf(i)} y={CHART_HEIGHT - 8}>
+                      <text key={`xl${c.t}`} x={xOfCandle(i)} y={CHART_HEIGHT - 8}>
                         {formatAxisTime(c.t, interval)}
                       </text>
                     ) : null;
@@ -562,7 +600,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     this chart one the API actually sent. */}
                 {hovered && hover !== null ? (
                   <g data-testid="crosshair">
-                    <line className={styles.crosshair} x1={xOf(hover)} x2={xOf(hover)} y1={PAD.top} y2={PAD.top + layout.plotH} />
+                    <line className={styles.crosshair} x1={xOfCandle(hover)} x2={xOfCandle(hover)} y1={PAD.top} y2={PAD.top + layout.plotH} />
                     <line
                       className={styles.crosshair}
                       x1={PAD.left}
@@ -608,7 +646,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                   </>
                 ) : (
                   <span className={styles.readoutHint}>
-                    {view.visible} / {total} candles · scroll to zoom, drag to pan
+                    {visibleCandles.length} / {total} candles · scroll to zoom, drag to pan
                   </span>
                 )}
               </div>

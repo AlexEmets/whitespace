@@ -76,6 +76,60 @@ does not discover it as a surprise.
 - [ ] Verify: `tsc --noEmit`, the full web suite, `next build`
 - [ ] Deploy via `deploy/deploy.sh` and confirm the running bundle postdates the build
 
-## Review
+## Outcome — the migration was NOT done, and that was the right call
 
-_(changed / verified / left — filled in on completion)_
+The behavioural spec of the existing component changed the arithmetic. Three findings, all
+discovered after the decision to migrate was taken:
+
+1. **The axis holds a money-exactness contract the library cannot.** `niceStep`/`priceTicks`
+   compute tick values as exact `bigint` precisely so a label is never a rounded double
+   (`PriceChart.tsx:79-92`), with 11 tests behind them. `lightweight-charts` formats a
+   `number`.
+2. **Coverage cliff.** All 42 tests exercise pure functions; there is no render test for
+   `PriceChart` anywhere in the repo. Migrating moves `clampView`, `zoomView`, `panView`,
+   `timeTickIndices`, `isDefaultView` into the library (23 tests) and, with the price axis,
+   11 more — ~34 green tests deleted with nothing to replace them.
+3. **A lot of bespoke behaviour would have to be rebuilt**: crosshair snapping (a deliberate
+   "never invert a pixel back into a price" rule), the `domainWithMark` autoscale policy,
+   the sparse/stale notes, seeding, append-offset compensation, the non-passive wheel
+   listener.
+
+`lightweight-charts@5.2.1` was installed, then removed again once the fix landed without
+it. Re-adding is one command if indicators, volume panes or multiple series ever justify it.
+
+## What was actually changed
+
+The window now counts **slots**, not candles, with a floor of `MIN_VISIBLE_CANDLES`:
+
+- `maxVisible()` added; `clampView` no longer pins `visible` to `total`, and the pan range
+  collapses to `[0, 0]` once the window outruns the series.
+- `isDefaultView` and the seeding effect compare against `maxVisible(total)`.
+- `leadingSlots` / `sliceStart` right-anchor a short series, with an explicit guard because
+  `Array#slice` reads a negative start as an offset from the end.
+- `xOf` now takes a slot; `xOfCandle` offsets past the empty leading slots, and the grid,
+  time axis, candle geometry and crosshair all go through it.
+- Hover maps slot → candle index, so the blank left-hand area clears the crosshair instead
+  of clamping onto the oldest bar.
+- The `N / N candles` hint, `aria-label` and `data-visible-candles` report
+  `visibleCandles.length`; they would otherwise have read "20 / 2 candles".
+- Candle body cap raised 16px → 26px so the existing 62% fill ratio governs at minimum
+  zoom, where the old ceiling clipped a slot to 40% filled and read as thin and gappy.
+
+Concretely, at the default 880px pane with two buckets: 20 slots, `step` 40.3px, bodies
+~25px wide, drawn at x≈754 and x≈794 against a plot edge of 814 — adjacent, at the live
+edge, with the empty history to their left.
+
+## Verified
+
+- `apps/web`: `tsc --noEmit` exit 0; **259/259 tests in 20 files** (was 257 — one test
+  rewritten, two added).
+- `next build` compiles.
+- Exactly one pre-existing test failed and was rewritten: "lets a short series go below the
+  minimum rather than inventing bars" encoded the old rule this change deliberately
+  reverses. Nothing else in the 42-test geometry suite broke.
+- Added coverage for the new rule: right-anchoring, and the collapsed pan range.
+
+## Left
+
+- No backfill — the honest footer and the sparse-history note are untouched.
+- `apps/web/tsconfig.tsbuildinfo` is dirty from a `tsc` run; it is a tracked build cache.

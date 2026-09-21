@@ -28,10 +28,40 @@ describe('clampView', () => {
     expect(clampView({ visible: 900, endOffset: 0 }, 120).visible).toBe(120);
   });
 
-  it('lets a short series go below the minimum rather than inventing bars', () => {
-    // 7 loaded candles must render as 7 candles, not as a 20-wide window with 13 gaps.
-    expect(clampView({ visible: 7, endOffset: 0 }, 7)).toEqual({ visible: 7, endOffset: 0 });
-    expect(clampView({ visible: 1, endOffset: 0 }, 7).visible).toBe(7);
+  it('holds the minimum slot count so a short series keeps a normal bar width', () => {
+    // Reverses the previous rule ("7 candles render as 7 candles"). Bar width is
+    // plotW / visible, so a window pinned to however many candles exist made width a
+    // function of history length: with two buckets the plot drew two hairlines four
+    // hundred pixels apart. The window counts SLOTS with a floor instead, and the series
+    // occupies the right-hand ones — the empty space sits to its left.
+    expect(clampView({ visible: 7, endOffset: 0 }, 7)).toEqual({
+      visible: MIN_VISIBLE_CANDLES,
+      endOffset: 0,
+    });
+    expect(clampView({ visible: 1, endOffset: 0 }, 7).visible).toBe(MIN_VISIBLE_CANDLES);
+  });
+
+  it('right-anchors a short series, leaving the empty slots on the left', () => {
+    // The regression this whole change exists for. Two buckets must land in the last two
+    // of MIN_VISIBLE_CANDLES slots — beside each other at the live edge — not spread
+    // across the full plot width. Mirrors the leading-slot arithmetic in the component.
+    const total = 2;
+    const view = clampView({ visible: total, endOffset: 0 }, total);
+    const leadingSlots = Math.max(0, -(total - view.visible - view.endOffset));
+
+    expect(view.visible).toBe(MIN_VISIBLE_CANDLES);
+    expect(leadingSlots).toBe(MIN_VISIBLE_CANDLES - total);
+    // Newest candle occupies the final slot.
+    expect(leadingSlots + (total - 1)).toBe(MIN_VISIBLE_CANDLES - 1);
+  });
+
+  it('leaves nothing to scroll when the window already outruns the series', () => {
+    // `total - visible` is negative here; the offset range must collapse to [0, 0] rather
+    // than letting a pan drag the only two bars off the plot.
+    expect(clampView({ visible: MIN_VISIBLE_CANDLES, endOffset: 5 }, 2)).toEqual({
+      visible: MIN_VISIBLE_CANDLES,
+      endOffset: 0,
+    });
   });
 
   it('clamps the pan offset so the window cannot leave the series', () => {
