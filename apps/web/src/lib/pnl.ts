@@ -59,4 +59,37 @@ export function estimatePositionSizeBase(params: { collateral: MoneyInput; lever
   return (notional18dec * PRICE_SCALE) / openPrice;
 }
 
+/**
+ * The inverse of `estimatePositionSizeBase`: the collateral (6-decimal) that buys
+ * `size` of the base asset at `openPrice` and `leverage`.
+ *
+ * This one is NOT display-only — its result is what gets submitted. The order form is
+ * denominated in the base asset because terminal_design.pdf's order panel leads with
+ * SIZE, but `openTrade` takes collateral and leverage and has no size parameter at all
+ * (IOstiumTradingStorage.Trade). So the field the trader types into is converted here,
+ * and the converted figure is surfaced as "Margin required" so the number leaving the
+ * wallet is on screen rather than implied.
+ *
+ * collateral = size * openPrice / leverage, with every scale factor applied as a single
+ * multiplication before a single division so no intermediate is truncated.
+ *
+ * Truncation lands on the trader's side: flooring the collateral buys marginally LESS
+ * than the size typed, never more, so this can never overspend a balance the caller has
+ * already checked.
+ */
+export function collateralForPositionSize(params: {
+  /** Base-asset quantity at 18-decimal fixed point, as `parseHumanDecimal(x, 18)` returns. */
+  sizeBaseRaw: bigint;
+  leverage: MoneyInput;
+  openPrice: MoneyInput;
+}): bigint {
+  const leverage = leverageToRaw(params.leverage);
+  const openPrice = priceToRaw(params.openPrice);
+  if (leverage <= 0n || openPrice <= 0n || params.sizeBaseRaw <= 0n) return 0n;
+
+  const numerator = params.sizeBaseRaw * openPrice * LEVERAGE_SCALE;
+  const denominator = PRICE_SCALE * COLLATERAL_TO_PRICE_SCALE_UP * leverage;
+  return numerator / denominator;
+}
+
 export { COLLATERAL_DECIMALS as PNL_DECIMALS };

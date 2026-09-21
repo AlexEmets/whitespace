@@ -132,10 +132,6 @@
   color: var(--fg-dim);
 }
 
-.readoutHint {
-  color: var(--fg-dim);
-}
-
 .upText b {
   color: var(--long);
 }

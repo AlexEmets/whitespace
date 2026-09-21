@@ -42,11 +42,6 @@ export function DepthPanel({ pairIndex }: { pairIndex?: number | null } = {}) {
         <span className="mono-upper">Order book · impact</span>
         <span className={styles.headerNote}>VAULT</span>
       </div>
-      <p className={styles.blurb}>
-        No resting orders exist here — these are <strong>your own</strong> execution prices by size against the
-        vault, from the contract&apos;s price-impact curve.
-      </p>
-
       {ladder.loading ? (
         <div className={styles.notice} data-testid="depth-panel-loading">
           Reading price-impact parameters from chain…
@@ -107,20 +102,6 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
         ))}
       </div>
       <div className={styles.sideLabel}>OPEN SHORT · fills at the oracle bid</div>
-
-      <div className={styles.footNotes}>
-        {ladder.staticOnly && (
-        <p className={styles.caveat} data-testid="depth-panel-static-note">
-          Flat across size by design: this pair has no dynamic spread configured on-chain
-          (<code>priceImpactK = 0</code>), so the contract fills every size at the oracle ask or bid. Your fill
-          here genuinely does not depend on how much you buy.
-        </p>
-      )}
-      <p className={styles.caveat} data-testid="depth-panel-legend">
-        IMPACT is the fill&apos;s distance from the mark in basis points: <strong>+</strong> is worse for your
-        side, <strong>−</strong> better.
-      </p>
-      </div>
     </div>
   );
 }

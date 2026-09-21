@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import type { OpenTradeParams } from '@/hooks/useOpenTrade';
 import { TRADING_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
+import type { MarketSummary } from '@/lib/types';
 
 const openTradeMock = vi.fn(async (_params: OpenTradeParams) => ({ hash: '0xabc' as const, receipt: {}, orderId: 42n }));
 const approveMock = vi.fn(async () => {});
@@ -19,7 +20,31 @@ let priceState: { mark: string; index: string; degraded: boolean; healthyVenues:
   updatedAt: 0,
 };
 let allowanceState = 10_000_000_000n; // plenty of allowance by default
-let balanceState = 10_000_000_000n;
+let balanceState = 10_000_000_000n; // 10,000.00 USDW
+
+const BTC_USD: MarketSummary = {
+  pairIndex: 0,
+  from: 'BTC',
+  to: 'USD',
+  feedId: '0x00',
+  maxLeverage: '100.00',
+  maxOpenInterest: '0',
+  openInterest: { long: '0', short: '0' },
+};
+
+/**
+ * The form is denominated in the base asset, but `openTrade` takes COLLATERAL — so every
+ * size below has one collateral it must convert to, and getting that arithmetic wrong is
+ * a wrong amount of money leaving the wallet.
+ *
+ *   collateral = size x price / leverage
+ *   0.01 BTC at 65,001.00 and the default 10x  =  650.01 / 10  =  65.001000 USDW
+ *
+ * which is 65_001_000n at COLLATERAL_DECIMALS (6). Written out rather than computed with
+ * the helper under test, so the test fails if the helper changes.
+ */
+const SIZE_0_01_BTC = '0.01';
+const COLLATERAL_FOR_0_01_BTC = 65_001_000n;
 
 /** Raw PRECISION_18 estimated liquidation price the mocked contract read returns. The
  * form calls getTradeLiquidationPricePure with rollover/funding at zero; what it must do
@@ -88,11 +113,46 @@ beforeEach(() => {
 });
 
 describe('<OpenPositionForm>', () => {
-  it('shows the reference price and the default tight slippage, explicitly (design §5.1)', () => {
+  it('shows the reference price with its USDW unit', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     expect(screen.getByTestId('reference-price')).toHaveValue('65,001.00');
-    // Default slippage is 50 bps = 0.50% — tight, and displayed, not hidden in a panel.
-    expect(screen.getByTestId('slippage-value')).toHaveTextContent('0.50%');
+  });
+
+  /**
+   * The MAX SLIPPAGE slider was deleted to match terminal_design.pdf, which has exactly
+   * one slider (LEVERAGE). Slippage is a transaction PARAMETER, not decoration — in this
+   * two-phase design it is the trader's only defence against an unfavourable execution
+   * price — so deleting the control had to pin the value, not drop it. This is the test
+   * that says the deletion did not quietly loosen everyone's tolerance.
+   */
+  it('has no slippage control, and still submits the protocol default tolerance', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.queryByTestId('slippage-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('slippage-value')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]?.[0]).toMatchObject({ slippageBps: 50n });
+  });
+
+  /** Reference order is LIMIT MARKET STOP TWAP. MARKET must stay the ACTIVE one: every
+   * submission is hardcoded to OPEN_ORDER_TYPE_MARKET in useOpenTrade, so an active LIMIT
+   * tab would name one order type on screen and sign another on chain. */
+  it('orders the tabs as the reference does while keeping MARKET the active one', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    const tabs = Array.from(document.querySelectorAll('.order-type-tabs button'));
+
+    expect(tabs.map((t) => t.textContent)).toEqual(['Limit', 'Market', 'Stop', 'TWAP']);
+    expect(tabs.find((t) => t.textContent === 'Market')).toHaveClass('active');
+    expect(tabs.find((t) => t.textContent === 'Limit')).toBeDisabled();
+    expect(tabs.find((t) => t.textContent === 'Limit')).not.toHaveClass('active');
+  });
+
+  it('denominates the size field in the market’s base asset', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('open-position-form')).toHaveTextContent('BTC');
   });
 
   /**
@@ -114,10 +174,10 @@ describe('<OpenPositionForm>', () => {
 
   it('renders the contract’s estimated liquidation price once there is a size to evaluate', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    // Nothing to evaluate yet: no collateral entered, so the read stays disabled.
+    // Nothing to evaluate yet: no size entered, so the read stays disabled.
     expect(screen.getByTestId('est-liq-price')).toHaveTextContent('—');
 
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     // 58500900000000000000000n at 18 decimals. The component must render what the chain
     // returned — it must never compute a liquidation price itself.
     expect(screen.getByTestId('est-liq-price')).toHaveTextContent('58,500.90');
@@ -143,18 +203,18 @@ describe('<OpenPositionForm>', () => {
    */
   it('clears the previous order outcome as soon as the trader edits the next one', async () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     fireEvent.click(screen.getByTestId('submit-open-button'));
     await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
 
     // Any change to what would be submitted invalidates the banner.
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '150' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.02' } });
     expect(screen.queryByTestId('order-pending-banner')).not.toBeInTheDocument();
   });
 
   it('clears the outcome when the side is flipped, not just when the size changes', async () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     fireEvent.click(screen.getByTestId('submit-open-button'));
     await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
 
@@ -165,14 +225,14 @@ describe('<OpenPositionForm>', () => {
   it('hides the faucet when the wallet can already fund the order', () => {
     balanceState = 10_000_000_000n;
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     expect(screen.queryByTestId('faucet-button')).not.toBeInTheDocument();
   });
 
   it('disables opening and shows a clear message when the price feed is degraded', () => {
     priceState = { ...priceState!, degraded: true, healthyVenues: 2 };
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     expect(screen.getByTestId('open-blocked-degraded')).toBeInTheDocument();
     expect(screen.getByTestId('submit-open-button')).toBeDisabled();
   });
@@ -180,25 +240,27 @@ describe('<OpenPositionForm>', () => {
   it('requires an approval before the amount can be opened when allowance is insufficient', async () => {
     allowanceState = 0n;
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     expect(screen.getByTestId('approve-button')).toBeInTheDocument();
     expect(screen.queryByTestId('submit-open-button')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('approve-button'));
-    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(100_000_000n));
+    // Approves the DERIVED collateral, not the typed size — approving 0.01 would
+    // authorise a hundredth of a USDW against an order needing sixty-five.
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(COLLATERAL_FOR_0_01_BTC));
     expect(refetchAllowanceMock).toHaveBeenCalled();
   });
 
-  it('submits openTrade with the exact bigint collateral/leverage/price/slippage and shows the pending (not "opened") state', async () => {
+  it('submits the collateral the size converts to, and shows the pending (not "opened") state', async () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     fireEvent.click(screen.getByTestId('submit-open-button'));
 
     await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
     expect(openTradeMock).toHaveBeenCalledWith({
       pairIndex: 0,
       buy: true,
-      collateralRaw: 100_000_000n, // 100.00 USDW at 6 decimals
+      collateralRaw: COLLATERAL_FOR_0_01_BTC, // 0.01 BTC at 65,001.00 and 10x
       leverageRaw: 1000n, // default 10x at PRECISION_2
       wantedPriceRaw: 65001000000000000000000n,
       slippageBps: 50n,
@@ -211,13 +273,57 @@ describe('<OpenPositionForm>', () => {
     expect(banner).not.toHaveTextContent(/position is now open/i);
   });
 
+  /** The trader sizes in BTC but pays in USDW, so the USDW figure has to be on screen —
+   * and it has to be the same one that is submitted, not a separately-rounded copy. */
+  it('shows the derived collateral as Margin required, matching what is submitted', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+
+    expect(screen.getByTestId('margin-required')).toHaveTextContent('65.00 USDW');
+
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]?.[0]).toMatchObject({ collateralRaw: COLLATERAL_FOR_0_01_BTC });
+  });
+
+  /** Sizing in the base asset must not let an order past the balance check: the guard
+   * applies to the DERIVED collateral, which is the figure the token actually moves. */
+  it('refuses a size whose collateral exceeds the wallet balance', () => {
+    balanceState = 10_000_000_000n; // 10,000 USDW; at 10x that funds ~1.538 BTC
+    // Allowance kept above the derived collateral on purpose: otherwise the form renders
+    // the Approve button instead and this would assert the approval path, not the
+    // balance guard. 2 BTC needs 13,000.20 USDW.
+    allowanceState = 100_000_000_000n;
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: '2' } });
+
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+    expect(screen.getByTestId('open-position-form')).toHaveTextContent(/insufficient usdw balance/i);
+  });
+
   it('lets the trader pick Short instead of the Long default', async () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     fireEvent.click(screen.getByTestId('direction-short'));
-    fireEvent.change(screen.getByTestId('collateral-input'), { target: { value: '50' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.005' } });
     fireEvent.click(screen.getByTestId('submit-open-button'));
 
     await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
     expect(openTradeMock.mock.calls[0]?.[0]).toMatchObject({ buy: false });
+  });
+
+  /** Quick-fill is a fraction of the WALLET expressed as a size, so Max must produce an
+   * order the balance can actually fund — the round-trip through both conversions. */
+  it('sizes Max to what the balance can fund, not to something it cannot', async () => {
+    balanceState = 1_000_000_000n; // 1,000.00 USDW
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('quick-fill-100'));
+
+    expect(screen.getByTestId('submit-open-button')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    const submitted = openTradeMock.mock.calls[0]?.[0].collateralRaw ?? 0n;
+    expect(submitted).toBeGreaterThan(0n);
+    expect(submitted).toBeLessThanOrEqual(1_000_000_000n);
   });
 });

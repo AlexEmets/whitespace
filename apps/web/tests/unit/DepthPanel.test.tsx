@@ -166,10 +166,18 @@ describe('DepthPanel — live ladder', () => {
     ]);
   });
 
-  it('says on screen that these are the trader’s own prices, not resting orders', () => {
+  /**
+   * The explanatory blurb was removed in the strip-to-reference pass (owner decision
+   * 2026-09-21: terminal_design.pdf has no prose in this column). The panel still has to
+   * be a LADDER — the deletion was of the sentences around the numbers, not of the
+   * numbers — so this asserts both halves: prose gone, rows intact.
+   */
+  it('carries no explanatory prose, but still renders the ladder', () => {
     render(<DepthPanel />);
-    expect(screen.getByTestId('depth-panel')).toHaveTextContent(/no resting orders exist here/i);
-    expect(screen.getByTestId('depth-panel')).toHaveTextContent(/your own.*execution prices by size against the vault/i);
+    expect(screen.getByTestId('depth-panel')).not.toHaveTextContent(/no resting orders exist here/i);
+    expect(screen.getByTestId('depth-panel')).not.toHaveTextContent(/execution prices by size against the vault/i);
+    expect(screen.getByTestId('depth-panel-ladder')).toBeInTheDocument();
+    expect(screen.getAllByTestId('depth-panel-row').length).toBeGreaterThan(0);
   });
 
   it('adds the real oracle spread term on top of the dynamic component', () => {
@@ -188,10 +196,13 @@ describe('DepthPanel — live ladder', () => {
     expect(screen.getByTestId('depth-panel-mid')).toHaveTextContent('spread 100.00');
   });
 
-  it('has no spread caveat any more — the quote is real', () => {
+  it('has no spread caveat and no impact legend — both were prose the reference does not have', () => {
     render(<DepthPanel />);
     expect(screen.queryByTestId('depth-panel-caveat')).not.toBeInTheDocument();
-    expect(screen.getByTestId('depth-panel-legend')).toHaveTextContent(/worse for your side/i);
+    expect(screen.queryByTestId('depth-panel-legend')).not.toBeInTheDocument();
+    // The IMPACT column itself stays — the sign convention it documented is still applied,
+    // and the other tests in this file assert the exact signed values.
+    expect(screen.getByTestId('depth-panel-ladder')).toHaveTextContent('IMPACT bps');
   });
 
   it('moves with the mark price', () => {
@@ -241,10 +252,12 @@ describe('DepthPanel — static spread path (priceImpactK == 0, this deployment)
     expect(rowTexts('short').map((r) => r[0])).toEqual(Array(6).fill('99,950.00'));
   });
 
-  it('says why the levels are flat instead of leaving it looking broken', () => {
+  /** The "flat across size by design" note went with the rest of the prose. The flatness
+   * it explained is real and still asserted by the row test directly above this one. */
+  it('renders the flat ladder without the explanatory note', () => {
     render(<DepthPanel />);
-    expect(screen.getByTestId('depth-panel-static-note')).toHaveTextContent(/flat across size by design/i);
-    expect(screen.getByTestId('depth-panel-static-note')).toHaveTextContent(/priceImpactK = 0/);
+    expect(screen.queryByTestId('depth-panel-static-note')).not.toBeInTheDocument();
+    expect(screen.getByTestId('depth-panel-ladder')).toBeInTheDocument();
   });
 
   it('signs a favourable fill negative when the mark sits outside the quote', () => {

@@ -54,25 +54,33 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     await page.getByTestId('nav-vaults').click();
     await expect(page.getByTestId('vault-usdw-balance')).toContainText('10,000.00');
 
-    await page.getByTestId('deposit-input').fill('2500');
-    await page.getByTestId('vault-approve-button').click();
-    await expect(page.getByTestId('request-deposit-button')).toBeVisible();
+    // The deposit controls moved out of VaultPanel into FundingModal (2026-09-21) — the
+    // same dialog the header's DEPOSIT button opens. /vaults now triggers it rather than
+    // hosting a second copy of the form.
+    await page.getByTestId('vault-deposit-button').click();
+    await page.getByTestId('funding-amount-input').fill('2500');
+    await page.getByTestId('funding-approve').click();
+    await expect(page.getByTestId('funding-request')).toBeVisible();
 
-    await page.getByTestId('request-deposit-button').click();
-    await expect(page.getByTestId('deposit-settlement-status')).toContainText('PENDING');
+    await page.getByTestId('funding-request').click();
+    await expect(page.getByTestId('funding-settlement-status')).toContainText('PENDING');
 
     // Simulate the vault's async settlement running (IOstiumVault RequestStatus:
     // PENDING -> CLAIMABLE) — off the UI's control, exactly like the real contract.
     state.depositStatus.set(1, 2);
 
-    await expect(page.getByTestId('deposit-settlement-status')).toContainText('CLAIMABLE');
-    await page.getByTestId('claim-deposit-button').click();
-    await expect(page.getByTestId('vault-message')).toContainText('Deposit claimed');
+    await expect(page.getByTestId('funding-settlement-status')).toContainText('CLAIMABLE');
+    await page.getByTestId('funding-claim').click();
+    await expect(page.getByTestId('funding-message')).toContainText('Deposit claimed');
+    await page.getByTestId('funding-modal-close').click();
   });
 
   await test.step('open a position: approve, submit, see the honest pending state', async () => {
     await page.getByTestId('nav-trade').click();
-    await page.getByTestId('collateral-input').fill('1000');
+    // The order field is denominated in the base asset now (terminal_design.pdf's SIZE),
+    // and the collateral is derived: 0.1538 BTC at 65,001.00 with the default 10x is
+    // ~999.7 USDW — the same order this step used to express as a flat 1000 collateral.
+    await page.getByTestId('size-input').fill('0.1538');
     await expect(page.getByTestId('direction-long')).toHaveClass(/active/);
 
     await page.getByTestId('approve-button').click();
@@ -158,7 +166,7 @@ test('opening is blocked in degraded mode, closing stays allowed', async ({ page
   await expect(page.getByTestId('wallet-connected')).toBeVisible();
 
   await expect(page.getByTestId('degraded-banner').first()).toBeVisible();
-  await page.getByTestId('collateral-input').fill('100');
+  await page.getByTestId('size-input').fill('0.0154');
   await expect(page.getByTestId('open-blocked-degraded')).toBeVisible();
   await expect(page.getByTestId('submit-open-button')).toBeDisabled();
 });

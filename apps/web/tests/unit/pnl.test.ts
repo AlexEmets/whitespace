@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
+import { collateralForPositionSize, estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import { formatMoney } from '@/lib/money';
 
 // Every fixture in this file is a human decimal string exactly as the read API emits it —
@@ -116,5 +116,52 @@ describe('estimatePositionSizeBase', () => {
   it('returns 0n for a zero open price rather than dividing by zero', () => {
     const size = estimatePositionSizeBase({ collateral: '1000.000000', leverage: '10.00', openPrice: '0.000000000000000000' });
     expect(size).toBe(0n);
+  });
+});
+
+/**
+ * Unlike `estimatePositionSizeBase`, this one is NOT display-only: the order form is
+ * denominated in the base asset and its result is the `collateral` handed to
+ * `openTrade`. An error here is a wrong amount of money leaving the wallet, so the cases
+ * below pin exact bigints rather than approximations.
+ */
+describe('collateralForPositionSize', () => {
+  it('converts a base-asset size to the collateral that buys it', () => {
+    // 0.01 BTC at 65,001.00 with 10x: notional 650.01, collateral 65.001000 USDW.
+    const collateral = collateralForPositionSize({
+      sizeBaseRaw: 10_000_000_000_000_000n, // 0.01 at 18 decimals
+      leverage: '10.00',
+      openPrice: '65001.000000000000000000',
+    });
+    expect(collateral).toBe(65_001_000n);
+  });
+
+  it('round-trips with estimatePositionSizeBase', () => {
+    const openPrice = '65001.000000000000000000';
+    const leverage = '10.00';
+    const collateral = '1000.000000';
+
+    const size = estimatePositionSizeBase({ collateral, leverage, openPrice });
+    const back = collateralForPositionSize({ sizeBaseRaw: size, leverage, openPrice });
+
+    // Both directions floor, so the round trip may lose the last collateral unit — one
+    // millionth of a USDW. It must never gain one: that would be spending more than the
+    // trader's balance check approved.
+    expect(back).toBeLessThanOrEqual(1_000_000_000n);
+    expect(back).toBeGreaterThanOrEqual(1_000_000_000n - 1n);
+  });
+
+  it('halves the collateral when leverage doubles, for the same size', () => {
+    const base = { sizeBaseRaw: 10_000_000_000_000_000n, openPrice: '65001.000000000000000000' };
+    const at10x = collateralForPositionSize({ ...base, leverage: '10.00' });
+    const at20x = collateralForPositionSize({ ...base, leverage: '20.00' });
+    expect(at20x * 2n).toBe(at10x);
+  });
+
+  it('returns 0n rather than dividing by a zero price or zero leverage', () => {
+    const base = { sizeBaseRaw: 10_000_000_000_000_000n };
+    expect(collateralForPositionSize({ ...base, leverage: '10.00', openPrice: '0.000000000000000000' })).toBe(0n);
+    expect(collateralForPositionSize({ ...base, leverage: '0.00', openPrice: '65001.000000000000000000' })).toBe(0n);
+    expect(collateralForPositionSize({ sizeBaseRaw: 0n, leverage: '10.00', openPrice: '65001.000000000000000000' })).toBe(0n);
   });
 });

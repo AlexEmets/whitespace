@@ -459,8 +459,6 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   // those is a reason to distrust the price next to it.
   const staleBuckets = newest ? Math.floor((now - newest.t) / intervalSeconds) : 0;
 
-  const atDefault = isDefaultView(rawView, total);
-
   return (
     <div data-testid="price-chart">
       <div className="chart-toolbar">
@@ -491,28 +489,12 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
           <button type="button" className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)} data-testid="log-scale-toggle">
             Log scale
           </button>
-          <button
-            type="button"
-            onClick={() => setRawView({ visible: total, endOffset: 0 })}
-            disabled={total === 0 || atDefault}
-            title="Show every loaded candle"
-            data-testid="reset-zoom"
-          >
-            Reset zoom
-          </button>
         </div>
       </div>
 
-      <div className="market-header" style={{ borderBottom: 'none', padding: '0.5rem 1.2rem' }}>
-        <span className="last-price" data-testid="mark-price">
-          {price ? <>{formatMoney(price.mark, PRICE_DECIMALS_NUM)}</> : '—'}
-        </span>
-        {price ? (
-          <span className="stat-cell" data-testid="index-price">
-            index {formatMoney(price.index, PRICE_DECIMALS_NUM)}
-          </span>
-        ) : null}
-      </div>
+      {/* The mark/index readout that used to sit here was a second copy of what
+          MarketHeaderBar shows directly above it — the reference prints the price once.
+          `data-testid="mark-price"` moved onto the header's price with it. */}
       {price && price.degraded ? <DegradedBanner healthyVenues={price.healthyVenues} /> : null}
 
       <div className="chart-area">
@@ -644,11 +626,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                       C <b>{formatMoney(hovered.c, PRICE_DECIMALS_NUM)}</b>
                     </span>
                   </>
-                ) : (
-                  <span className={styles.readoutHint}>
-                    {visibleCandles.length} / {total} candles · scroll to zoom, drag to pan
-                  </span>
-                )}
+                ) : null}
               </div>
             </>
           ) : null}

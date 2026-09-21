@@ -3,29 +3,39 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useErc20 } from '@/hooks/useErc20';
+import { useFaucet } from '@/hooks/useFaucet';
 import { useEstimatedLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
 import { useOpenTrade } from '@/hooks/useOpenTrade';
 import { useOrders } from '@/hooks/useOrders';
 import { usePrice } from '@/hooks/usePrice';
 import { explainCancelReason } from '@/lib/abi';
-import {
-  COLLATERAL_DECIMALS,
-  DEFAULT_SLIPPAGE_BPS,
-  MAX_SLIPPAGE_BPS,
-  MIN_SLIPPAGE_BPS,
-  PRICE_DECIMALS_NUM,
-} from '@/lib/config';
+import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
-import { formatBps, formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { estimatePositionSizeBase } from '@/lib/pnl';
+import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
+import { collateralForPositionSize, estimatePositionSizeBase } from '@/lib/pnl';
 import type { MarketSummary } from '@/lib/types';
 
 const QUICK_FILL_FRACTIONS = [25, 50, 75, 100] as const;
 
+/**
+ * Slippage tolerance for every order this form submits.
+ *
+ * It was a slider until the strip-to-reference pass; terminal_design.pdf has exactly one
+ * slider, LEVERAGE. Deleting the control is NOT the same as deleting the parameter —
+ * `openTrade` takes `slippageP` on every call, and in this two-phase design it is the
+ * trader's only defence against an unfavourable execution price (the price does not exist
+ * at request time; see config.ts:47-52). Removing the control without pinning the value
+ * would have submitted orders with whatever the last render left behind.
+ *
+ * Pinned to the same constant `PositionsList.tsx:64` already passes when closing, so both
+ * money paths now agree by construction rather than by the coincidence of a slider's
+ * default position.
+ */
+const SLIPPAGE_BPS = DEFAULT_SLIPPAGE_BPS;
+
 type SubmitState =
   | { phase: 'idle' }
-  | { phase: 'claiming' }
   | { phase: 'approving' }
   | { phase: 'submitting' }
   | { phase: 'submitted'; orderId: string }
@@ -75,16 +85,17 @@ export function OpenPositionForm({
    * which the wrong approval could not matter. Every genuinely new wallet was blocked.
    */
   const erc20 = useErc20(TRADING_STORAGE_ADDRESS);
+  const faucet = useFaucet(erc20);
   const { openTrade, isPending } = useOpenTrade();
   const { orders } = useOrders(address);
   const fees = useMarketFees(pairIndex);
 
   const [buy, setBuy] = useState(true);
-  const [collateralInput, setCollateralInput] = useState('');
+  /** Base-asset quantity, as typed. The contract never sees this — see `collateralRaw`. */
+  const [sizeInput, setSizeInput] = useState('');
   const maxLeverageX = maxLeverage > 0n ? Number(maxLeverage / 100n) : 1;
   const [leverageX, setLeverageX] = useState(Math.min(10, Math.max(1, maxLeverageX)));
   const [leverageTouched, setLeverageTouched] = useState(false);
-  const [slippageBps, setSlippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
 
   // `maxLeverage` starts at 0n (no market loaded yet) and jumps to its real value once
@@ -104,16 +115,42 @@ export function OpenPositionForm({
     setLeverageX(value);
   }
 
-  const collateralRaw = useMemo(() => {
+  const leverageRaw = BigInt(leverageX * 100);
+
+  /** The base asset the size field is denominated in. Falls back to the generic label
+   * rather than to a hardcoded "BTC", which would be a lie the moment a second pair is
+   * listed. */
+  const baseAsset = market?.from ?? 'BASE';
+
+  const sizeBaseRaw = useMemo(() => {
     try {
-      if (!collateralInput.trim()) return 0n;
-      return parseHumanDecimal(collateralInput, COLLATERAL_DECIMALS);
+      if (!sizeInput.trim()) return 0n;
+      // Base-asset quantities carry PRICE_DECIMALS, the same scale estimatePositionSizeBase
+      // returns, so the two directions of the conversion share one unit.
+      return parseHumanDecimal(sizeInput, PRICE_DECIMALS_NUM);
     } catch {
       return null;
     }
-  }, [collateralInput]);
+  }, [sizeInput]);
 
-  const leverageRaw = BigInt(leverageX * 100);
+  /**
+   * What is actually submitted.
+   *
+   * `openTrade` takes collateral and leverage and has no size parameter — the base-asset
+   * quantity is a consequence of those and the fill price. The form is denominated in
+   * size because the reference's order panel is, so the typed figure is converted here
+   * and the result is shown as "Margin required" below, where the trader can see the
+   * number that will leave their wallet before they sign for it.
+   *
+   * Null when the price is not yet known: without one there is no conversion to make, and
+   * guessing a rate for a money figure is not an option (see lib/money.ts).
+   */
+  const collateralRaw = useMemo(() => {
+    if (sizeBaseRaw === null) return null;
+    if (sizeBaseRaw === 0n) return 0n;
+    if (!price) return null;
+    return collateralForPositionSize({ sizeBaseRaw, leverage: leverageRaw, openPrice: priceToRaw(price.mark) });
+  }, [sizeBaseRaw, leverageRaw, price]);
   const isDegraded = price?.degraded ?? false;
   const needsApproval = collateralRaw !== null && collateralRaw > 0n && erc20.allowance < collateralRaw;
   const insufficientBalance = collateralRaw !== null && collateralRaw > 0n && erc20.balance < collateralRaw;
@@ -135,7 +172,7 @@ export function OpenPositionForm({
    */
   useEffect(() => {
     setState((current) => (current.phase === 'submitted' || current.phase === 'error' ? { phase: 'idle' } : current));
-  }, [collateralInput, buy, leverageX, pairIndex, slippageBps]);
+  }, [sizeInput, buy, leverageX, pairIndex]);
 
   const submittedOrder = state.phase === 'submitted' ? orders.find((o) => o.orderId === state.orderId) : undefined;
 
@@ -157,13 +194,6 @@ export function OpenPositionForm({
   // testnet mint on the mock collateral token (contracts/src/mocks/USDW.sol).
   const needsFunds = isConnected && (erc20.balance === 0n || insufficientBalance);
 
-  // Base-asset quantity this order works out to at the current reference price. Display
-  // only — the contract is never handed a size (see the readout's comment below).
-  const sizeBase =
-    price && collateralRaw !== null && collateralRaw > 0n
-      ? estimatePositionSizeBase({ collateral: collateralRaw, leverage: leverageRaw, openPrice: priceToRaw(price.mark) })
-      : 0n;
-
   const canSubmit =
     isConnected &&
     pairIndex !== null &&
@@ -178,21 +208,19 @@ export function OpenPositionForm({
     state.phase !== 'submitting' &&
     !isPending;
 
-  function setCollateralFraction(pct: number) {
-    const amount = (erc20.balance * BigInt(pct)) / 100n;
-    setCollateralInput(formatMoney(amount, COLLATERAL_DECIMALS, { grouping: false }));
-  }
-
-  async function handleClaim() {
-    setState({ phase: 'claiming' });
-    try {
-      await erc20.claimFaucet();
-      // claimFaucet waits for its receipt, so this refetch reads post-mint state.
-      await erc20.refetchBalance();
-      setState({ phase: 'idle' });
-    } catch (err) {
-      setState({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
-    }
+  /** Quick-fill is a fraction of the WALLET, so it is computed in collateral and then
+   * expressed as the size that collateral buys — the inverse direction to submission.
+   * Doing it the other way (a fraction of some notional) would let "Max" produce an order
+   * the balance cannot fund. */
+  function setSizeFraction(pct: number) {
+    if (!price) return;
+    const collateral = (erc20.balance * BigInt(pct)) / 100n;
+    const size = estimatePositionSizeBase({
+      collateral,
+      leverage: leverageRaw,
+      openPrice: priceToRaw(price.mark),
+    });
+    setSizeInput(formatMoney(size, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false }));
   }
 
   async function handleApprove() {
@@ -218,7 +246,7 @@ export function OpenPositionForm({
         collateralRaw,
         leverageRaw,
         wantedPriceRaw: priceToRaw(price.mark),
-        slippageBps,
+        slippageBps: SLIPPAGE_BPS,
       });
       setState({ phase: 'submitted', orderId: orderId !== undefined ? orderId.toString() : '' });
     } catch (err) {
@@ -247,12 +275,18 @@ export function OpenPositionForm({
         </button>
       </div>
 
+      {/* Order matches terminal_design.pdf (LIMIT MARKET STOP TWAP). MARKET stays the
+          ACTIVE one, which the reference does not: useOpenTrade hardcodes
+          OPEN_ORDER_TYPE_MARKET into every submission, so an active LIMIT tab over this
+          submit path would name one order type and sign another. LIMIT/STOP exist on
+          chain but their resting-order management UI is out of scope (abi.ts); TWAP is
+          not in the contracts at all. */}
       <div className="order-type-tabs">
-        <button type="button" className="active">
-          Market
-        </button>
         <button type="button" disabled title="On-chain, but resting-order management is out of scope for this release">
           Limit
+        </button>
+        <button type="button" className="active">
+          Market
         </button>
         <button type="button" disabled title="On-chain, but resting-order management is out of scope for this release">
           Stop
@@ -267,29 +301,35 @@ export function OpenPositionForm({
           <span>Price</span>
           <span className="badge">MID</span>
         </div>
-        <input
-          data-testid="reference-price"
-          readOnly
-          value={price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}
-        />
+        <div className="input-with-suffix">
+          <input
+            data-testid="reference-price"
+            readOnly
+            value={price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}
+          />
+          <span className="field-suffix">USDW</span>
+        </div>
       </div>
 
       <div className="field-group">
         <div className="field-label-row">
-          <span>Collateral</span>
+          <span>Size</span>
           <span data-testid="usdw-balance">Avail. {formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</span>
         </div>
-        <input
-          data-testid="collateral-input"
-          inputMode="decimal"
-          placeholder="0.00"
-          value={collateralInput}
-          onChange={(e) => setCollateralInput(e.target.value)}
-        />
+        <div className="input-with-suffix">
+          <input
+            data-testid="size-input"
+            inputMode="decimal"
+            placeholder="0.0000"
+            value={sizeInput}
+            onChange={(e) => setSizeInput(e.target.value)}
+          />
+          <span className="field-suffix">{baseAsset}</span>
+        </div>
       </div>
       <div className="quick-fill-row">
         {QUICK_FILL_FRACTIONS.map((pct) => (
-          <button type="button" key={pct} onClick={() => setCollateralFraction(pct)} data-testid={`quick-fill-${pct}`}>
+          <button type="button" key={pct} onClick={() => setSizeFraction(pct)} data-testid={`quick-fill-${pct}`}>
             {pct === 100 ? 'Max' : `${pct}%`}
           </button>
         ))}
@@ -315,29 +355,6 @@ export function OpenPositionForm({
         </div>
       </div>
 
-      {/* Design §5.1: in this two-phase design slippage is the trader's ONLY defence
-          against an unfavourable execution price (the price is not known at request
-          time) — so it is shown explicitly here, not tucked into an "advanced" panel. */}
-      <div className="leverage-row">
-        <div className="field-label-row">
-          <span>Max slippage</span>
-          <span data-testid="slippage-value">{formatBps(slippageBps)}</span>
-        </div>
-        <input
-          data-testid="slippage-input"
-          type="range"
-          min={Number(MIN_SLIPPAGE_BPS)}
-          max={Number(MAX_SLIPPAGE_BPS)}
-          step={5}
-          value={Number(slippageBps)}
-          onChange={(e) => setSlippageBps(BigInt(e.target.value))}
-        />
-      </div>
-      <p className="slippage-explainer">
-        If the execution price (set by the keeper&apos;s signed report, after you submit) moves against you by more
-        than {formatBps(slippageBps)}, the order is cancelled and your collateral is refunded, minus the oracle fee.
-      </p>
-
       {isDegraded ? (
         <p role="alert" className="error-text" data-testid="open-blocked-degraded">
           Opening is disabled: the price feed is degraded (fewer than 3 healthy venues).
@@ -346,13 +363,22 @@ export function OpenPositionForm({
       {leverageTooHigh ? <p className="error-text">Leverage exceeds this market&apos;s maximum.</p> : null}
       {insufficientBalance ? <p className="error-text">Insufficient USDW balance.</p> : null}
 
+      {/* The button survives the strip-to-reference pass and its explanatory note does
+          not. A wallet holding 0 USDW reaches a terminal where every control works and
+          nothing can be submitted; without a route to collateral here that is a dead
+          end. What the faucet mints and how often is now stated once, in FaucetPanel,
+          rather than repeated in the order form. */}
       {needsFunds ? (
         <div className="faucet-row" data-testid="faucet-row">
-          <button type="button" data-testid="faucet-button" onClick={handleClaim} disabled={state.phase === 'claiming'}>
-            {state.phase === 'claiming' ? 'Claiming…' : 'Get testnet USDW'}
+          <button type="button" data-testid="faucet-button" onClick={faucet.claim} disabled={faucet.pending}>
+            {faucet.pending ? 'Claiming…' : 'Get testnet USDW'}
           </button>
-          <span className="faucet-note">Testnet collateral, minted to your wallet. Not real value.</span>
         </div>
+      ) : null}
+      {faucet.error ? (
+        <p role="alert" className="error-text" data-testid="faucet-error">
+          {faucet.error}
+        </p>
       ) : null}
 
       <div className="submit-row">
@@ -373,20 +399,14 @@ export function OpenPositionForm({
           <span data-testid="order-value">{formatMoney(orderValueRaw, COLLATERAL_DECIMALS)} USDW</span>
         </div>
         <div className="row">
+          {/* The number that actually leaves the wallet. The size field above is the
+              trader's input; this is what it converts to and what `openTrade` is handed,
+              so it is the one figure on this panel they should check before signing.
+              A dash, not "0.00", when there is no price to convert with — those are
+              different states and only one of them means "this order costs nothing". */}
           <span>Margin required</span>
           <span data-testid="margin-required">
-            {collateralRaw !== null ? formatMoney(collateralRaw, COLLATERAL_DECIMALS) : '0.00'} USDW
-          </span>
-        </div>
-        <div className="row">
-          {/* The mockup's order panel leads with a SIZE field in the base asset. This
-              contract does not take one — `openTrade` takes collateral and leverage, and
-              the base-asset quantity is a consequence of those and the fill price. So it
-              is shown as a derived readout rather than an input, and marked "≈" because
-              the real fill price is the keeper's signed report, not this reference price. */}
-          <span>Position size</span>
-          <span data-testid="position-size">
-            {sizeBase > 0n && market ? `≈ ${formatMoney(sizeBase, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false })} ${market.from}` : '—'}
+            {collateralRaw !== null ? `${formatMoney(collateralRaw, COLLATERAL_DECIMALS)} USDW` : '—'}
           </span>
         </div>
         <div className="row">
@@ -433,13 +453,6 @@ export function OpenPositionForm({
         </div>
       ) : null}
 
-      <div className="points-panel" data-testid="points-panel">
-        <div className="field-label-row">
-          <span>Void points</span>
-          <span className="badge badge-soon">Coming soon</span>
-        </div>
-        <p>Point totals and referral share are not yet backed by a live service — nothing invented here.</p>
-      </div>
     </form>
   );
 }

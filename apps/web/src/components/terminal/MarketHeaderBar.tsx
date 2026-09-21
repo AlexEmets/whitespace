@@ -33,7 +33,9 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
         </div>
       </div>
       <div>
-        <div className="last-price" data-testid="last-price">
+        {/* `mark-price` lives here since the chart's duplicate readout was removed — the
+            reference prints the price once. tests/e2e/trade-flow.spec.ts asserts on it. */}
+        <div className="last-price" data-testid="mark-price">
           {price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}
         </div>
         {change ? (
@@ -46,7 +48,9 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
       </div>
       <div className="stat-cell mono-upper">
         Index
-        <span className="stat-value">{price ? formatMoney(price.index, PRICE_DECIMALS_NUM) : '—'}</span>
+        <span className="stat-value" data-testid="index-price">
+          {price ? formatMoney(price.index, PRICE_DECIMALS_NUM) : '—'}
+        </span>
       </div>
       <div className="stat-cell mono-upper">
         Funding · 1h
