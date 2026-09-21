@@ -25,6 +25,21 @@ export const CHAIN_INFO = chainInfo;
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:4000/ws';
 
+/**
+ * JSON-RPC endpoint this app's own chain reads go to. Defaults to the public Whitechain
+ * endpoint, so absent the env var the behaviour is exactly what it is today and local
+ * development is unaffected. In the hosted deployment it points at `/rpc` on our own
+ * origin, which eRPC fronts (hosting design §5): N visitors then collapse into one cached
+ * outbound client instead of N independent sources of rate-limit pressure queued against
+ * the indexer and keeper on the single known 1874 endpoint.
+ *
+ * Deliberately NOT folded into the chain's `rpcUrls` in wagmiConfig: that value is what
+ * `wallet_addEthereumChain` hands the visitor's wallet, and their wallet should keep
+ * pointing at the canonical public endpoint rather than becoming dependent on this
+ * deployment's domain staying alive.
+ */
+export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? chainInfo.rpc;
+
 /** Re-exported so callers can gate on "degraded" using the same threshold the publisher
  * enforces, instead of a locally re-typed magic number. */
 export const MIN_HEALTHY_VENUES_REEXPORT = MIN_HEALTHY_VENUES;

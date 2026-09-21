@@ -7,7 +7,7 @@ import { defineChain } from 'viem';
 // production build with "Module not found" even though this app never uses that
 // connector. The single `injected()` connector is all a MetaMask-style wallet needs.
 import { createConfig, http, injected } from 'wagmi';
-import { CHAIN_ID, CHAIN_INFO } from './config';
+import { CHAIN_ID, CHAIN_INFO, RPC_URL } from './config';
 
 /**
  * Whitechain testnet 1874, defined from @whitespace/shared's chain registry (rpc URL)
