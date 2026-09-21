@@ -1,0 +1,21 @@
+[Unit]
+Description=Whitespace read API (REST + WebSocket)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target whitespace-indexer.service
+Wants=network-online.target whitespace-indexer.service
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/services/api
+EnvironmentFile=/home/whitespace/whitespace/services/api/.env
+Environment=HOME=/home/whitespace
+ExecStart=/home/whitespace/whitespace/services/api/node_modules/.bin/tsx src/server.ts
+Restart=always
+RestartSec=5
+# Measured 89 MB PSS including the tsx/esbuild child process.
+MemoryMax=350M
+
+[Install]
+WantedBy=multi-user.target

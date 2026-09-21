@@ -1,0 +1,24 @@
+[Unit]
+Description=Whitespace keeper (fulfils price requests on chain 1874)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target whitespace-publisher.service
+Wants=network-online.target whitespace-publisher.service
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/services/keeper
+EnvironmentFile=/home/whitespace/whitespace/services/keeper/.env
+Environment=HOME=/home/whitespace
+ExecStart=/usr/bin/node src/main.mjs
+Restart=always
+RestartSec=5
+# Backstop for the unbounded dead-letter queue at src/deadLetter.mjs:17, which has no cap
+# and no TTL: a sustained publisher or RPC outage turns one failure per order into
+# permanent heap. Restart=always converts that leak from an OOM of the whole box into a
+# restart of one service.
+MemoryMax=250M
+
+[Install]
+WantedBy=multi-user.target

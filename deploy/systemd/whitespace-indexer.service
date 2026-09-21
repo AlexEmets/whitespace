@@ -1,0 +1,26 @@
+[Unit]
+Description=Whitespace indexer (Ponder, chain 1874 -> Postgres)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/services/indexer
+# EnvironmentFile rather than relying on Ponder's own dotenv loading: verified by
+# experiment that `ponder start` does NOT pick up `.env` from the service directory (it
+# looks for `.env.local`), and dies with "Database schema required" when DATABASE_SCHEMA
+# is only in `.env`. systemd loading the file removes that ambiguity entirely.
+EnvironmentFile=/home/whitespace/whitespace/services/indexer/.env
+Environment=HOME=/home/whitespace
+ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder start
+Restart=always
+RestartSec=5
+# Measured 203 MB PSS at peak during historical backfill, which is the heaviest phase.
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

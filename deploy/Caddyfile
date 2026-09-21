@@ -1,0 +1,53 @@
+# Front door for the public testnet deployment.
+#
+# TOPOLOGY NOTE. The hosting design (§4) specified Cloudflare Tunnel, with Caddy bound to
+# a plain local port and Cloudflare terminating TLS. The domain was instead pointed
+# straight at the origin with an A record, which is the fallback the design itself
+# sanctions in §12: "Caddy already binds a plain port, so falling back to a direct A
+# record plus Let's Encrypt is a config change, not a redesign". This file IS that config
+# change. Caddy now terminates TLS itself via ACME, and ufw opens 80/443.
+#
+# Consequences of taking this branch, all accepted deliberately:
+#   - the origin IP is public (it already was, the moment the A record was created)
+#   - there is no CDN or DDoS absorption in front of the box
+#   - Cloudflare's ~100 s idle-WebSocket timeout no longer applies; the 30 s server-side
+#     ping added in services/api/src/ws.ts is harmless here and stays, so that moving to
+#     the tunnel later needs no code change
+#
+# Two routing details are load-bearing and were verified against the source, not assumed:
+#   - services/api registers BARE paths (`/health`, `/markets`, `/positions/:address`),
+#     with no `/api` prefix anywhere in the service, so the prefix must be STRIPPED here.
+#   - the WebSocket server is `new WebSocketServer({ server, path: '/ws' })`, which matches
+#     the literal path, so `/ws` is proxied WITHOUT stripping.
+
+www.whitespace.finance {
+	encode gzip zstd
+
+	# Not stripped: the ws server matches the literal path '/ws'.
+	handle /ws {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	# Stripped: services/api has no /api prefix of its own.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	# eRPC keys its cache on (method, params) and exposes one path per project and chain.
+	handle /rpc {
+		rewrite * /main/evm/1874
+		reverse_proxy 127.0.0.1:4001
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
+
+# Apex redirects to www, which is the canonical origin baked into the frontend bundle at
+# build time. Deliberately a SEPARATE site block rather than a second name on the block
+# above: Caddy issues one certificate per block, so if the apex ever fails its ACME
+# challenge it cannot take the main site's certificate down with it.
+whitespace.finance {
+	redir https://www.whitespace.finance{uri} permanent
+}

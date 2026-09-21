@@ -1,0 +1,24 @@
+[Unit]
+Description=Whitespace price publisher (k-of-N signed price reports)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/services/price-publisher
+EnvironmentFile=/home/whitespace/whitespace/services/price-publisher/.env
+# HOME must be set explicitly. The .env.example files warn repeatedly that an unset HOME
+# resolves key paths to a literal `undefined/...` and dies with ENOENT — systemd does not
+# provide HOME for a User= unit unless asked.
+Environment=HOME=/home/whitespace
+ExecStart=/usr/bin/node src/main.mjs
+Restart=always
+RestartSec=5
+# Measured 41 MB PSS in steady state; this is a backstop, not a target.
+MemoryMax=250M
+
+[Install]
+WantedBy=multi-user.target

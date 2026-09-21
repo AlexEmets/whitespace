@@ -1,0 +1,22 @@
+[Unit]
+Description=Whitespace frontend (next start)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target whitespace-api.service
+Wants=network-online.target whitespace-api.service
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/apps/web
+Environment=HOME=/home/whitespace
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStart=/home/whitespace/whitespace/apps/web/node_modules/.bin/next start -p 3000
+Restart=always
+RestartSec=5
+# Measured 104 MB PSS idle, 83 MB after a GC following twelve page loads.
+MemoryMax=350M
+
+[Install]
+WantedBy=multi-user.target

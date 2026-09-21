@@ -38,5 +38,23 @@ services:
       timeout: 3s
       retries: 30
 
+  # Caching JSON-RPC proxy for browser traffic only — the indexer and keeper keep talking
+  # to the upstream directly, because their access pattern is chunked `eth_getLogs` over
+  # historical ranges, which a response cache does nothing for. See deploy/erpc.yaml for
+  # why this exists and what to do if it misbehaves against 1874.
+  #
+  # Published on 4001, not its default 4000, which would collide with services/api.
+  # Only started in the hosted deployment; local development does not need it, and
+  # `docker compose up -d postgres` still brings up Postgres alone.
+  erpc:
+    image: ghcr.io/erpc/erpc:latest
+    container_name: whitespace-erpc
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:4001:4000'
+    volumes:
+      - ./deploy/erpc.yaml:/root/erpc.yaml:ro
+    profiles: ['hosted']
+
 volumes:
   whitespace-pgdata:

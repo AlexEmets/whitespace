@@ -1,0 +1,26 @@
+# eRPC — caching JSON-RPC proxy in front of the single known Whitechain 1874 endpoint.
+#
+# Why this exists (hosting design §5): without it, every visitor's browser calls
+# rpc.testnet.whitechain.io directly, so N visitors become N independent sources of
+# rate-limit pressure queued against the indexer and keeper on the one endpoint
+# services/indexer/ponder.config.ts documents as the only known one. Routing the frontend
+# through /rpc collapses that to a single outbound client with a cache in front of it.
+#
+# Listens on 4000 INSIDE the container and is published on 127.0.0.1:4001, because 4000 on
+# the host belongs to services/api.
+#
+# UNPROVEN COMPONENT. eRPC has never been exercised against chain 1874 in this project. If
+# its cache keying or upstream handling misbehaves, the documented fallback (§5) is a
+# purpose-written ~120-line Node LRU proxy, or — as an immediate stopgap — pointing the
+# Caddy /rpc route straight at the upstream, which loses caching but restores service.
+logLevel: warn
+
+server:
+  httpHostV4: 0.0.0.0
+  httpPort: 4000
+
+projects:
+  - id: main
+    upstreams:
+      - id: whitechain-testnet
+        endpoint: https://rpc.testnet.whitechain.io
