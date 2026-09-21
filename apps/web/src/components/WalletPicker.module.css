@@ -1,72 +1,7 @@
-/* Scoped to WalletPicker. A CSS Module rather than more rules in app/globals.css, which
-   is already a thousand lines of global class names, and because this is the app's only
-   overlay — nothing else needs these rules. Every colour is a :root token from
-   globals.css so the dialog sits on the same palette as the terminal panels. */
-
-.backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.5rem;
-  background: rgba(8, 9, 11, 0.74);
-  backdrop-filter: blur(3px);
-  animation: fade 120ms ease-out;
-}
-
-.dialog {
-  display: flex;
-  flex-direction: column;
-  width: min(23rem, 100%);
-  max-height: 100%;
-  overflow: hidden;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
-  animation: rise 150ms cubic-bezier(0.2, 0.8, 0.3, 1);
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1rem 0.75rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.title {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg);
-}
-
-.close {
-  display: grid;
-  place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
-  padding: 0;
-  font-family: inherit;
-  font-size: 0.9rem;
-  line-height: 1;
-  color: var(--fg-muted);
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.close:hover {
-  color: var(--fg);
-  border-color: var(--border);
-}
+/* Wallet-row styles only. The dialog shell (backdrop, dialog, header, title, close,
+   footer, animations) moved to Modal.module.css when components/Modal.tsx was extracted
+   so the funding dialogs could share one focus trap. Every colour is a :root token from
+   globals.css. */
 
 .list {
   margin: 0;
@@ -178,32 +113,4 @@
   font-size: 0.62rem;
   line-height: 1.4;
   color: var(--short);
-}
-
-.footer {
-  padding: 0.6rem 1rem 0.7rem;
-  font-size: 0.58rem;
-  letter-spacing: 0.06em;
-  color: var(--fg-dim);
-  border-top: 1px solid var(--border);
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.99);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .backdrop,
-  .dialog {
-    animation: none;
-  }
 }

@@ -1,13 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useAccount, useConnect } from 'wagmi';
 import { useWalletOptions, type WalletOption } from '@/hooks/useWalletOptions';
 import { CHAIN_ID } from '@/lib/config';
+import { Modal } from './Modal';
 import styles from './WalletPicker.module.css';
-
-const FOCUSABLE = 'a[href], button:not([disabled])';
 
 /**
  * wagmi surfaces the raw provider error, which for a rejection is a multi-paragraph
@@ -41,32 +39,12 @@ function WalletIcon({ option }: { option: WalletOption }) {
   );
 }
 
-function trapFocus(container: HTMLElement | null, event: KeyboardEvent): void {
-  if (!container) return;
-  const items = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE));
-  const first = items[0];
-  const last = items[items.length - 1];
-  if (!first || !last) return;
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-}
-
 export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { options } = useWalletOptions();
   const { connect, isPending, error, reset } = useConnect();
   const { isConnected } = useAccount();
   const [pendingKey, setPendingKey] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDivElement>(null);
   const firstRowRef = useRef<HTMLButtonElement>(null);
-  const [mounted, setMounted] = useState(false);
-
-  // The portal needs a real document, which the server render does not have.
-  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (open && isConnected) onClose();
@@ -80,27 +58,6 @@ export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => 
     }
   }, [open, reset]);
 
-  useEffect(() => {
-    if (!open) return undefined;
-
-    const opener = document.activeElement;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    firstRowRef.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-      else if (event.key === 'Tab') trapFocus(dialogRef.current, event);
-    };
-    document.addEventListener('keydown', onKeyDown);
-
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      if (opener instanceof HTMLElement) opener.focus();
-    };
-  }, [open, onClose]);
-
   const handleSelect = useCallback(
     (option: WalletOption) => {
       if (option.kind !== 'detected') return;
@@ -111,42 +68,20 @@ export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => 
     [connect, reset],
   );
 
-  if (!mounted || !open) return null;
-
   const firstInstallIndex = options.findIndex((option) => option.kind === 'install');
 
-  return createPortal(
-    <div
-      className={styles.backdrop}
-      data-testid="wallet-picker-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Connect wallet"
+      testId="wallet-picker"
+      // The first wallet row, not the close button that precedes it in DOM order — the
+      // dialog exists to pick a wallet, so the keyboard should land on one.
+      initialFocusRef={firstRowRef}
+      footer={<>Whitechain Testnet · chain {CHAIN_ID}</>}
     >
-      <div
-        ref={dialogRef}
-        className={styles.dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="wallet-picker-title"
-        data-testid="wallet-picker"
-      >
-        <header className={styles.header}>
-          <h2 id="wallet-picker-title" className={styles.title}>
-            Connect wallet
-          </h2>
-          <button
-            type="button"
-            className={styles.close}
-            onClick={onClose}
-            aria-label="Close"
-            data-testid="wallet-picker-close"
-          >
-            ×
-          </button>
-        </header>
-
-        <ul className={styles.list}>
+      <ul className={styles.list}>
           {options.map((option, index) => {
             const isRowPending = pendingKey === option.key && isPending;
             const showError = pendingKey === option.key && error !== null && !isPending;
@@ -197,11 +132,7 @@ export function WalletPicker({ open, onClose }: { open: boolean; onClose: () => 
               </li>
             );
           })}
-        </ul>
-
-        <footer className={styles.footer}>Whitechain Testnet · chain {CHAIN_ID}</footer>
-      </div>
-    </div>,
-    document.body,
+      </ul>
+    </Modal>
   );
 }
