@@ -6,10 +6,33 @@ import { ERC20_ABI } from '@/lib/abi';
 import { COLLATERAL_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
 
+/**
+ * The subset of `useErc20` a consumer needs. Named so helpers can take the handle as a
+ * parameter (see `useFaucet`) without depending on `ReturnType<typeof useErc20>`, and so
+ * a test double has one place to conform to.
+ */
+export interface Erc20Handle {
+  /** Raw 6-decimal USDW. */
+  balance: bigint;
+  /** Raw 6-decimal USDW. Always 0n when the hook was called without a spender. */
+  allowance: bigint;
+  refetchBalance: () => unknown;
+  refetchAllowance: () => unknown;
+  approve: (amount: bigint) => Promise<`0x${string}`>;
+  claimFaucet: () => Promise<`0x${string}`>;
+  isWritePending: boolean;
+}
+
 /** USDW balance + allowance for `spender`, and the approve/claim(faucet) writes. Every
  * value returned is a raw bigint (6-decimal) — format it with src/lib/money.ts, never
- * with Number(). */
-export function useErc20(spender: Address) {
+ * with Number().
+ *
+ * `spender` is optional because allowance is only meaningful against one. A caller that
+ * only mints and reads a balance (FaucetPanel) has no spender to name, and naming an
+ * arbitrary contract just to satisfy the signature would put a number on screen that
+ * describes a relationship the panel has nothing to do with. Omitting it disables the
+ * allowance read outright rather than issuing one and ignoring the answer. */
+export function useErc20(spender?: Address): Erc20Handle {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending: isWritePending } = useWriteContract();
@@ -26,8 +49,8 @@ export function useErc20(spender: Address) {
     address: COLLATERAL_ADDRESS,
     abi: ERC20_ABI,
     functionName: 'allowance',
-    args: address ? [address, spender] : undefined,
-    query: { enabled: Boolean(address) },
+    args: address && spender ? [address, spender] : undefined,
+    query: { enabled: Boolean(address) && Boolean(spender) },
   });
 
   /**
@@ -45,6 +68,11 @@ export function useErc20(spender: Address) {
    * reintroduce the race by forgetting to.
    */
   async function approve(amount: bigint): Promise<`0x${string}`> {
+    // Unreachable from any current caller — every component that approves passes a
+    // spender. It throws rather than defaulting to some address, because an approval
+    // granted to the wrong contract is exactly the failure this file's comment above
+    // documents: a transaction that mines perfectly and authorises nothing.
+    if (!spender) throw new Error('useErc20: approve requires a spender');
     const hash = await writeContractAsync({
       address: COLLATERAL_ADDRESS,
       abi: ERC20_ABI,

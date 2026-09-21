@@ -1,0 +1,111 @@
+/* Scoped to FaucetPanel. Same tokens as the terminal panels so it does not read as a
+   different product when it sits next to them. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 1rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.65rem;
+  color: var(--fg);
+}
+
+.badge {
+  padding: 0.1rem 0.35rem;
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.balanceRow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.65rem 0.7rem;
+  background: var(--bg-raised);
+  border-radius: 3px;
+}
+
+.balanceLabel {
+  font-size: 0.55rem;
+  color: var(--fg-dim);
+}
+
+.balance {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 1.15rem;
+  color: var(--fg);
+}
+
+.unit {
+  font-size: 0.6rem;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.facts dt {
+  font-size: 0.55rem;
+  color: var(--fg-dim);
+}
+
+.facts dd {
+  margin: 0.15rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg);
+}
+
+.action {
+  padding: 0.6rem;
+  font-family: inherit;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--long);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.action:disabled {
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+
+.ok {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--long);
+}
+
+.muted {
+  margin: 0;
+  font-size: 0.6rem;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useHealth } from '@/hooks/useHealth';
 import { ChainGuard } from './ChainGuard';
+import { FundingButtons } from './FundingButtons';
 import { WalletConnect } from './WalletConnect';
 
 const NAV_LINKS: Array<{ href: string; label: string }> = [
@@ -43,6 +44,7 @@ export function NavHeader() {
           <span data-testid="chain-health">
             WHITECHAIN · BLOCK {indexedBlock ?? '—'} · {latencyMs ?? '—'} MS
           </span>
+          <FundingButtons />
           <WalletConnect />
         </div>
       </header>
