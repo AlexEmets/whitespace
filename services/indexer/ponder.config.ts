@@ -32,7 +32,25 @@ const rpcUrls = (process.env.PONDER_RPC_URLS_1874 ?? PRIMARY_RPC)
 
 // All contract addresses below come verbatim from deployments/1874.json
 // (the live testnet deployment record) — never hand-typed.
-const startBlock = 7_284_500; // a few hundred blocks before contract deployment + pair setup
+// Where contract indexing begins. Default 7_284_500 — a few hundred blocks before contract
+// deployment + pair setup — which is the right answer only if the RPC still serves logs
+// that far back. Measured 2026-09-21 against rpc.testnet.whitechain.io, in 10 000-block
+// windows (the largest the endpoint accepts — it rejects anything wider with
+// "query exceeds max block range 10000"):
+//
+//   window at 7_280_000 ... 0 logs     window at 8_300_000 ... 59 logs
+//   window at 7_370_000 ... 0 logs     window at 8_399_000 ... 67 logs
+//   window at 7_900_000 ... 0 logs
+//
+// The blocks themselves still exist — 7_284_610 returns a block with one transaction — so
+// this is a pruned log/receipt index, not a pruned chain. Anything below roughly 8_300_000
+// is unreachable no matter how the request is chunked, and a cold sync from the default
+// therefore burns hours to import nothing.
+//
+// Hence: overridable, in the same shape as HEARTBEAT_START_BLOCK below, so that moving it
+// is an env change plus `systemctl restart whitespace-indexer` — no rebuild, no redeploy.
+// Ponder compiles this file at startup, so there is no build artifact to invalidate.
+const startBlock = Number(process.env.CONTRACTS_START_BLOCK ?? 7_284_500);
 
 // Where the liveness heartbeat begins — see the `blocks` section for why this is NOT
 // `startBlock`. Overridable so a cold sync months from now does not re-acquire a long
