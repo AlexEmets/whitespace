@@ -126,6 +126,70 @@ Three claims in the two task files are stale. Recorded here because each one cha
 - [ ] Record what was NOT verified: nothing here is seen in a browser (no browser in this
       environment), and no on-chain deposit/withdraw/reclaim was broadcast.
 
-## Review
+## Review — 2026-09-21
 
-_(filled in at the end: changed / verified / left)_
+### Changed (5 commits, `e689bc5..716e2a0`)
+
+- `72d5f03` — `components/Modal.tsx` + `hooks/useMounted.ts`: the portal/focus-trap/Esc
+  shell, extracted from WalletPicker so the funding dialogs do not carry a second focus
+  trap. WalletPicker's markup and testids are unchanged; its 10 tests passed untouched,
+  which is what makes the extraction safe rather than merely plausible.
+- `9ae1a53` — `useFaucet`, `FaucetPanel`, `FundingModal`, `FundingButtons`; `useErc20`
+  spender made optional; `useVault` gained `cancelRequestDeposit`,
+  `cancelRequestWithdraw`, `reclaimDeposit`, `reclaimWithdraw`, `useVaultShares`,
+  `useVaultTvl`. `VaultPanel` is now the LP-position view; its controls moved (not
+  copied) into the dialog.
+- `db3137a` — terminal: prose deleted, slippage pinned, chart chrome trimmed, tabs
+  reordered, order form denominated in the base asset (`collateralForPositionSize`).
+- `3cfd28f` — styles for the above.
+- `716e2a0` — this plan.
+
+### Verified by running the command
+
+- `vitest run` → **286/286 in 22 files** (from 259/259 in 20). `tsc --noEmit` → exit 0.
+- `next build` → compiled, 10/10 static pages, locally and again on the server.
+- Deploy printed **`OK: the running server postdates the build`**, all 5 units `active`.
+- **Independent probe of the live site**, because the deploy's own check only compares
+  timestamps and would print OK for a stale bundle:
+  - `/vaults` 200 and serves `Testnet faucet`, `Vault TVL`, faucet mint `1,000.00`.
+  - `/trade` 200, order tabs in DOM order `Limit, Market(active), Stop, TWAP`,
+    `data-testid="size-input"` present, `field-suffix` USDW.
+  - All seven deleted strings confirmed **gone** from the served HTML: "No resting orders
+    exist here", "Flat across size by design", "worse for your side", "Reset zoom",
+    "scroll to zoom, drag to pan", "Max slippage", "Point totals and referral share".
+  - `/api/markets` returns BTC/USD; `/api/health` `{"status":"ok","indexedBlock":"8416086"}`.
+
+### NOT verified
+
+- **Nothing was seen in a browser.** There is no browser in this environment. Layout,
+  spacing and the hydrated states (the DEPOSIT/WITHDRAW buttons, the dialog, the `BTC`
+  suffix) are reasoned from the served HTML and the CSS, not observed. The SSR HTML shows
+  `BASE` for the size suffix because no market is loaded pre-hydration — correct
+  behaviour, but the `BTC` it becomes after hydration is inferred.
+- **No deposit, withdraw, cancel or reclaim was broadcast on chain.** The whole funding
+  path is covered by unit tests against mocked contracts only. `reclaim*` and
+  `cancelRequest*` have never executed against the real vault.
+- **e2e was not run.** Its selectors were updated to follow the moved controls, but
+  `tests/e2e/trade-flow.spec.ts` is red at HEAD for reasons that predate this work —
+  verified by inspection, not assumed: the app calls 7 PairInfos/PairsStorage functions
+  and `tests/e2e/mockChain.ts` implements 2. Missing:
+  `getTradeLiquidationPrice`, `getTradeLiquidationPricePure`, `getPairPriceImpactK`,
+  `pairDynamicSpreadParams`, `pairDynamicSpreadState`.
+
+### Left / found but not fixed (flagged, not swept)
+
+1. **Approve is offered for an order the balance cannot fund.** In `OpenPositionForm`,
+   when both allowance AND balance are short, the Approve button renders instead of the
+   disabled submit — inviting a gas-costing approval for an order that can never go
+   through. Pre-existing (the branch is unchanged by this work), and `FundingModal`'s new
+   equivalent does guard it (`needsApproval && !insufficient`). One-line fix, deliberately
+   not taken as a drive-by.
+2. **`usePriceImpactLadder.staticOnly` now has no consumer** — its only reader was the
+   "flat across size by design" note, deleted here. The value is still correct data about
+   the pair; left in place rather than narrowing a general data hook.
+3. **Item 7 of the terminal plan (VOID POINTS panel shape) not done** — still blocked on
+   the same thing it was blocked on: the numbers do not exist.
+4. `docs/runbooks/deploy-server.md`, `deploy/check-keeper-gas.sh` and the backup cron
+   remain outstanding from the VPS plan.
+5. **Stale claim corrected:** `todo-2026-09-21-vps-deploy.md` says the `market` table is
+   empty. It is not — `/api/markets` returns BTC/USD as of this deploy.
