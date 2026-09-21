@@ -148,6 +148,56 @@ key file. Per design §2 it cannot liquidate on 1874 at all
 so it would run purely as a monitor and metrics source. Decision needed: author
 its config and run it, or omit it from this deploy.
 
-## Review
+## Review — 2026-09-21
 
-_(changed / verified / left — filled in on completion)_
+### Changed
+- Topology deviates from §4: the domain was pointed straight at the origin, so this is
+  the §12 fallback — Caddy terminates TLS via ACME, ufw opens 80/443, no Cloudflare.
+- Repo: 5 commits (`4e26145`, `92989bc`, `0360311`, `0a3c7bd`, `fb146f7`).
+- Server: swap, ufw, journald cap, key-only SSH, `whitespace` user, scoped sudoers,
+  5 systemd units, Caddy, Postgres + eRPC containers.
+
+### Verified by direct probe
+- HTTPS 200 on `/` and `/trade`; Let's Encrypt cert for both names, expires 2026-12-20.
+- Apex → www redirect returns 301.
+- `/api/health` and `/api/markets` return 200 through Caddy's `handle_path` strip.
+- `/rpc` returns a block number — **eRPC works against 1874, so the §12 "eRPC
+  misbehaves" risk is closed by measurement, not assumption.**
+- WebSocket: `subscribe` acked and an `update` frame received.
+- Publisher: 4/4 venues healthy on all 3 feeds — the §10 pre-flight risk is closed.
+- Ports 3000/4000/4001/5433/8787/42069 all refuse connections from the internet.
+- `systemctl restart whitespace-api` recovers to `/health` 200.
+- `pg_dump -n api_series` produces a restorable artifact.
+- Memory with the full stack up: **975 MB used, 934 MB free, swap 1 MB.** Per-unit PSS:
+  indexer 196, api 76, web 67, publisher 57, keeper 52. The 2 GB sizing is confirmed.
+- On-box `next build`: 61 s, lowest MemAvailable 649 MB, max RSS 714 MB.
+
+### Left broken — the one real failure
+**The indexer cannot backfill.** Ponder issues `eth_getLogs` over ~72 000–78 000 block
+ranges and `rpc.testnet.whitechain.io` times out at 15 s on every one; ~1600 errors in
+three minutes, `progress=0.0%`, `ponder_sync.blocks` and `ponder_sync.logs` both at zero
+rows, and the ranges do **not** shrink over time, so Ponder is not backing off into a
+working size on its own.
+
+Consequence: `/api/markets` returns `[]` and `/api/health` reports `status: down`. The
+site loads and the price feed is live, but there is no chain data behind it.
+
+Candidate fixes, none attempted yet:
+1. Point `PONDER_RPC_URLS_1874` at the already-running eRPC and configure eRPC to
+   auto-split `eth_getLogs` ranges. One env line plus eRPC config; no app code.
+2. Cap Ponder's request range directly — no `maxRequestRange`-style knob was found in
+   ponder@0.16.10's dist, so this needs confirming against its docs.
+3. Move `startBlock` (`ponder.config.ts:35`, currently `7_284_500`, compiled in from
+   `deployments/1874.json`) closer to head. Fastest route to a populated site, at the
+   cost of history, and it is a code change rather than config.
+
+### Also outstanding
+- Services bind `0.0.0.0`, not `127.0.0.1`. ufw makes them unreachable from outside
+  (verified), but the design wanted loopback binding as the first layer, not the second.
+- DNS is unstable: `www` and the apex each intermittently fail to resolve, including via
+  8.8.8.8. Needs attention at the DNS provider — visitors will see sporadic failures.
+- The root password is still the one pasted in chat; it remains valid for the Hetzner
+  web console.
+- `docs/runbooks/deploy-server.md` not written.
+- `deploy/check-keeper-gas.sh` and the backup cron entry not installed.
+- Liquidator omitted by decision.
