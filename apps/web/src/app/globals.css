@@ -124,9 +124,34 @@ select {
 }
 
 .nav-right .wallet-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   border: 1px solid var(--border);
   padding: 0.35rem 0.7rem;
   border-radius: 3px;
+}
+
+/* The connected wallet's own EIP-6963 logo and name. Naming the wallet in the chip is
+   the readable half of the picker: it is how a trader running both MetaMask and Trust
+   can tell at a glance which one actually signed in. */
+.nav-right .wallet-chip-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.nav-right .wallet-chip-name {
+  color: var(--fg-muted);
+}
+
+/* The header is already crowded by the chain/health readout, so the wallet's name is the
+   first thing to go when the viewport narrows — the icon still identifies it. */
+@media (max-width: 1100px) {
+  .nav-right .wallet-chip-name {
+    display: none;
+  }
 }
 
 /* ---------- Ticker strip ---------- */
