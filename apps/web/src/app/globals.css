@@ -1135,9 +1135,26 @@ table.data-table td {
 .field-label-row,
 .leverage-row,
 .bounds,
-.data-table th {
+.data-table th,
+.submit-row button {
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* The reference draws the selected side as a filled block, not a tinted one: the active
+ * half carries the side colour as its background with dark text on top, the same treatment
+ * the submit button gets, so the chosen direction reads at a glance from across the panel.
+ * `--long-dim` alone left it barely distinguishable from the inactive half. */
+.side-toggle button.long-active {
+  background: var(--long);
+  color: #04241a;
+  font-weight: 600;
+}
+
+.side-toggle button.short-active {
+  background: var(--short);
+  color: #2a0a0a;
+  font-weight: 600;
 }
 
 /* A price is not a label: numbers keep their natural tracking so the digits do
