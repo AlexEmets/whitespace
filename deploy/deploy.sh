@@ -22,8 +22,20 @@ git pull --ff-only
 echo "==> installing dependencies"
 pnpm install --frozen-lockfile
 
+# One `sudo systemctl <verb> <single-unit>` per call, never a multi-unit line.
+# /etc/sudoers.d/whitespace matches the WHOLE command including its arguments, so
+# `systemctl restart a b c` is a different — and unpermitted — command from three
+# separate restarts. Batching them fails with "I'm afraid I can't do that", which under
+# `|| true` is swallowed silently: the build then runs against a live stack and the new
+# bundle is never activated. Keep these loops.
+ws_ctl() {
+  local verb=$1
+  shift
+  for unit in "$@"; do sudo systemctl "$verb" "$unit"; done
+}
+
 echo "==> stopping memory-heavy units for the build"
-sudo systemctl stop whitespace-web whitespace-indexer || true
+ws_ctl stop whitespace-web whitespace-indexer
 
 echo "==> building the frontend"
 # NEXT_PUBLIC_* values are inlined into the bundle here, not read at runtime, so
@@ -31,8 +43,8 @@ echo "==> building the frontend"
 pnpm --filter @whitespace/web build
 
 echo "==> restarting the stack"
-sudo systemctl restart whitespace-publisher whitespace-keeper whitespace-api
-sudo systemctl start whitespace-indexer whitespace-web
+ws_ctl restart whitespace-publisher whitespace-keeper whitespace-api
+ws_ctl start whitespace-indexer whitespace-web
 
 echo "==> done"
 systemctl --no-pager --plain is-active \
