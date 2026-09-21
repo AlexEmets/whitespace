@@ -38,6 +38,16 @@ export const pairsStorageAbi = [
       { name: 'feed', type: 'bytes32', indexed: false },
     ],
   },
+  // Transcribed from IOstiumPairsStorage.sol:64. Needed because the listing events are
+  // unreachable — the endpoint prunes its log index — so the only way to learn how many
+  // pairs exist is to ask the contract. See src/lib/seedMarkets.ts.
+  {
+    type: 'function',
+    name: 'pairsCount',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint16' }],
+  },
   {
     type: 'function',
     name: 'pairs',
