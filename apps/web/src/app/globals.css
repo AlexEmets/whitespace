@@ -123,6 +123,40 @@ select {
   letter-spacing: 0.06em;
 }
 
+/* DEPOSIT / WITHDRAW, in the Aster/Hyperliquid position: header chrome, beside the
+   wallet, not buried on a /vaults page nothing in the terminal links to. Outlined rather
+   than filled — the filled green in this app is reserved for the order-entry submit, and
+   two competing primaries in one viewport is how a trader clicks the wrong one. */
+.nav-right .funding-buttons {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.nav-right .funding-buttons button {
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.nav-right .funding-buttons button:hover {
+  border-color: var(--accent);
+}
+
+/* The header is crowded; these are the first controls to collapse to icons' worth of
+   space when the viewport narrows, ahead of the wallet name. */
+@media (max-width: 900px) {
+  .nav-right .funding-buttons {
+    display: none;
+  }
+}
+
 .nav-right .wallet-chip {
   display: flex;
   align-items: center;
@@ -772,6 +806,30 @@ table.markets-table td {
   color: var(--fg);
 }
 
+/* Unit badges inside the price and size fields, per terminal_design.pdf (`USDW` in
+   PRICE, `BTC` in SIZE). Inside rather than beside: the two fields are denominated in
+   different things, and a unit that can be read apart from its number is a unit that
+   gets read against the wrong one. */
+.input-with-suffix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-suffix input {
+  width: 100%;
+  padding-right: 3.4rem;
+}
+
+.input-with-suffix .field-suffix {
+  position: absolute;
+  right: 0.7rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  pointer-events: none;
+}
+
 .points-panel {
   margin-top: 1.25rem;
   padding-top: 1rem;
@@ -935,10 +993,31 @@ table.data-table td {
   font-size: 0.78rem;
 }
 
-.vault-panel [data-testid='vault-usdw-balance'] {
-  color: var(--fg-muted);
-  font-size: 0.72rem;
-  letter-spacing: 0.03em;
+/* The panel is a read-out now that the deposit/withdraw controls live in FundingModal:
+   one row per figure, label left, value right. */
+.vault-panel .vault-stat {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vault-panel .vault-stat-label {
+  color: var(--fg-dim);
+  font-size: 0.6rem;
+}
+
+.vault-panel .vault-stat-value {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
+.vault-panel .vault-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
 }
 
 .vault-panel label {
