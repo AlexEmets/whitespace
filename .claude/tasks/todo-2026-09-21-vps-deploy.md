@@ -172,7 +172,45 @@ its config and run it, or omit it from this deploy.
   indexer 196, api 76, web 67, publisher 57, keeper 52. The 2 GB sizing is confirmed.
 - On-box `next build`: 61 s, lowest MemAvailable 649 MB, max RSS 714 MB.
 
-### Left broken — the one real failure
+### Update — indexer fixed, one structural gap remains
+
+`CONTRACTS_START_BLOCK` now overrides the compiled-in `startBlock`
+(`ponder.config.ts`, commit `3e64e25`), in the same shape as `HEARTBEAT_START_BLOCK`.
+Set to head−5000 on the server; the indexer went from `status: down` to
+**`{"status":"ok","indexedBlock":"8409431","lagSeconds":1}`** in about 90 seconds, with
+zero restarts. §13 criterion 8 is met.
+
+Root cause of the original failure, established by measurement rather than inferred: the
+endpoint caps `eth_getLogs` at 10 000 blocks ("query exceeds max block range 10000") AND
+prunes its log index. In 10 000-block windows there are **zero** logs at 7 280 000,
+7 370 000 and 7 900 000, but 59 and 67 logs at 8 300 000 and 8 399 000, while the old
+blocks themselves still exist. So history below roughly 8 300 000 is not slow to index —
+it is not served at all, and no chunking, concurrency tuning or eRPC splitting changes it.
+
+Two operational facts worth keeping:
+- Changing `CONTRACTS_START_BLOCK` needs **no rebuild** (Ponder compiles the config at
+  startup) but **does** need Ponder's schema dropped: the value is part of the app
+  fingerprint, and a mismatch raises `MigrationError: Schema "public" was previously used
+  by a different Ponder app`. `public` and `ponder_sync` were dropped and recreated;
+  `api_series` is a separate schema and was untouched (it held 0 rows, and a backup exists).
+- `HEARTBEAT_START_BLOCK` should be moved with it, for the same reason.
+
+**Still empty: the `market` table.** It is populated only by `PairsStorage:PairAdded`
+(`src/handlers/pairsStorage.ts:41`), which fired at block ~7 284 578 — inside the pruned
+region, confirmed against `contracts/broadcast/Operate.s.sol/1874/run-1788880976.json`
+(blocks 7 284 578–7 284 608, `addPair` sent to the same PairsStorage the indexer watches).
+`services/api` reads that table for `/markets`, `/price` and the index-candle recorder, so
+all three stay empty. Options, none chosen:
+1. Re-run the pair setup on chain so `PairAdded` fires at a current block — needs the
+   deploy keys that were deliberately not copied, and broadcasts a transaction, which this
+   deployment was scoped not to do.
+2. Seed `market` directly in Postgres from `deployments/1874.json` and
+   `packages/shared/src/markets.mjs` — no chain interaction, but it writes into a
+   Ponder-owned table that a re-sync will drop.
+3. Fall back to the shared market registry in `services/api` when the table is empty — a
+   code change, and the most durable of the three.
+
+### Superseded — the original diagnosis
 **The indexer cannot backfill.** Ponder issues `eth_getLogs` over ~72 000–78 000 block
 ranges and `rpc.testnet.whitechain.io` times out at 15 s on every one; ~1600 errors in
 three minutes, `progress=0.0%`, `ponder_sync.blocks` and `ponder_sync.logs` both at zero
