@@ -7,10 +7,13 @@ import { explainCloseReason, type ClosedTrade } from '@/hooks/useTradeStats';
 import { Dash, accountStyles as styles } from './AccountPage';
 import { formatDuration, formatUtcMinute } from './formatTime';
 
-export function marketLabel(pairIndex: number, markets: MarketSummary[]): string {
-  const market = markets.find((m) => m.pairIndex === pairIndex);
-  return market ? `${market.from}-${market.to}` : `#${pairIndex}`;
-}
+/** Re-exported so the existing importers here keep working; the implementation moved to
+ * lib/markets.ts when the `-PERP` convention from terminal_design.pdf was adopted. The
+ * local import is separate because `export ... from` does not bind the name in this
+ * module's own scope, and the table below uses it. */
+import { marketLabelByIndex } from '@/lib/markets';
+
+export { marketLabelByIndex as marketLabel } from '@/lib/markets';
 
 /**
  * Closed positions, newest first, straight from `GET /positions/:address/history`.
@@ -50,7 +53,7 @@ export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; 
             return (
               <tr key={`${trade.pairIndex}-${trade.tradeId}-${trade.index}`} data-testid={`history-row-${trade.tradeId}`}>
                 <td>
-                  {marketLabel(trade.pairIndex, markets)}{' '}
+                  {marketLabelByIndex(trade.pairIndex, markets)}{' '}
                   <span className={styles.subtle}>{formatLeverage(trade.leverage)}</span>
                 </td>
                 <td className={trade.buy ? 'pos' : 'neg'}>{trade.buy ? 'Long' : 'Short'}</td>

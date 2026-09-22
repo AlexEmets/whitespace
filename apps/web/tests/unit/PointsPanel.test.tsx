@@ -100,7 +100,7 @@ describe('<PointsPanel>', () => {
     expect(screen.getByTestId('activity-volume')).toHaveTextContent('1,000.00');
     expect(screen.getByTestId('activity-realised')).toHaveTextContent('-2.00');
     expect(screen.getByTestId('activity-trades')).toHaveTextContent('1');
-    expect(screen.getByTestId('points-market-0')).toHaveTextContent('BTC-USD');
+    expect(screen.getByTestId('points-market-0')).toHaveTextContent('BTC-PERP');
   });
 
   it('leaves fees-paid an explained dash rather than estimating it', () => {

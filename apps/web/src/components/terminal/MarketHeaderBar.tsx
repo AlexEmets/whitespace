@@ -3,6 +3,7 @@
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
+import { marketLabel } from '@/lib/markets';
 import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
 import type { MarketSummary } from '@/lib/types';
 
@@ -26,7 +27,7 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
     <div className="market-header" data-testid="market-header">
       <div className="name-block">
         <span className="symbol">
-          {market.from}-{market.to}
+          {marketLabel(market)}
         </span>
         <div className="chip" data-testid="isolated-chip">
           ISOLATED · {maxLeverageX}× MAX

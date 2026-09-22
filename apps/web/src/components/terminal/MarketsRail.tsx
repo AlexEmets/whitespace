@@ -4,6 +4,7 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
+import { marketLabel } from '@/lib/markets';
 import { formatCompactMoney, formatMoney } from '@/lib/money';
 
 function RailRow({
@@ -28,9 +29,7 @@ function RailRow({
           volume and 24h change on the second. Volume is abbreviated because the rail is
           narrow — it is a label to scan, never a figure anyone acts on. */}
       <span className="price-line">
-        <span className="symbol">
-          {from}-{to}
-        </span>
+        <span className="symbol">{marketLabel({ from })}</span>
         <span>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</span>
       </span>
       {/* The rail is too narrow to caption the window inline, so a market younger than a

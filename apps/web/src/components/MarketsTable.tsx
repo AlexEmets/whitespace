@@ -5,6 +5,7 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
+import { marketPairLabel } from '@/lib/markets';
 import { collateralToRaw, formatMoney } from '@/lib/money';
 
 function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; from: string; to: string; openInterest: { long: string; short: string } }) {
@@ -19,7 +20,7 @@ function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; f
     <tr data-testid={`markets-table-row-${pairIndex}`}>
       <td>
         <Link href="/trade">
-          {from}-{to}
+          {marketPairLabel({ from, to })}
         </Link>
       </td>
       <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : <span className="dash">—</span>}</td>

@@ -4,6 +4,7 @@ import { useMarkets } from '@/hooks/useMarkets';
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { PRICE_DECIMALS_NUM } from '@/lib/config';
+import { marketLabel } from '@/lib/markets';
 import { formatMoney } from '@/lib/money';
 
 function TickerItem({ pairIndex, from, to }: { pairIndex: number; from: string; to: string }) {
@@ -12,7 +13,7 @@ function TickerItem({ pairIndex, from, to }: { pairIndex: number; from: string; 
 
   return (
     <span className="ticker-item" data-testid={`ticker-${pairIndex}`}>
-      {from}-{to}
+      {marketLabel({ from })}
       <strong>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</strong>
       {change ? (
         <span
