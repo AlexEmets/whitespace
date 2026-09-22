@@ -141,6 +141,13 @@ Registry gov is `0xFB042739DaA0946E9e6658CA6603Ff5EcEa60Dd8`. That address appea
 which owns USDW). Without its key the registry cannot be repointed and none of this can
 ship. Confirm control before scheduling the migration.
 
+Read live on 1874: `eth_getCode` returns `0x`, so gov is an **EOA, not a multisig** —
+nonce 24, balance 0.0580 WBT. Someone holds the key and has transacted with it 24 times,
+presumably while wiring the deployment. That makes the repoint a single `cast send` per
+contract rather than a signer ceremony, and it makes the gas cost negligible. It also
+means the whole migration rests on one private key that is not in this repo: find out
+where it lives before building anything that depends on it.
+
 ## Scope of change
 
 | file | change |
