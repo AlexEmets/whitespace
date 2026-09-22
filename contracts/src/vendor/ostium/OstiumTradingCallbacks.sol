@@ -253,9 +253,18 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
 
         IOstiumTradingStorage.TradeInfo memory i = storageT.getOpenTradeInfo(t.trader, t.pairIndex, t.index);
 
-        // Validate tradeId matches to prevent execution on replaced trades
-        // Skip validation if storedTradeId == 0 (legacy order from before upgrade)
-        if (cancelReason == CancelReason.NONE) {
+        // Validate tradeId matches to prevent execution on replaced trades.
+        // Skip validation if storedTradeId == 0 (legacy order from before upgrade).
+        //
+        // Evaluated for every reason except NO_TRADE, not just NONE. A cancel is no longer free:
+        // the MARKET_CLOSED branch below charges a bond to whatever position occupies
+        // (trader, pairIndex, index) right now, and that need not be the trade this order was
+        // requested for. A TP/SL/LIQ automation close can retire trade A while A's market close
+        // is still in flight — OstiumTrading.executeAutomationOrder does not reject those for a
+        // pending close, unregisterTrade clears the PENDING_CLOSE trigger, and firstEmptyTradeIndex
+        // hands the freed index straight back — so without this, trade B pays A's bond and has its
+        // leverage raised for it. NO_TRADE is exempt because there is no i.tradeId to compare.
+        if (cancelReason != CancelReason.NO_TRADE) {
             uint256 storedTradeId = storageT.pendingMarketCloseTradeIds(a.orderId);
             if (storedTradeId != 0 && i.tradeId != storedTradeId) {
                 cancelReason = CancelReason.WRONG_TRADE;
@@ -342,7 +351,12 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
                         // Re-read from storage rather than reusing `t`: unregisterTrade has just
                         // scaled the stored collateral down by closePercentage, and `t` is a stale
                         // memory copy from before that write.
-                        _chargeBondFromPosition(storageT.getOpenTrade(t.trader, t.pairIndex, t.index), i.tradeId);
+                        _chargeBondFromPosition(
+                            storageT.getOpenTrade(t.trader, t.pairIndex, t.index),
+                            i.tradeId,
+                            piResult.priceAfterImpact,
+                            i.initialLeverage
+                        );
                     }
                 }
             }
@@ -356,7 +370,11 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
             // NO_TRADE has no position to charge, and WRONG_TRADE refers to a trade that was
             // already replaced, so charging would hit an unrelated position in the same slot.
             if (cancelReason != CancelReason.NO_TRADE && cancelReason != CancelReason.WRONG_TRADE) {
-                _chargeBondFromPosition(t, i.tradeId);
+                // a.price is 0 on the MARKET_CLOSED branch; applyBondToTrade falls back to the
+                // trade's own open price there, which is documented on it.
+                _chargeBondFromPosition(
+                    t, i.tradeId, a.price > 0 ? uint256(uint192(a.price)) : 0, i.initialLeverage
+                );
             }
             emit MarketCloseCanceled(a.orderId, i.tradeId, trade.trader, trade.pairIndex, trade.index, cancelReason);
         }
@@ -624,39 +642,39 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
     ///      ERC20InsufficientBalance(trader, 57243, 1000000). The bond now comes out of the
     ///      position, on the two paths where it actually has teeth.
     ///
-    ///      Collateral falls, so leverage is recomputed against a FIXED notional — the protocol's
-    ///      own invariant, see removeCollateral in OstiumTrading.sol and handleRemoveCollateral
-    ///      below. Subtracting collateral while leaving leverage alone would silently delete
-    ///      `leverage × bond` of exposure with no fill behind it.
-    ///
     ///      Waiving rather than reverting is deliberate: fee accounting must never be the reason
     ///      a close fails, which is the whole defect being fixed here. The protocol forgoes at
     ///      most one bond in a rare case.
     ///
-    ///      Kept in this contract rather than in TradingCallbacksLib on purpose. Storage checks
-    ///      msg.sender for onlyTradingOrCallbacks (OstiumTradingStorage.sol:142-147); a library
-    ///      function is DELEGATECALLed, so moving this across that boundary would change nothing
-    ///      visible here and silently break the access check.
-    function _chargeBondFromPosition(IOstiumTradingStorage.Trade memory t, uint256 tradeId) private returns (bool) {
-        if (t.leverage == 0) return false;
-
-        (IOstiumTradingStorage storageT,, IOstiumPairsStorage pairsStorage) = getContracts();
+    ///      The arithmetic — the fixed-notional leverage recompute, the liquidation-headroom test
+    ///      and the tp/sl corrections — lives in TradingCallbacksLib.applyBondToTrade, where the
+    ///      protocol's own versions of all three already are. What stays here is what cannot
+    ///      leave: `maxSl_P` is this contract's storage, and `OracleFeeCharged` is this contract's
+    ///      event. (Access control is NOT a reason either way. A library runs under DELEGATECALL,
+    ///      so a call it makes to storage still arrives with msg.sender == address(this) — see
+    ///      TradingCallbacksLib.executeUnregisterTrade, which drives the onlyCallbacks
+    ///      storageT.unregisterTrade from inside the library today.)
+    ///
+    /// @param price Spot to value the position at, or 0 when the report carried none.
+    /// @param initialLeverage The trade's stored initialLeverage, read BEFORE updateTrade — which
+    ///        raises it to the new leverage, exactly as handleRemoveCollateral does.
+    function _chargeBondFromPosition(
+        IOstiumTradingStorage.Trade memory t,
+        uint256 tradeId,
+        uint256 price,
+        uint32 initialLeverage
+    ) private returns (bool) {
+        (IOstiumTradingStorage storageT, IOstiumPairInfos pairInfos, IOstiumPairsStorage pairsStorage) =
+            getContracts();
 
         uint256 bond = pairsStorage.pairOracleFee(t.pairIndex);
-        // Strictly less than, not less-or-equal: a position reduced to exactly zero collateral is
-        // not a position, and newCollateral is a divisor below.
-        if (t.collateral <= bond) return false;
 
-        uint256 tradeSize = t.collateral.mulDiv(t.leverage, 100, Math.Rounding.Ceil);
-        uint256 newCollateral = t.collateral - bond;
-        uint32 newLeverage = (tradeSize * PRECISION_6 / newCollateral / 1e4).toUint32();
+        bool ok;
+        (t, ok) = TradingCallbacksLib.applyBondToTrade(
+            t, bond, price, initialLeverage, maxSl_P, pairInfos, pairsStorage
+        );
+        if (!ok) return false;
 
-        if (newLeverage > TradingCallbacksLib.getEffectiveMaxLeverage(t.pairIndex, t.isDayTrade, pairsStorage)) {
-            return false;
-        }
-
-        t.collateral = newCollateral;
-        t.leverage = newLeverage;
         storageT.updateTrade(t);
 
         // Group collateral tracks the same money as the trade's own field. handleRemoveCollateral

@@ -115,6 +115,17 @@ library TradingCallbacksLib {
         bool buy,
         uint8 maxSl_P
     ) external pure returns (uint192) {
+        return _correctToNullSl(openPrice, sl, leverage, initialLeverage, buy, maxSl_P);
+    }
+
+    function _correctToNullSl(
+        uint192 openPrice,
+        uint192 sl,
+        uint32 leverage,
+        uint32 initialLeverage,
+        bool buy,
+        uint8 maxSl_P
+    ) internal pure returns (uint192) {
         (int256 p,) = _currentPercentProfit(
             openPrice.toInt256(), sl.toInt256(), buy, int32(leverage), int32(initialLeverage)
         );
@@ -122,6 +133,90 @@ library TradingCallbacksLib {
             return 0;
         }
         return sl;
+    }
+
+    /// @notice The position that remains once one oracle-fee bond has been taken out of `t`'s own
+    ///         collateral, or `false` when the bond cannot be applied to it safely.
+    ///
+    /// @dev    Collateral falls, so leverage is recomputed against a FIXED notional — the
+    ///         protocol's own invariant, see removeCollateral in OstiumTrading.sol and
+    ///         handleRemoveCollateral in OstiumTradingCallbacks.sol. Subtracting collateral while
+    ///         leaving leverage alone would silently delete `leverage x bond` of exposure with no
+    ///         fill behind it.
+    ///
+    ///         Because notional is held fixed, `liqMarginValue` — which is
+    ///         `liqMarginThresholdP x collateral x leverage / maxLeverage / 100`, i.e. purely a
+    ///         function of notional — does NOT move, while `tradeValue` drops by the full bond.
+    ///         So the charge eats liquidation headroom one-for-one, and a position sitting less
+    ///         than one bond above its liquidation margin would be made liquidatable by the fee
+    ///         itself — after which the liquidation fee takes the whole remainder. That is the
+    ///         case this refuses: the same `tradeValue < liqMarginValue` test that
+    ///         getHandleRemoveCollateralCancelReason above uses for UNDER_LIQUIDATION, asked of
+    ///         the position that is about to be written rather than the one already stored.
+    ///
+    ///         `maxLeverage` is deliberately NOT a rejection criterion. It constrains a leverage
+    ///         the TRADER asked for, at open or via removeCollateral; a position already sitting
+    ///         at the cap would otherwise be permanently exempt from the fee, making close-request
+    ///         spam free forever. Liquidation safety, not the cap, is what must hold here.
+    ///
+    ///         `price` is the spot to value the position at, or 0 when the report carried none —
+    ///         a MARKET_CLOSED cancel zeroes price/bid/ask. With no spot, the position is valued
+    ///         at its own open price, so the check degrades to the deterministic part (accrued
+    ///         rollover and funding) and ignores unrealised PnL. That is the best available
+    ///         reading, and it is the reading the protocol itself is stuck with while a market is
+    ///         closed: it cannot liquidate anything during that window either.
+    ///
+    ///         `t` is mutated in place and returned; callers must not reuse their copy on `false`.
+    function applyBondToTrade(
+        IOstiumTradingStorage.Trade memory t,
+        uint256 bond,
+        uint256 price,
+        uint32 initialLeverage,
+        uint8 maxSl_P,
+        IOstiumPairInfos pairInfos,
+        IOstiumPairsStorage pairsStorage
+    ) external returns (IOstiumTradingStorage.Trade memory, bool) {
+        // Strictly less than, not less-or-equal: a position reduced to exactly zero collateral is
+        // not a position, and the new collateral is a divisor below.
+        if (t.leverage == 0 || t.collateral <= bond) {
+            return (t, false);
+        }
+
+        uint32 maxLeverage = getEffectiveMaxLeverage(t.pairIndex, t.isDayTrade, pairsStorage);
+        if (maxLeverage == 0) {
+            // Divisor in getTradeLiquidationMargin. A delisted pair cannot be valued, so no charge.
+            return (t, false);
+        }
+
+        uint256 tradeSize = Math.mulDiv(t.collateral, t.leverage, 100, Math.Rounding.Ceil);
+        t.collateral -= bond;
+        t.leverage = (tradeSize * PRECISION_6 / t.collateral / 1e4).toUint32();
+
+        (int256 profitP,) = _currentPercentProfit(
+            t.openPrice.toInt256(),
+            (price > 0 ? price : uint256(t.openPrice)).toInt256(),
+            t.buy,
+            int32(t.leverage),
+            int32(initialLeverage)
+        );
+
+        (uint256 tradeValue, uint256 liqMarginValue,,) = pairInfos.getTradeValue(
+            t.trader, t.pairIndex, t.index, t.buy, t.collateral, t.leverage, profitP, maxLeverage
+        );
+
+        if (tradeValue < liqMarginValue) {
+            return (t, false);
+        }
+
+        // Raising leverage moves the max-gain price, so a take-profit parked at the old maximum is
+        // now unreachable and the stop-loss may sit past maxSl_P. handleRemoveCollateral — the
+        // other place a position's leverage is recomputed against a fixed notional — corrects both
+        // for exactly this reason, and this matches it, including the tpLastUpdated/slLastUpdated
+        // stamps updateTrade will write.
+        t.tp = correctTp(t.openPrice, t.tp, t.leverage, initialLeverage, t.buy);
+        t.sl = _correctToNullSl(t.openPrice, t.sl, t.leverage, initialLeverage, t.buy, maxSl_P);
+
+        return (t, true);
     }
 
     /// @notice Returns the effective max leverage for a trade based on whether it's a day trade or overnight trade
