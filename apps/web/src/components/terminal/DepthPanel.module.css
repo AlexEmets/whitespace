@@ -33,14 +33,18 @@
   padding: 0.15rem 0;
 }
 
+/* Tight, like the reference: nine rows a side fit the column without scrolling, and the
+   book reads as one dense block rather than a list. */
 .row {
   position: relative;
   display: grid;
   grid-template-columns: 1.15fr 1fr 0.9fr;
   gap: 0.25rem;
-  padding: 0.22rem 0.25rem;
-  font-size: 0.68rem;
+  padding: 0.12rem 0.25rem;
+  font-size: 0.66rem;
+  line-height: 1.45;
   color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The mockup's faint depth bar: grows from the right edge, width proportional to this
@@ -83,27 +87,22 @@
   color: var(--short);
 }
 
-.sideLabel {
-  padding: 0.35rem 0.25rem 0.1rem;
-  font-size: 0.56rem;
-  letter-spacing: 0.08em;
-  color: var(--fg-dim);
-}
-
+/* The mid row in the reference is the loudest thing in the column: the mark in the side
+   colour at roughly twice the row text, with the spread sitting quietly beside it. No
+   rules above or below — the two blocks of rows already fence it in. */
 .mid {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
-  margin: 0.15rem 0;
-  padding: 0.45rem 0.25rem;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  margin: 0.1rem 0;
+  padding: 0.3rem 0.25rem;
 }
 
 .midPrice {
-  font-size: 0.95rem;
-  color: var(--fg);
+  font-size: 1.05rem;
+  color: var(--long);
+  letter-spacing: 0.01em;
 }
 
 .midLabel {

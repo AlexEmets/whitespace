@@ -92,4 +92,21 @@ export function collateralForPositionSize(params: {
   return numerator / denominator;
 }
 
+/**
+ * Base-asset quantity a given USDW notional buys at `price`, at 18-decimal fixed point.
+ *
+ * The depth ladder is indexed by NOTIONAL (1k, 5k, 25k… USDW), but terminal_design.pdf's
+ * order book denominates its SIZE column in the base asset — `0.3800 BTC`, not `25,000`.
+ * This is that conversion, and it is display-only: no transaction is ever sized from it.
+ *
+ * Scale bookkeeping: `notionalRaw` is 6-decimal USDW and `priceRaw` is 18-decimal, so the
+ * notional is widened to 18 decimals first and the multiplication is done before the
+ * division, keeping the whole thing exact in bigint.
+ */
+export function baseSizeForNotional(notionalRaw: bigint, priceRaw: bigint): bigint {
+  if (priceRaw <= 0n || notionalRaw <= 0n) return 0n;
+  const notional18 = notionalRaw * COLLATERAL_TO_PRICE_SCALE_UP;
+  return (notional18 * PRICE_SCALE) / priceRaw;
+}
+
 export { COLLATERAL_DECIMALS as PNL_DECIMALS };

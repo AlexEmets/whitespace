@@ -130,11 +130,27 @@ beforeEach(() => {
   state.loading = false;
 });
 
+function rows(side: 'long' | 'short') {
+  return screen.getAllByTestId('depth-panel-row').filter((el) => el.dataset.side === side);
+}
+
+/**
+ * `[PRICE, TOTAL]` — the two columns whose values are pinned by the line-by-line Solidity
+ * transcription in lib/priceImpact.ts, and therefore the two worth asserting exactly.
+ *
+ * The book's middle column (SIZE, in the base asset) is a presentation conversion of
+ * TOTAL by PRICE, so asserting it alongside them would just restate the same arithmetic
+ * three times; it gets its own test instead.
+ */
 function rowTexts(side: 'long' | 'short') {
-  return screen
-    .getAllByTestId('depth-panel-row')
-    .filter((el) => el.dataset.side === side)
-    .map((el) => Array.from(el.children).map((c) => c.textContent));
+  return rows(side).map((el) => [el.children[0]?.textContent, el.children[2]?.textContent]);
+}
+
+/** The impact in bps. It was a column until the book was matched to
+ * terminal_design.pdf's PRICE/SIZE/TOTAL; it is still computed, and still exact, so it is
+ * still asserted — it just lives in the row's tooltip now. */
+function rowImpacts(side: 'long' | 'short') {
+  return rows(side).map((el) => (el.getAttribute('title') ?? '').match(/[+−]?[\d.,]+ bps/)?.[0] ?? '');
 }
 
 describe('DepthPanel — live ladder', () => {
@@ -149,21 +165,23 @@ describe('DepthPanel — live ladder', () => {
     // Sign is "worse for your side": a long filled above the mark and a short filled below
     // it are both adverse, hence both '+'.
     expect(rowTexts('long')).toEqual([
-      ['100,405.00', '1,000,000', '+40.500'],
-      ['100,045.00', '250,000', '+4.500'],
-      ['100,000.00', '100,000', '0.000'],
-      ['100,000.00', '25,000', '0.000'],
-      ['100,000.00', '5,000', '0.000'],
-      ['100,000.00', '1,000', '0.000'],
+      ['100,405.00', '1,000,000'],
+      ['100,045.00', '250,000'],
+      ['100,000.00', '100,000'],
+      ['100,000.00', '25,000'],
+      ['100,000.00', '5,000'],
+      ['100,000.00', '1,000'],
     ]);
     expect(rowTexts('short')).toEqual([
-      ['100,000.00', '1,000', '0.000'],
-      ['100,000.00', '5,000', '0.000'],
-      ['100,000.00', '25,000', '0.000'],
-      ['100,000.00', '100,000', '0.000'],
-      ['99,955.00', '250,000', '+4.500'],
-      ['99,595.00', '1,000,000', '+40.500'],
+      ['100,000.00', '1,000'],
+      ['100,000.00', '5,000'],
+      ['100,000.00', '25,000'],
+      ['100,000.00', '100,000'],
+      ['99,955.00', '250,000'],
+      ['99,595.00', '1,000,000'],
     ]);
+    expect(rowImpacts('long')).toEqual(['+40.500 bps', '+4.500 bps', '0.000 bps', '0.000 bps', '0.000 bps', '0.000 bps']);
+    expect(rowImpacts('short')).toEqual(['0.000 bps', '0.000 bps', '0.000 bps', '0.000 bps', '+4.500 bps', '+40.500 bps']);
   });
 
   /**
@@ -180,6 +198,25 @@ describe('DepthPanel — live ladder', () => {
     expect(screen.getAllByTestId('depth-panel-row').length).toBeGreaterThan(0);
   });
 
+  /**
+   * terminal_design.pdf's book denominates SIZE in the base asset (`0.4500 BTC`), while
+   * the ladder is indexed by USDW notional. The rows below are the ones where that
+   * conversion is exact, so the assertion does not depend on how the formatter rounds:
+   * at a flat 100,000.00 fill, 100,000 USDW is 1 BTC and 1,000 USDW is 0.01 BTC.
+   */
+  it('denominates SIZE in the base asset, converted from the notional at that row’s fill', () => {
+    render(<DepthPanel />);
+    const sizeCell = (side: 'long' | 'short', i: number) => rows(side)[i]?.children[1]?.textContent;
+
+    // long[2] is the 100,000 rung, still under the impact threshold -> fills at the mark.
+    expect(rowTexts('long')[2]).toEqual(['100,000.00', '100,000']);
+    expect(sizeCell('long', 2)).toBe('1.0000');
+
+    // short[0] is the 1,000 rung, also flat.
+    expect(rowTexts('short')[0]).toEqual(['100,000.00', '1,000']);
+    expect(sizeCell('short', 0)).toBe('0.0100');
+  });
+
   it('adds the real oracle spread term on top of the dynamic component', () => {
     // ask 100,050 / bid 99,950 around a 100,000 mark:
     //   spreadComponent = 100e18 * 1e18 * 100 / (100,000e18 * 2) = 5e16   (0.050%)
@@ -190,8 +227,10 @@ describe('DepthPanel — live ladder', () => {
     state.bid = '99950.000000000000000000';
     render(<DepthPanel />);
 
-    expect(rowTexts('long')[0]).toEqual(['100,455.00', '1,000,000', '+45.500']);
-    expect(rowTexts('short')[5]).toEqual(['99,545.00', '1,000,000', '+45.500']);
+    expect(rowTexts('long')[0]).toEqual(['100,455.00', '1,000,000']);
+    expect(rowTexts('short')[5]).toEqual(['99,545.00', '1,000,000']);
+    expect(rowImpacts('long')[0]).toBe('+45.500 bps');
+    expect(rowImpacts('short')[5]).toBe('+45.500 bps');
     // The mockup's mid readout, now a real number: 100,050 - 99,950 = 100.00
     expect(screen.getByTestId('depth-panel-mid')).toHaveTextContent('spread 100.00');
   });
@@ -200,28 +239,33 @@ describe('DepthPanel — live ladder', () => {
     render(<DepthPanel />);
     expect(screen.queryByTestId('depth-panel-caveat')).not.toBeInTheDocument();
     expect(screen.queryByTestId('depth-panel-legend')).not.toBeInTheDocument();
-    // The IMPACT column itself stays — the sign convention it documented is still applied,
-    // and the other tests in this file assert the exact signed values.
-    expect(screen.getByTestId('depth-panel-ladder')).toHaveTextContent('IMPACT bps');
+    // The columns are now the reference's PRICE / SIZE / TOTAL. IMPACT bps is no longer a
+    // column at all — the figure moved into each row's tooltip, where rowImpacts() asserts
+    // it exactly.
+    expect(screen.getByTestId('depth-panel-ladder')).not.toHaveTextContent('IMPACT bps');
+    expect(screen.getByTestId('depth-panel-ladder')).toHaveTextContent('TOTAL');
   });
 
   it('moves with the mark price', () => {
     const { rerender } = render(<DepthPanel />);
-    expect(rowTexts('long')[0]).toEqual(['100,405.00', '1,000,000', '+40.500']);
+    expect(rowTexts('long')[0]).toEqual(['100,405.00', '1,000,000']);
 
     state.mark = '200000.000000000000000000';
     rerender(<DepthPanel />);
     // Same 0.405% impact, applied to a doubled mark: 200,000 * 1.00405 = 200,810.
-    expect(rowTexts('long')[0]).toEqual(['200,810.00', '1,000,000', '+40.500']);
+    expect(rowTexts('long')[0]).toEqual(['200,810.00', '1,000,000']);
+    expect(rowImpacts('long')[0]).toBe('+40.500 bps');
   });
 
   it('shows accumulated buy volume pushing the long side further out than the short side', () => {
     state.chain.buyVolume = 500_000n * E18;
     render(<DepthPanel />);
     // Long: linear branch, 1e19*(5e23-1e23+5e23)*100/1e27 = 9e17 = 0.900% -> 100,900.
-    expect(rowTexts('long')[0]).toEqual(['100,900.00', '1,000,000', '+90.000']);
+    expect(rowTexts('long')[0]).toEqual(['100,900.00', '1,000,000']);
+    expect(rowImpacts('long')[0]).toBe('+90.000 bps');
     // Short reads sellVolume, which is still 0 -> the untouched 0.405%.
-    expect(rowTexts('short')[5]).toEqual(['99,595.00', '1,000,000', '+40.500']);
+    expect(rowTexts('short')[5]).toEqual(['99,595.00', '1,000,000']);
+    expect(rowImpacts('short')[5]).toBe('+40.500 bps');
   });
 });
 
@@ -242,13 +286,14 @@ describe('DepthPanel — static spread path (priceImpactK == 0, this deployment)
     render(<DepthPanel />);
     // |100,000 - 100,050| * 1e18 * 100 / 100,000e18 = 5e16 -> 0.050%, at every size.
     expect(rowTexts('long')).toEqual([
-      ['100,050.00', '1,000,000', '+5.000'],
-      ['100,050.00', '250,000', '+5.000'],
-      ['100,050.00', '100,000', '+5.000'],
-      ['100,050.00', '25,000', '+5.000'],
-      ['100,050.00', '5,000', '+5.000'],
-      ['100,050.00', '1,000', '+5.000'],
+      ['100,050.00', '1,000,000'],
+      ['100,050.00', '250,000'],
+      ['100,050.00', '100,000'],
+      ['100,050.00', '25,000'],
+      ['100,050.00', '5,000'],
+      ['100,050.00', '1,000'],
     ]);
+    expect(rowImpacts('long')).toEqual(Array(6).fill('+5.000 bps'));
     expect(rowTexts('short').map((r) => r[0])).toEqual(Array(6).fill('99,950.00'));
   });
 
@@ -268,14 +313,17 @@ describe('DepthPanel — static spread path (priceImpactK == 0, this deployment)
     // |99,900 - 100,050| * 1e18 * 100 / 99,900e18 = 150150150150150150 -> 0.15015015%
     //   -> 15.015 bps. The short's 50/99,900 is 50050050050050050 -> 5.005 bps, negative
     //   because filling a short ABOVE the mark is in the trader's favour.
-    expect(rowTexts('long')[0]).toEqual(['100,050.00', '1,000,000', '+15.015']);
-    expect(rowTexts('short')[0]).toEqual(['99,950.00', '1,000', '−5.005']);
+    expect(rowTexts('long')[0]).toEqual(['100,050.00', '1,000,000']);
+    expect(rowImpacts('long')[0]).toBe('+15.015 bps');
+    expect(rowTexts('short')[0]).toEqual(['99,950.00', '1,000']);
+    expect(rowImpacts('short')[0]).toBe('−5.005 bps');
   });
 
   it('ignores accumulated volume entirely — the dynamic branch is never entered', () => {
     state.chain.buyVolume = 500_000n * E18;
     render(<DepthPanel />);
-    expect(rowTexts('long')[0]).toEqual(['100,050.00', '1,000,000', '+5.000']);
+    expect(rowTexts('long')[0]).toEqual(['100,050.00', '1,000,000']);
+    expect(rowImpacts('long')[0]).toBe('+5.000 bps');
   });
 });
 

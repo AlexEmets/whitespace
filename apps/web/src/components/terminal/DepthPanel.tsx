@@ -5,6 +5,7 @@ import { usePriceImpactLadder, type LadderUnavailableReason } from '@/hooks/useP
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { PAIR_INFOS_ADDRESS } from '@/lib/deployment';
 import { formatExact, formatMoney } from '@/lib/money';
+import { baseSizeForNotional } from '@/lib/pnl';
 import type { LadderRow } from '@/lib/priceImpact';
 import styles from './DepthPanel.module.css';
 
@@ -38,8 +39,12 @@ export function DepthPanel({ pairIndex }: { pairIndex?: number | null } = {}) {
 
   return (
     <div className="depth-panel" data-testid="depth-panel">
+      {/* terminal_design.pdf's header is `ORDER BOOK` with a value in the top-right slot.
+          In the reference that slot holds a tick-size selector; there is no grouping to
+          select here, so it names the counterparty instead — which is the one thing about
+          this book a trader coming from a CLOB needs to know. */}
       <div className={styles.header}>
-        <span className="mono-upper">Order book · impact</span>
+        <span className="mono-upper">Order book</span>
         <span className={styles.headerNote}>VAULT</span>
       </div>
       {ladder.loading ? (
@@ -74,10 +79,14 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
       <div className={styles.cols}>
         <span>PRICE</span>
         <span className={styles.cell}>SIZE</span>
-        <span className={styles.cell}>IMPACT bps</span>
+        <span className={styles.cell}>TOTAL</span>
       </div>
 
-      <div className={styles.sideLabel}>OPEN LONG · fills at the oracle ask</div>
+      {/* Asks already arrive worst-first from the hook, which is exactly the reference's
+          order: the largest size (furthest fill) at the top, the best price touching the
+          spread. Do not reverse — an earlier attempt to "fix" the order here inverted a
+          ladder that was already right, and the price assertions in DepthPanel.test.tsx
+          caught it. */}
       <div className={`${styles.side} ${styles.sideAsk}`}>
         {rows.long.map((row) => (
           <Row key={`long-${row.notionalRaw}`} row={row} mark={mark} width={barWidth(row)} />
@@ -96,37 +105,48 @@ function Ladder({ ladder }: { ladder: ReturnType<typeof usePriceImpactLadder> })
         </span>
       </div>
 
+      {/* Bids run downward away from the mid — smallest notional (best bid) first, which
+          is already the ladder's natural order. */}
       <div className={`${styles.side} ${styles.sideBid}`}>
         {rows.short.map((row) => (
           <Row key={`short-${row.notionalRaw}`} row={row} mark={mark} width={barWidth(row)} />
         ))}
       </div>
-      <div className={styles.sideLabel}>OPEN SHORT · fills at the oracle bid</div>
     </div>
   );
 }
 
+/**
+ * One book row, in the reference's three columns.
+ *
+ *   PRICE  the fill this size would actually get, from the contract's price-impact curve
+ *   SIZE   that notional expressed in the base asset — what the reference's SIZE column is
+ *   TOTAL  the notional itself, in USDW
+ *
+ * All three are real. What is NOT here, and cannot be, is someone else's resting order:
+ * this protocol has no counterparties to list (design §3.2), so the rows answer "what
+ * would I be filled at for this size" rather than "who is offering what". The IMPACT bps
+ * column the panel used to carry said the same thing in a shape no trader reads; the
+ * information survives as the spacing between PRICE and the mark.
+ */
 function Row({ row, mark, width }: { row: LadderRow; mark: bigint; width: string }) {
   const sideClass = row.side === 'long' ? styles.long : styles.short;
+  const baseSize = baseSizeForNotional(row.notionalRaw, row.priceAfterImpact);
 
-  // `priceImpactP` is a PERCENT at 1e18 scale (1e18 == 1.00%) and is ABSOLUTE — the Solidity
-  // takes `SignedMath.abs(price - usedPrice)` on the static path — so the sign has to be
-  // derived from the fill itself. It is NOT simply "long = up": `price` is the EMA mark
+  // The bps figure is no longer a column, but it is still the most precise statement of
+  // what this row costs, so it moves to the row's tooltip rather than being dropped.
+  // `priceImpactP` is a PERCENT at 1e18 scale and ABSOLUTE (the Solidity takes
+  // `SignedMath.abs(price - usedPrice)`), so 1e18 == 1% == 100 bps and `* 100n` is exact.
+  //
+  // The SIGN has to be derived, and it is NOT simply "long = up": `price` is the EMA mark
   // while ask/bid are the current index quote, so the mark can sit outside the quote and a
-  // fill can land on the favourable side of it. Sign by what it costs the trader: a long
-  // filled above the mark is worse, a short filled above the mark is better.
-  // A zero deviation gets no sign at all — "−0.000" would imply a favourable fill that is
+  // fill can land on the favourable side of it. Sign by what it costs the trader — a long
+  // filled above the mark is worse, a short filled above the mark is better. A zero
+  // deviation gets no sign at all, because "−0.000" would imply a favourable fill that is
   // not there.
   const adverse = row.side === 'long' ? row.priceAfterImpact > mark : row.priceAfterImpact < mark;
   const sign = row.priceImpactP === 0n ? '' : adverse ? '+' : '−';
-
-  // Rendered in BASIS POINTS, not percent. `priceImpactP` is a percent at 1e18 scale, so
-  // 1e18 == 1% == 100 bps and the conversion is an exact bigint `* 100n`. Percent was the
-  // first choice and it was wrong for this market: the static path's real magnitudes here
-  // are ~0.00004% and ~0.00017%, which every row rendered as a flat "0.000%" — a column
-  // that reads as broken. In bps the same values are 0.004 and 0.017, and a 0.455% dynamic
-  // impact is 45.500, so one fixed precision covers both regimes.
-  const impact = `${sign}${formatMoney(row.priceImpactP * 100n, 18, { fractionDigits: 3, grouping: false })}`;
+  const impactBps = `${sign}${formatMoney(row.priceImpactP * 100n, 18, { fractionDigits: 3, grouping: false })}`;
 
   return (
     <div
@@ -135,12 +155,15 @@ function Row({ row, mark, width }: { row: LadderRow; mark: bigint; width: string
       data-testid="depth-panel-row"
       data-side={row.side}
       data-notional={row.notionalRaw.toString()}
+      title={`Fill for ${formatMoney(row.notionalRaw, COLLATERAL_DECIMALS, { fractionDigits: 0 })} USDW notional · ${impactBps} bps from the mark`}
     >
       <span className={`${styles.cell} ${styles.price}`}>
         {formatMoney(row.priceAfterImpact, PRICE_DECIMALS_NUM, { fractionDigits: 2 })}
       </span>
+      <span className={styles.cell}>
+        {formatMoney(baseSize, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false })}
+      </span>
       <span className={styles.cell}>{formatMoney(row.notionalRaw, COLLATERAL_DECIMALS, { fractionDigits: 0 })}</span>
-      <span className={styles.cell}>{impact}</span>
     </div>
   );
 }
