@@ -4,13 +4,23 @@
  * and services/keeper read this instead of hardcoding feed strings or venue symbols.
  *
  * BTC and ETH are the launch markets per the design spec §1 ("BTC and ETH are fixed").
- * SOL was added afterwards; the bar for a new entry here is not "the pair exists" but
- * "at least MIN_HEALTHY_VENUES of the four venues quote it", since below that threshold
- * the aggregator marks the feed degraded and it never signs a report (see
- * services/price-publisher/src/aggregator.mjs and @whitespace/shared/bounds). That is why
- * WBT-PERP is absent despite appearing in the landing mockup — it trades on WhiteBIT
- * alone. Every symbol below was verified to return live two-sided quotes on all four
- * venues on 2026-09-10.
+ * SOL was added afterwards. The bar for a new entry is not "the pair exists" but "enough
+ * independent sources clear the venue filters", since below the market's healthy-source
+ * minimum the aggregator marks the feed degraded and never signs an opening report (see
+ * services/price-publisher/src/aggregator.mjs and @whitespace/shared/bounds).
+ *
+ * BTC, ETH and SOL each meet that bar the ordinary way: all four exchanges quote them,
+ * verified live on 2026-09-10 and again on 2026-09-22 (worst spread 5.43 bps, on WhiteBIT
+ * SOL, against a 10 bps bound).
+ *
+ * WBT/USD is the exception and is listed on WhiteBIT's own two books. Measured 2026-09-22:
+ * Binance, Bybit and OKX do not list WBT at all; MEXC (28.9 bps) and Kraken (30.1 bps) do,
+ * but quote ~3x wider than VENUE_SPREAD_WIDTH_BOUND_BPS, so adapters for them would only
+ * produce ticks the aggregator rejects. WhiteBIT's own books are inside the bound —
+ * WBT_USDT at 1.04 bps and WBT_PERP at 3.12 bps, mids agreeing to 0.46 bps — and carry the
+ * real volume ($68.9M and $140.8M/24h, the perp book out-trading BTC_USDT there).
+ * See MARKET_BOUNDS_OVERRIDES in ./bounds.mjs for the threshold this implies and the
+ * single-exchange risk it accepts.
  */
 
 /**
@@ -61,6 +71,14 @@ export const MARKETS = {
       bybit: 'SOLUSDT',
       okx: 'SOL-USDT',
       whitebit: 'SOL_USDT',
+    },
+  },
+  'WBT/USD': {
+    feed: 'WBT/USD',
+    feedId: asciiToBytes32Hex('WBT/USD'),
+    venueSymbols: {
+      whitebit: 'WBT_USDT',
+      whitebit_perp: 'WBT_PERP',
     },
   },
 };

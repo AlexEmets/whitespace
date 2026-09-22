@@ -8,6 +8,7 @@
 
 import { TRADING_STORAGE_ABI, PAIR_INFOS_ABI, PAIRS_STORAGE_ABI } from './abi.mjs';
 import { getMarketByFeedId } from '@whitespace/shared/markets';
+import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
 
 /**
  * @param {object} opts
@@ -122,11 +123,26 @@ export function createChainReader({
     return BigInt(snap.mark);
   }
 
-  async function readHealthyVenueCount(pairIndex) {
+  /**
+   * Both halves of the degradation verdict for a pair: how many sources are healthy, and
+   * how many that market requires. The threshold comes from the publisher rather than from
+   * this service's own copy of MIN_HEALTHY_VENUES, because the publisher is the only place
+   * that knows a market's MARKET_BOUNDS_OVERRIDES entry — a liquidator judging a
+   * two-source market against a hardcoded 3 would suppress every liquidation on it forever
+   * while the publisher happily signed its prices.
+   *
+   * Falls back to the global minimum when the publisher omits the field, which keeps this
+   * safe against an older publisher: the fallback can only ever be stricter than the truth.
+   */
+  async function readVenueHealth(pairIndex) {
     const feed = await resolveFeed(pairIndex);
     const { feeds } = await fetchStatus();
-    return feeds[feed]?.healthyCount ?? 0;
+    const snap = feeds[feed];
+    return {
+      healthyVenueCount: snap?.healthyCount ?? 0,
+      minHealthyVenues: snap?.minHealthyVenues ?? MIN_HEALTHY_VENUES,
+    };
   }
 
-  return { readTrade, readMaxLeverage, readLiqMarginThresholdP, readIndexPrice, readHealthyVenueCount, resolveFeed };
+  return { readTrade, readMaxLeverage, readLiqMarginThresholdP, readIndexPrice, readVenueHealth, resolveFeed };
 }

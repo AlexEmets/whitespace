@@ -16,6 +16,7 @@ import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import { collateralForPositionSize, estimatePositionSizeBase } from '@/lib/pnl';
 import type { MarketSummary } from '@/lib/types';
+import { describeTxError } from '@/lib/tx';
 
 const QUICK_FILL_FRACTIONS = [25, 50, 75, 100] as const;
 
@@ -272,7 +273,8 @@ export function OpenPositionForm({
       });
       setState({ phase: 'submitted', orderId: orderId !== undefined ? orderId.toString() : '' });
     } catch (err) {
-      setState({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
+      const message = describeTxError(err);
+      setState(message === null ? { phase: 'idle' } : { phase: 'error', message });
     }
   }
 
@@ -379,7 +381,14 @@ export function OpenPositionForm({
 
       {isDegraded ? (
         <p role="alert" className="error-text" data-testid="open-blocked-degraded">
-          Opening is disabled: the price feed is degraded (fewer than 3 healthy venues).
+          {/* The requirement is the market's own, not a hardcoded 3: a market listed with a
+              lower minimum would otherwise be described by a threshold it is not judged by.
+              Falls back to naming no number when the API did not send one. */}
+          Opening is disabled: the price feed is degraded
+          {price?.minHealthyVenues != null
+            ? ` (fewer than ${price.minHealthyVenues} healthy venues)`
+            : ''}
+          .
         </p>
       ) : null}
       {leverageTooHigh ? <p className="error-text">Leverage exceeds this market&apos;s maximum.</p> : null}

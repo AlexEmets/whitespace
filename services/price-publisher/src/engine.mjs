@@ -16,7 +16,10 @@ import { weightOf } from '@whitespace/shared/venues';
  * @param {number} opts.chainId
  * @param {`0x${string}`} opts.verifierAddress
  * @param {string[]} opts.markets feed names this engine tracks, e.g. ['BTC/USD','ETH/USD']
- * @param {import('@whitespace/shared/bounds').PUBLISHER_BOUNDS} opts.bounds
+ * @param {import('@whitespace/shared/bounds').PUBLISHER_BOUNDS} opts.bounds default bounds
+ * @param {(feed: string) => typeof opts.bounds} [opts.boundsFor] per-feed bounds resolver;
+ *        defaults to "every feed gets `bounds`". Production passes `boundsForMarket` so a
+ *        market with a MARKET_BOUNDS_OVERRIDES entry is judged by its own thresholds.
  * @param {{ address: `0x${string}`, privateKey: `0x${string}` }[]} opts.signerKeys
  * @param {number} opts.signatureThresholdK
  * @param {() => number} [opts.now]
@@ -26,15 +29,26 @@ export function createPublisherEngine({
   verifierAddress,
   markets,
   bounds,
+  boundsFor = () => bounds,
   signerKeys,
   signatureThresholdK,
   now = () => Date.now(),
 }) {
+  // Bounds are resolved ONCE per feed and stored beside that feed's ticks, rather than
+  // looked up at each use. There is exactly one place the index is computed
+  // (`currentAggregate`), and everything else — sampleMark, signReportFor, /status,
+  // /health — reads through it, so pinning the bounds here is what makes the whole
+  // service per-market without any other call site knowing about it.
   const state = new Map();
   for (const feed of markets) {
+    const feedBounds = boundsFor(feed);
     state.set(feed, {
       ticks: new Map(),
-      ema: createMarkEma({ windowMs: bounds.markEmaWindowMs, sampleIntervalMs: bounds.markEmaSampleIntervalMs }),
+      bounds: feedBounds,
+      ema: createMarkEma({
+        windowMs: feedBounds.markEmaWindowMs,
+        sampleIntervalMs: feedBounds.markEmaSampleIntervalMs,
+      }),
     });
   }
 
@@ -52,7 +66,7 @@ export function createPublisherEngine({
   /** @param {string} feed @param {number} [at] */
   function currentAggregate(feed, at = now()) {
     const s = requireFeed(feed);
-    return computeIndex([...s.ticks.values()], at, bounds, weightOf);
+    return computeIndex([...s.ticks.values()], at, s.bounds, weightOf);
   }
 
   /** Advances the mark EMA by one sample from the current index. Called on a fixed

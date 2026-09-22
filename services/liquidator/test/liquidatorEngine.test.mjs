@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createLiquidatorEngine } from '../src/liquidatorEngine.mjs';
 import { createSequencerMonitor } from '../src/sequencerLiveness.mjs';
 import { createRegistry } from '@whitespace/metrics';
+import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
 
 const TRADER = '0x1111111111111111111111111111111111111111';
 const CANDIDATE = { trader: TRADER, pairIndex: 0, index: 0 };
@@ -46,7 +47,7 @@ function baseDeps(overrides = {}) {
     readMaxLeverage: async () => 10000n,
     readLiqMarginThresholdP: async () => 25n,
     readIndexPrice: async () => 90_249999000000000000n, // just below the boundary -> liquidatable
-    readHealthyVenueCount: async () => 4,
+    readVenueHealth: async () => ({ healthyVenueCount: 4, minHealthyVenues: MIN_HEALTHY_VENUES }),
     sequencerMonitor: liveSequencer(),
     submitLiquidation: async () => ({ ok: true, hash: '0xabc' }),
     metrics: makeMetrics(),
@@ -139,12 +140,12 @@ test('sequencer not LIVE blocks submission entirely, even for an obviously liqui
   assert.equal(metrics.liquidationsSuppressedSequencer.value(), 1);
 });
 
-test('degraded mode (fewer than 3 healthy venues) blocks submission, even for a liquidatable position', async () => {
+test('degraded mode (fewer healthy venues than the market requires) blocks submission, even for a liquidatable position', async () => {
   const submitCalls = [];
   const metrics = makeMetrics();
   const engine = createLiquidatorEngine(
     baseDeps({
-      readHealthyVenueCount: async () => 2,
+      readVenueHealth: async () => ({ healthyVenueCount: 2, minHealthyVenues: MIN_HEALTHY_VENUES }),
       submitLiquidation: async (c) => {
         submitCalls.push(c);
         return { ok: true };
@@ -159,6 +160,36 @@ test('degraded mode (fewer than 3 healthy venues) blocks submission, even for a 
   assert.equal(result.reason, 'degraded_liquidations_suppressed');
   assert.equal(submitCalls.length, 0);
   assert.equal(metrics.liquidationsSuppressedDegraded.value(), 1);
+});
+
+// The reason the threshold is read from the publisher instead of from this service's own
+// MIN_HEALTHY_VENUES. A market listed with a lowered minimum (WBT/USD, fed by WhiteBIT's two
+// books) sits at a healthy count that is normal for it and below the global constant. Judged
+// against the constant, every liquidation on that market is suppressed forever — positions
+// stay open past their maintenance margin with nothing in the logs but a rising
+// `liquidations_suppressed_degraded` counter, which reads as "the oracle is unhealthy"
+// rather than "the liquidator is misconfigured".
+test('a market whose own minimum is 2 is liquidated at 2 healthy venues, not suppressed', async () => {
+  const submitCalls = [];
+  const metrics = makeMetrics();
+  const engine = createLiquidatorEngine(
+    baseDeps({
+      readVenueHealth: async () => ({ healthyVenueCount: 2, minHealthyVenues: 2 }),
+      submitLiquidation: async (c) => {
+        submitCalls.push(c);
+        return { ok: true, hash: '0xabc' };
+      },
+      metrics,
+    }),
+  );
+
+  const result = await engine.evaluateOne(CANDIDATE);
+
+  assert.equal(result.action, 'submitted');
+  assert.equal(submitCalls.length, 1);
+  assert.equal(metrics.liquidationsSuppressedDegraded.value(), 0);
+  // Same count, stricter market: still suppressed. The count alone decides nothing.
+  assert.ok(2 < MIN_HEALTHY_VENUES);
 });
 
 test('a lost race (position already closed by someone else) is handled cleanly: no submission, no throw, no state corruption', async () => {

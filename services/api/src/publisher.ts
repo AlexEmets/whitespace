@@ -52,6 +52,10 @@ export type PublisherFeed = {
   indexAsk: string | null;
   healthyCount: number;
   healthyVenues: string[];
+  /** The healthy-source minimum this market is judged by, which is not a constant: a
+   * market with a MARKET_BOUNDS_OVERRIDES entry carries its own. Optional because a
+   * publisher predating the field omits it. */
+  minHealthyVenues?: number;
   degraded: boolean;
   noData: boolean;
 };

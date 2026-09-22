@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { loadKeyFiles } from '@whitespace/shared/keys';
 import { MARKET_FEEDS } from '@whitespace/shared/markets';
 import { VENUE_IDS } from '@whitespace/shared/venues';
-import { PUBLISHER_BOUNDS, SIGNATURE_THRESHOLD_K } from '@whitespace/shared/bounds';
+import { PUBLISHER_BOUNDS, SIGNATURE_THRESHOLD_K, boundsForMarket } from '@whitespace/shared/bounds';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
 
@@ -28,6 +28,7 @@ function readDeployment() {
  *   markets: string[],
  *   venues: string[],
  *   bounds: typeof PUBLISHER_BOUNDS,
+ *   boundsFor: (feed: string) => typeof PUBLISHER_BOUNDS,
  *   signatureThresholdK: number,
  *   signerKeys: { address: `0x${string}`, privateKey: `0x${string}` }[],
  * }}
@@ -64,5 +65,18 @@ export function loadConfig(env = process.env) {
     // fatal for actually producing a valid k-of-N report.
   }
 
-  return { chainId, verifierAddress, port, markets, venues, bounds: PUBLISHER_BOUNDS, signatureThresholdK, signerKeys };
+  // `bounds` stays the global default — main.mjs still needs one sampling interval for its
+  // timer, and it is what a feed with no override resolves to anyway. `boundsFor` is the
+  // per-market resolver the engine uses to judge each feed.
+  return {
+    chainId,
+    verifierAddress,
+    port,
+    markets,
+    venues,
+    bounds: PUBLISHER_BOUNDS,
+    boundsFor: boundsForMarket,
+    signatureThresholdK,
+    signerKeys,
+  };
 }

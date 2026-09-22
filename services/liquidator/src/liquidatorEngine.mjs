@@ -35,7 +35,7 @@ import { canSubmitLiquidation } from './degradedMode.mjs';
  * @param {(pairIndex: number, isDayTrade: boolean) => Promise<bigint>} deps.readMaxLeverage
  * @param {() => Promise<bigint>} deps.readLiqMarginThresholdP
  * @param {(pairIndex: number) => Promise<bigint>} deps.readIndexPrice trusted index/mark price, same basis the report will carry
- * @param {(pairIndex: number) => Promise<number>} deps.readHealthyVenueCount
+ * @param {(pairIndex: number) => Promise<{ healthyVenueCount: number, minHealthyVenues: number }>} deps.readVenueHealth
  * @param {{ canLiquidate: () => boolean }} deps.sequencerMonitor
  * @param {(candidate: { trader: `0x${string}`, pairIndex: number, index: number }) => Promise<{ ok: boolean, reason?: string, hash?: string }>} deps.submitLiquidation
  * @param {{
@@ -53,7 +53,7 @@ export function createLiquidatorEngine({
   readMaxLeverage,
   readLiqMarginThresholdP,
   readIndexPrice,
-  readHealthyVenueCount,
+  readVenueHealth,
   sequencerMonitor,
   submitLiquidation,
   metrics = {},
@@ -69,8 +69,11 @@ export function createLiquidatorEngine({
       return { candidate, action: 'skipped', reason: 'sequencer_not_live' };
     }
 
-    const healthyVenueCount = await readHealthyVenueCount(pairIndex);
-    const gate = canSubmitLiquidation({ healthyVenueCount });
+    // The threshold travels with the count: this pair's minimum, as the publisher applied
+    // it, not this service's global constant. A market fed by fewer sources by design would
+    // otherwise read as permanently degraded here and never be liquidated at all.
+    const { healthyVenueCount, minHealthyVenues } = await readVenueHealth(pairIndex);
+    const gate = canSubmitLiquidation({ healthyVenueCount, minHealthyVenues });
     if (!gate.ok) {
       metrics.liquidationsSuppressedDegraded?.inc();
       return { candidate, action: 'skipped', reason: gate.reason };

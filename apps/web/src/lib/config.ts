@@ -40,8 +40,13 @@ export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:4000/ws'
  */
 export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? chainInfo.rpc;
 
-/** Re-exported so callers can gate on "degraded" using the same threshold the publisher
- * enforces, instead of a locally re-typed magic number. */
+/** Re-exported so copy describing the system quotes the same number the publisher uses,
+ * instead of a locally re-typed magic number.
+ *
+ * This is the DEFAULT minimum, not the threshold for any given market: a market with a
+ * MARKET_BOUNDS_OVERRIDES entry is judged by its own, which arrives per-request on the
+ * price payload as `minHealthyVenues`. Gate on that, never on this — this is for prose
+ * about the system as a whole. */
 export const MIN_HEALTHY_VENUES_REEXPORT = MIN_HEALTHY_VENUES;
 
 /**

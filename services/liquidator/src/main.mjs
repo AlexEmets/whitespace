@@ -68,7 +68,7 @@ async function main() {
     readMaxLeverage: chainReader.readMaxLeverage,
     readLiqMarginThresholdP: chainReader.readLiqMarginThresholdP,
     readIndexPrice: chainReader.readIndexPrice,
-    readHealthyVenueCount: chainReader.readHealthyVenueCount,
+    readVenueHealth: chainReader.readVenueHealth,
     sequencerMonitor,
     submitLiquidation: async (candidate) => {
       if (!txSender) {

@@ -37,6 +37,10 @@ export type PricePayload = {
   ask: string | null;
   updatedAt: number;
   healthyVenues: string[] | null;
+  /** How many healthy sources this market needs before opens are allowed. Sent alongside
+   * `degraded` so the UI can say what is actually required instead of hardcoding a number
+   * that is only right for the four-venue markets. Null on the chain fallback. */
+  minHealthyVenues: number | null;
   degraded: boolean | null;
   source: 'publisher' | 'chain';
 };
@@ -68,6 +72,10 @@ export async function resolvePrice(pairIndex: number): Promise<PricePayload | nu
         ask: fmtPrice(feed.indexAsk ?? null),
         updatedAt: Math.floor(Date.now() / 1000),
         healthyVenues: feed.healthyVenues,
+        // Same version-skew reasoning as bid/ask above: an older publisher omits this, and
+        // null is the honest answer — better than asserting a global default that would be
+        // wrong for exactly the markets this field exists to describe.
+        minHealthyVenues: feed.minHealthyVenues ?? null,
         degraded: feed.degraded,
         source: 'publisher',
       };
@@ -87,6 +95,7 @@ export async function resolvePrice(pairIndex: number): Promise<PricePayload | nu
     ask: null,
     updatedAt: row.block_timestamp,
     healthyVenues: null,
+    minHealthyVenues: null,
     degraded: null,
     source: 'chain',
   };

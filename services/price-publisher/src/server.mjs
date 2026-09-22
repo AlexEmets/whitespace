@@ -52,6 +52,7 @@ export function createServerApp(engine) {
         feeds[feed] = {
           healthyCount: aggregate.healthyCount,
           healthyVenues: aggregate.healthyVenues,
+          minHealthyVenues: aggregate.minHealthyVenues,
           degraded: aggregate.degraded,
           noData: aggregate.noData,
         };
@@ -74,6 +75,11 @@ export function createServerApp(engine) {
           mark: snap.mark,
           healthyCount: aggregate.healthyCount,
           healthyVenues: aggregate.healthyVenues,
+          // The threshold `degraded` was judged against. Without it a consumer reading this
+          // payload has to assume a global constant, which is wrong for any market carrying
+          // a MARKET_BOUNDS_OVERRIDES entry — and wrong silently, since `degraded: false`
+          // alongside `healthyCount: 2` just looks like a bug from the outside.
+          minHealthyVenues: aggregate.minHealthyVenues,
           degraded: aggregate.degraded,
           noData: aggregate.noData,
           index: aggregate.index,

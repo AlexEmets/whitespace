@@ -448,10 +448,17 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               the median of the others by too much. The surviving venues produce the index; the mark is an EMA of it.
             </P>
             <P>
-              Below <strong>{MIN_HEALTHY_VENUES_REEXPORT} healthy venues</strong> the market goes{' '}
-              <strong>degraded</strong>, and the policy is asymmetric on purpose:{' '}
+              Below its healthy-source minimum — <strong>{MIN_HEALTHY_VENUES_REEXPORT}</strong> for a market the major
+              exchanges all quote — the market goes <strong>degraded</strong>, and the policy is asymmetric on purpose:{' '}
               <strong>closes are allowed, opens are blocked.</strong> If the price cannot be trusted, letting people out
               is the lesser risk; letting new positions in against an unreliable index is not.
+            </P>
+            <P>
+              The minimum is per market, not global. A market that only one exchange lists carries a lower one, met by
+              that exchange&rsquo;s separate spot and perpetual books so the two still cross-check each other. Such a
+              market is listed with a lower leverage ceiling and a smaller open-interest cap to match the narrower base
+              its price rests on. The banner and the order ticket always name the requirement the market you are looking
+              at is actually judged by.
             </P>
             <Caveat label="The degraded signal has a blind spot">
               <code>GET /price/:pairIndex</code> answers from one of two sources and says which. When the publisher

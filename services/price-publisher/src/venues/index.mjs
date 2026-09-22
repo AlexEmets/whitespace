@@ -1,9 +1,17 @@
 /**
- * Runtime WS wiring for the four venues. This module is the I/O layer — it is not
+ * Runtime WS wiring for the venues. This module is the I/O layer — it is not
  * unit-tested (per the task's constraints: "no network access in unit tests"); the
  * pure parse/reducer logic each venue file exports is what's tested. This file is
  * exercised by `node src/main.mjs` (manual, live-venue run — see README notes in
  * docs/decisions/phase-3-price-publisher.md for whether that was actually run).
+ *
+ * Venues come in two shapes and the difference is a capability, not an identity: a venue
+ * whose module exports `createBook` streams incremental order-book diffs and needs a
+ * locally maintained book threaded through `parseMessage(book, message)`, while the rest
+ * push self-contained snapshots parsed as `parseMessage(message, now)`. This used to be
+ * branched on `venueId === 'whitebit'` in three places, which silently excluded any second
+ * diff-based venue from book handling — it would connect, parse nothing, and simply never
+ * produce a tick.
  */
 
 import WebSocket from 'ws';
@@ -11,8 +19,14 @@ import * as binance from './binance.mjs';
 import * as bybit from './bybit.mjs';
 import * as okx from './okx.mjs';
 import * as whitebit from './whitebit.mjs';
+import * as whitebit_perp from './whitebit_perp.mjs';
 
-export const VENUE_MODULES = { binance, bybit, okx, whitebit };
+export const VENUE_MODULES = { binance, bybit, okx, whitebit, whitebit_perp };
+
+/** Whether a venue module maintains an incremental order book across messages. */
+function usesLocalBook(mod) {
+  return typeof mod.createBook === 'function';
+}
 
 const RECONNECT_DELAY_MS = 2_000;
 
@@ -48,8 +62,8 @@ const IDLE_TIMEOUT_MS = 20_000;
  * is enforced one level up, by the aggregator simply not seeing fresh ticks from a
  * venue that is down; this loop's job is only to keep trying to come back.
  *
- * @param {'binance'|'bybit'|'okx'|'whitebit'} venueId
- * @param {string} symbol venue-specific symbol, e.g. 'BTCUSDT' or 'BTC_USDT'
+ * @param {'binance'|'bybit'|'okx'|'whitebit'|'whitebit_perp'} venueId
+ * @param {string} symbol venue-specific symbol, e.g. 'BTCUSDT', 'BTC_USDT' or 'WBT_PERP'
  * @param {(tick: { venue: string, bid: bigint, ask: bigint, ts: number }) => void} onTick
  * @param {(err: Error) => void} [onError]
  * @returns {() => void} stop function
@@ -58,9 +72,11 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
   const mod = VENUE_MODULES[venueId];
   if (!mod) throw new Error(`connectVenue: unknown venue "${venueId}"`);
 
+  const bookBased = usesLocalBook(mod);
+
   let stopped = false;
   let ws;
-  let book = venueId === 'whitebit' ? whitebit.createBook() : null;
+  let book = bookBased ? mod.createBook() : null;
 
   function connect() {
     if (stopped) return;
@@ -91,7 +107,7 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
       // `terminate`, not `close`: a graceful close waits for a FIN that a half-open peer
       // will never send, which is the exact state being escaped here.
       socket.terminate();
-      if (venueId === 'whitebit') book = whitebit.createBook();
+      if (bookBased) book = mod.createBook();
       if (!stopped) setTimeout(connect, RECONNECT_DELAY_MS);
     };
 
@@ -137,7 +153,7 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
         return;
       }
       try {
-        const tick = venueId === 'whitebit' ? mod.parseMessage(book, message) : mod.parseMessage(message, Date.now());
+        const tick = bookBased ? mod.parseMessage(book, message) : mod.parseMessage(message, Date.now());
         if (tick) onTick({ venue: venueId, ...tick });
       } catch (err) {
         onError(err);
@@ -155,7 +171,7 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
       if (settled) return;
       settled = true;
       clearTimers();
-      if (venueId === 'whitebit') book = whitebit.createBook();
+      if (bookBased) book = mod.createBook();
       if (!stopped) setTimeout(connect, RECONNECT_DELAY_MS);
     });
   }

@@ -495,7 +495,9 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       {/* The mark/index readout that used to sit here was a second copy of what
           MarketHeaderBar shows directly above it — the reference prints the price once.
           `data-testid="mark-price"` moved onto the header's price with it. */}
-      {price && price.degraded ? <DegradedBanner healthyVenues={price.healthyVenues} /> : null}
+      {price && price.degraded ? (
+        <DegradedBanner healthyVenues={price.healthyVenues} minHealthyVenues={price.minHealthyVenues} />
+      ) : null}
 
       <div className="chart-area">
         {loading ? <p>Loading candles…</p> : null}

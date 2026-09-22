@@ -13,11 +13,19 @@ const claimFaucetMock = vi.fn(async () => {});
 
 // mark/index are human decimals with exactly PRICE_DECIMALS fraction digits — the shape
 // /price/:pairIndex emits, not the raw 18-decimal integer the contract stores.
-let priceState: { mark: string; index: string; degraded: boolean; healthyVenues: number; updatedAt: number } | null = {
+let priceState: {
+  mark: string;
+  index: string;
+  degraded: boolean;
+  healthyVenues: number;
+  minHealthyVenues: number | null;
+  updatedAt: number;
+} | null = {
   mark: '65001.000000000000000000',
   index: '65000.000000000000000000',
   degraded: false,
   healthyVenues: 4,
+  minHealthyVenues: 3,
   updatedAt: 0,
 };
 let allowanceState = 10_000_000_000n; // plenty of allowance by default
@@ -107,6 +115,7 @@ beforeEach(() => {
     index: '65000.000000000000000000',
     degraded: false,
     healthyVenues: 4,
+    minHealthyVenues: 3,
     updatedAt: 0,
   };
   allowanceState = 10_000_000_000n;
@@ -231,10 +240,37 @@ describe('<OpenPositionForm>', () => {
   });
 
   it('disables opening and shows a clear message when the price feed is degraded', () => {
-    priceState = { ...priceState!, degraded: true, healthyVenues: 2 };
+    priceState = { ...priceState!, degraded: true, healthyVenues: 2, minHealthyVenues: 3 };
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
     expect(screen.getByTestId('open-blocked-degraded')).toBeInTheDocument();
+    expect(screen.getByTestId('open-blocked-degraded')).toHaveTextContent('fewer than 3 healthy venues');
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  // The copy is rendered from the market's own minimum, so a market with a lower one must
+  // not be described by the global 3. This is the assertion that fails if anyone reinstates
+  // a hardcoded number in the message.
+  it("names the market's own venue minimum in the degraded message, not a hardcoded 3", () => {
+    priceState = { ...priceState!, degraded: true, healthyVenues: 1, minHealthyVenues: 2 };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    const alert = screen.getByTestId('open-blocked-degraded');
+    expect(alert).toHaveTextContent('fewer than 2 healthy venues');
+    expect(alert).not.toHaveTextContent('fewer than 3 healthy venues');
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  // Degraded with no threshold known (chain fallback, or a publisher too old to send it):
+  // the block must still happen, and the copy must simply omit the number rather than
+  // inventing one.
+  it('still blocks opening when the threshold is unknown, without naming a number', () => {
+    priceState = { ...priceState!, degraded: true, healthyVenues: 1, minHealthyVenues: null };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    const alert = screen.getByTestId('open-blocked-degraded');
+    expect(alert).toBeInTheDocument();
+    expect(alert).not.toHaveTextContent('fewer than');
     expect(screen.getByTestId('submit-open-button')).toBeDisabled();
   });
 

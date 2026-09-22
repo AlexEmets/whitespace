@@ -69,6 +69,7 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
           mark: state.markPrice,
           updatedAt: Math.floor(Date.now() / 1000),
           healthyVenues: state.degraded ? 2 : 4,
+          minHealthyVenues: 3,
           degraded: state.degraded,
         },
       });

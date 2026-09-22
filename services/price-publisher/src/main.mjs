@@ -30,9 +30,34 @@ async function main() {
     verifierAddress: config.verifierAddress,
     markets: config.markets,
     bounds: config.bounds,
+    boundsFor: config.boundsFor,
     signerKeys: config.signerKeys,
     signatureThresholdK: config.signatureThresholdK,
   });
+
+  // A market can only ever be as healthy as the intersection of the venues it declares and
+  // the venues this process is configured to connect. PUBLISHER_VENUES overrides VENUE_IDS
+  // rather than extending it — exactly like PUBLISHER_MARKETS — so adding a venue to the
+  // shared registry does nothing for a deployment whose .env pins the old list. The result
+  // is not an error anywhere: the market simply connects fewer sources than it needs and
+  // sits degraded forever, with opens blocked and no line in the log saying why.
+  //
+  // Not fatal, because one misconfigured market must not take the healthy ones down with
+  // it. Loud, because the symptom is otherwise indistinguishable from an exchange outage.
+  for (const feed of config.markets) {
+    const declared = Object.keys(getMarket(feed).venueSymbols);
+    const enabled = declared.filter((v) => config.venues.includes(v));
+    const required = config.boundsFor(feed).minHealthyVenues;
+    if (enabled.length < required) {
+      const missing = declared.filter((v) => !config.venues.includes(v));
+      console.warn(
+        `[price-publisher] MISCONFIGURED: ${feed} needs ${required} healthy source(s) but only ` +
+          `${enabled.length} of its venues are enabled ([${enabled.join(',')}]). ` +
+          `Not connected: [${missing.join(',')}]. This market will stay degraded and refuse every ` +
+          `open until PUBLISHER_VENUES includes them.`,
+      );
+    }
+  }
 
   const stopFns = [];
   for (const feed of config.markets) {
@@ -55,8 +80,11 @@ async function main() {
     for (const feed of config.markets) {
       const { aggregate, mark } = engine.sampleMark(feed);
       if (aggregate.degraded) {
+        // The threshold is logged, not just the count: with per-market bounds, "healthy=2"
+        // is a degradation for BTC and normal for WBT, and a log line that omits which rule
+        // applied cannot be read without going to look it up.
         console.warn(
-          `[price-publisher] ${feed} DEGRADED: healthy=${aggregate.healthyCount} ` +
+          `[price-publisher] ${feed} DEGRADED: healthy=${aggregate.healthyCount}/${aggregate.minHealthyVenues} ` +
             `venues=[${aggregate.healthyVenues.join(',')}] mark=${mark}`,
         );
       }

@@ -109,6 +109,11 @@ export interface PriceResponse {
    * believed it; DegradedBanner rendered the array where it meant to print a tally. Null
    * on the chain fallback, which carries no venue health at all. */
   healthyVenues: string[] | null;
+  /** How many healthy sources THIS market needs before opens are allowed. Not a constant:
+   * a market fed by fewer sources by design carries its own minimum, so copy that says
+   * "minimum 3" is wrong for it. Null on the chain fallback, and on a publisher predating
+   * the field — render the requirement only when it is known. */
+  minHealthyVenues: number | null;
   degraded: boolean | null;
   /** Which source answered. `chain` means the price is the last settled report and is
    * frozen until someone trades — the caller should treat it as stale, not live. */

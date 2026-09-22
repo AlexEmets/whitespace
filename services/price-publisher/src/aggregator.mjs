@@ -135,6 +135,7 @@ export function classifyVenues(ticks, now, bounds = PUBLISHER_BOUNDS) {
  *   indexAsk: bigint|null,
  *   healthyCount: number,
  *   healthyVenues: string[],
+ *   minHealthyVenues: number,
  *   rejected: { tick: VenueTick, reason: string, detail?: unknown }[],
  *   degraded: boolean,
  *   noData: boolean,
@@ -169,6 +170,13 @@ export function computeIndex(ticks, now, bounds = PUBLISHER_BOUNDS, weightOf = (
     indexAsk,
     healthyCount,
     healthyVenues: healthy.map((h) => h.tick.venue),
+    // Carried on the result, not left implicit, because `degraded` is no longer a
+    // statement about one global number: with per-market bounds, "healthyCount 2,
+    // degraded false" is correct for one feed and a bug for another. Every consumer that
+    // reports or re-checks degradation — /status, the API payload, the liquidator's own
+    // gate, the UI copy — needs the threshold that produced this verdict, and deriving it
+    // again from a global constant is exactly how those layers drift apart.
+    minHealthyVenues: bounds.minHealthyVenues,
     rejected,
     degraded,
     noData,

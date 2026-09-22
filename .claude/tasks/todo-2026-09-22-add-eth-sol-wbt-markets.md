@@ -109,39 +109,69 @@ Thread a per-market bounds override. `computeIndex(ticks, now, bounds, weightOf)
 takes bounds as a parameter, and `canSubmitLiquidation({..., minHealthyVenues})` already
 accepts an override — both are currently fed only the global default.
 
-- [ ] 2.1 `packages/shared/src/venues.mjs` — add `whitebit_perp` to `VENUE_IDS`/`VENUES`.
-      Only markets whose `venueSymbols` name it will connect to it, so BTC/ETH/SOL are
-      untouched.
-- [ ] 2.2 `packages/shared/src/markets.mjs` — add the `WBT/USD` entry; rewrite the header
-      comment, which currently documents WBT's *absence* as the motivating example.
-- [ ] 2.3 `packages/shared/src/bounds.mjs` — add a per-market override map and a
-      `boundsForMarket(feed)` helper beside `PUBLISHER_BOUNDS`. Keep the globals as the
-      default for every market that has no entry.
-- [ ] 2.4 `services/price-publisher/src/venues/` — register `whitebit_perp` reusing the
-      existing WhiteBIT parser, and replace the three hardcoded `venueId === 'whitebit'`
-      checks in `index.mjs` with a capability check on the module (`mod.createBook`).
-      This file is the untested I/O layer — review it carefully.
-- [ ] 2.5 `services/price-publisher/src/config.mjs` + `engine.mjs` — store resolved bounds
-      **per feed** in the `state` map and pass `s.bounds` at the `computeIndex` call
-      (`engine.mjs:55`). That is the single choke point; `sampleMark`, `signReportFor`,
-      `/status` and `/health` all inherit it.
-- [ ] 2.6 `services/price-publisher/src/server.mjs` — expose `minHealthyVenues` per feed in
-      `/status`. Today `degraded` is published without the threshold that produced it, so
-      no consumer can tell which rule applied.
-- [ ] 2.7 `services/liquidator/` — `chainReader.mjs` returns the threshold alongside the
-      count; `liquidatorEngine.mjs:72` passes it to `canSubmitLiquidation`. Without this
-      the liquidator refuses to ever liquidate WBT. `degradedMode.mjs` needs no change.
-- [ ] 2.8 `services/api/` — carry `minHealthyVenues` (and `healthyCount`, currently
-      dropped) through `publisher.ts` and `routes/price.ts`. Re-check the
-      `feed.degraded` skip at `indexSeries.ts:188` so WBT records candles.
-- [ ] 2.9 `apps/web/` — replace hardcoded copy with the per-market threshold:
-      `OpenPositionForm.tsx:377` ("fewer than 3 healthy venues"), `DegradedBanner.tsx:19`
-      ("minimum 3 required"), plus `types.ts` and the `DocsArticle.tsx:451` re-export.
-- [ ] 2.10 Update tests that pin the global 3: publisher `aggregator`/`engine`/`server`,
-      liquidator `degradedMode`/`liquidatorEngine`, api `price`, web `OpenPositionForm`
-      and the `trade-flow` e2e.
-      **Baseline first**: the e2e is known red at HEAD (`mockChain` missing PairInfos
-      functions). Capture the failure list *before* this diff, or the red gets blamed on it.
+Baseline captured before any edit (2026-09-22): shared 41, price-publisher 62,
+liquidator 46, api 54 — all green.
+
+- [x] 2.1 `venues.mjs` — `whitebit_perp` added to `VENUE_IDS`/`VENUES`. Safe for existing
+      markets: `main.mjs:41-42` skips any venue a market declares no symbol for.
+- [x] 2.2 `markets.mjs` — `WBT/USD` added (`whitebit: WBT_USDT`, `whitebit_perp: WBT_PERP`);
+      header rewritten, since it documented WBT's absence as the motivating example.
+- [x] 2.3 `bounds.mjs` — `MARKET_BOUNDS_OVERRIDES` + `boundsForMarket(feed)`. Globals stay
+      the default for every market without an entry.
+- [x] 2.4 `venues/whitebit_perp.mjs` re-exports the WhiteBIT parser under a new `id`;
+      the three `venueId === 'whitebit'` branches in `index.mjs` became one capability
+      check (`typeof mod.createBook === 'function'`). Verified on a live socket first:
+      one connection to wss://api.whitebit.com/ws accepts `depth_subscribe` for both
+      `WBT_USDT` and `WBT_PERP` and streams `depth_update` for each.
+- [x] 2.5 `engine.mjs` resolves bounds once per feed into `state` and passes `s.bounds` to
+      `computeIndex`; `config.mjs` exposes `boundsFor: boundsForMarket`; `main.mjs` wires
+      it. `boundsFor` defaults to `() => bounds`, which is why all 62 existing publisher
+      tests kept passing untouched.
+- [x] 2.6 `aggregator.mjs` now returns `minHealthyVenues` on the result, and `server.mjs`
+      publishes it in `/status` and `/health`. Putting it on the aggregate rather than
+      re-deriving it downstream is what keeps the layers from drifting.
+- [x] 2.7 `chainReader.readHealthyVenueCount` → `readVenueHealth`, returning
+      `{ healthyVenueCount, minHealthyVenues }` (falling back to the global minimum, which
+      can only ever be stricter); `liquidatorEngine` passes both to `canSubmitLiquidation`.
+      `degradedMode.mjs` unchanged — its override parameter already existed.
+- [x] 2.8 `publisher.ts` and `routes/price.ts` carry `minHealthyVenues` through, null on
+      the chain fallback. **`indexSeries.ts:188` needed no change**: `feed.degraded` is now
+      computed per market upstream, so WBT at 2 healthy sources records candles normally.
+- [x] 2.9 `types.ts`, `DegradedBanner.tsx`, `OpenPositionForm.tsx`, `PriceChart.tsx`,
+      `DocsArticle.tsx`, `config.ts` — the hardcoded "3" is gone from user-facing copy;
+      the threshold is rendered from the payload and omitted when unknown.
+- [x] 2.10 Tests: +8 shared (new `bounds.test.mjs`; `markets.test.mjs`'s "every market has
+      every venue" rule replaced with the stronger "enough known-venue symbols to meet its
+      own threshold"), +6 publisher (new `perMarketBounds.test.mjs`), +1 liquidator,
+      +7 web. Final: shared 49, publisher 68, liquidator 47, api 54, web 309 — all green,
+      `tsc --noEmit` clean for web and api.
+
+### 2.11 Found by running it, not by testing it
+
+`venues/index.mjs` is the untested I/O layer, so the publisher was run live against the
+real exchanges. Two defects surfaced that no unit test could have:
+
+- [x] **`PUBLISHER_VENUES` pins the venue list — on prod too.** Both the local and the
+      production `.env` carry `PUBLISHER_VENUES=binance,bybit,okx,whitebit`, and that
+      OVERRIDES `VENUE_IDS` rather than extending it. The first live run connected only
+      `whitebit` for WBT and sat at 1/2, degraded, with nothing in the logs explaining why
+      — the same trap `.env.example` already documents for `PUBLISHER_MARKETS`.
+      Fixed at the root: `main.mjs` now logs a `MISCONFIGURED` warning at startup naming
+      the missing venues whenever a market's enabled sources cannot reach its threshold.
+      Not fatal — one bad market must not take the healthy ones down. `.env.example`
+      updated. **Prod `.env` still needs `whitebit_perp` added — see Phase 3.**
+- [x] **The 2 s staleness bound made WBT unusable ~26% of the time.** With both books
+      connected, WBT was degraded in 26 of ~100 steady-state samples, sometimes at zero
+      healthy sources — both books merely quiet, not down.
+      Measured the cause over 120 s rather than guessing: gaps between `depth_update`
+      frames exceeded 2 s 17x on WBT_USDT (max 4,685 ms), 19x on WBT_PERP (max 5,548 ms)
+      — **and 11x on BTC_USDT (max 4,483 ms)**. The bound has always been breached; four
+      venues absorb it, two do not. It also conflates "book unchanged" with "feed dead",
+      while dead sockets are caught separately by the 8 s ping / 20 s idle watchdog.
+      Fixed with a second, measured override: `stalenessBoundMs: 8_000` for WBT — above
+      the observed maximum, below the idle watchdog, and per-market so the four-venue
+      markets keep the tight bound their redundancy pays for.
+      Re-measured after the fix: **26 degraded samples → 2**.
 
 ## Phase 3 — list WBT/USD on-chain
 

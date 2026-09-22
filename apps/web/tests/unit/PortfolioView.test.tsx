@@ -50,6 +50,7 @@ const markPrice: PriceResponse = {
   updatedAt: 0,
   // Venue NAMES, not a count — that is what /price/:pairIndex actually sends.
   healthyVenues: ['binance', 'bybit', 'okx', 'whitebit'],
+  minHealthyVenues: 3,
   degraded: false,
   source: 'publisher',
 };
