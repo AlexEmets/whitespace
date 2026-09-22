@@ -204,7 +204,10 @@ export function OpenPositionForm({
     collateralRaw > 0n &&
     !insufficientBalance &&
     !leverageTooHigh &&
-    !needsApproval &&
+    // `needsApproval` is deliberately NOT a blocker: handleSubmit grants the allowance on
+    // the way to openTrade. Gating on it here was what put a second button on the panel,
+    // and it also meant a wallet with no allowance AND no balance was offered an approval
+    // — a gas-costing transaction for an order that could never go through.
     state.phase !== 'approving' &&
     state.phase !== 'submitting' &&
     !isPending;
@@ -225,7 +228,7 @@ export function OpenPositionForm({
   }
 
   /**
-   * Approves the maximum, not this order's collateral.
+   * Submits the order, granting the allowance first when there is not one yet.
    *
    * The allowance is what lets `OstiumTradingStorage` pull collateral out of the wallet
    * at open time (safeTransferFrom, OstiumTradingStorage.sol:486). There is no account
@@ -233,30 +236,32 @@ export function OpenPositionForm({
    * wallet — so the approval is unavoidable; USDW is a plain OpenZeppelin ERC20 with no
    * `permit` (contracts/src/mocks/USDW.sol), which rules out signing instead of sending.
    *
-   * Approving the exact amount meant every order LARGER than the last one demanded a
-   * second transaction before it could be submitted, which reads as the terminal refusing
-   * to trade. Approving max makes it a one-time step: the trader sees it once per wallet,
-   * ever. This is what every major DEX front-end does, and the downside — TradingStorage
-   * being authorised for an unbounded amount — is bounded here by the token being a
-   * testnet mock with an open faucet.
+   * What IS avoidable is a second BUTTON. terminal_design.pdf gives this panel one action,
+   * and the perp venues it is modelled on show no approval step at all — not because they
+   * solved the allowance but because they have a margin account, so nothing is ever pulled
+   * from the wallet mid-trade. Lacking that account layer, the next best thing is to make
+   * the approval a step of the submit rather than a gate in front of it: one button, and
+   * on a wallet's very first order two confirmations instead of one.
+   *
+   * Approving the maximum, not this order's collateral, is what keeps it to the first
+   * order only. The exact amount meant every order LARGER than the last one silently
+   * demanded another approval transaction. The downside — TradingStorage authorised for
+   * an unbounded amount — is bounded here by the token being a testnet mock with an open
+   * faucet.
+   *
+   * Most wallets never reach the approval leg at all: `useFaucet` arms the allowance when
+   * the tokens are minted. This is the backstop for the ones that did not come that way.
    */
-  async function handleApprove() {
-    if (collateralRaw === null) return;
-    setState({ phase: 'approving' });
-    try {
-      await erc20.approve(maxUint256);
-      await erc20.refetchAllowance();
-      setState({ phase: 'idle' });
-    } catch (err) {
-      setState({ phase: 'error', message: err instanceof Error ? err.message : String(err) });
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (pairIndex === null || !price || collateralRaw === null || collateralRaw <= 0n) return;
-    setState({ phase: 'submitting' });
     try {
+      if (needsApproval) {
+        setState({ phase: 'approving' });
+        await erc20.approve(maxUint256);
+        await erc20.refetchAllowance();
+      }
+      setState({ phase: 'submitting' });
       const { orderId } = await openTrade({
         pairIndex,
         buy,
@@ -399,15 +404,21 @@ export function OpenPositionForm({
       ) : null}
 
       <div className="submit-row">
-        {needsApproval ? (
-          <button type="button" data-testid="approve-button" onClick={handleApprove} disabled={state.phase === 'approving'}>
-            {state.phase === 'approving' ? 'Approving…' : 'Approve USDW'}
-          </button>
-        ) : (
-          <button type="submit" className={buy ? 'long' : 'short'} data-testid="submit-open-button" disabled={!canSubmit}>
-            {state.phase === 'submitting' ? 'Submitting…' : `${buy ? 'Buy · Long' : 'Sell · Short'}`}
-          </button>
-        )}
+        <button type="submit" className={buy ? 'long' : 'short'} data-testid="submit-open-button" disabled={!canSubmit}>
+          {state.phase === 'approving'
+            ? 'Approving USDW…'
+            : state.phase === 'submitting'
+              ? 'Submitting…'
+              : `${buy ? 'Buy · Long' : 'Sell · Short'}`}
+        </button>
+        {/* Two wallet pop-ups from one click reads as the first one having failed, and the
+            instinct is to reject the second. Said only while the approval leg is actually
+            in flight — which is the first order from this wallet, and no other. */}
+        {state.phase === 'approving' ? (
+          <p className="approval-notice" role="status" data-testid="approval-notice">
+            First order from this wallet — it will ask twice: once to allow USDW, then for the order itself.
+          </p>
+        ) : null}
       </div>
 
       <div className="order-summary">

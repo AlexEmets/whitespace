@@ -16,6 +16,15 @@ export interface Erc20Handle {
   balance: bigint;
   /** Raw 6-decimal USDW. Always 0n when the hook was called without a spender. */
   allowance: bigint;
+  /**
+   * Whether a spender was named — i.e. whether `allowance` means anything and `approve`
+   * can be called at all.
+   *
+   * Without it the two are indistinguishable from a genuine zero allowance, and the only
+   * way to find out was to call `approve` and catch it throwing. A helper that takes the
+   * handle as a parameter (`useFaucet`) cannot see the spender the component passed.
+   */
+  hasSpender: boolean;
   refetchBalance: () => unknown;
   refetchAllowance: () => unknown;
   approve: (amount: bigint) => Promise<`0x${string}`>;
@@ -100,6 +109,7 @@ export function useErc20(spender?: Address): Erc20Handle {
   return {
     balance: balance.data ?? 0n,
     allowance: allowance.data ?? 0n,
+    hasSpender: Boolean(spender),
     refetchBalance: balance.refetch,
     refetchAllowance: allowance.refetch,
     approve,

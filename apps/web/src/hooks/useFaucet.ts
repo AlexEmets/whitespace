@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { maxUint256 } from 'viem';
 import type { Erc20Handle } from '@/hooks/useErc20';
 
 /** What `USDW.claim()` mints per call, and how often the token allows it. Mirrors
@@ -42,6 +43,37 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
   const [error, setError] = useState<string | null>(null);
   const [claimed, setClaimed] = useState(false);
 
+  /**
+   * Grants the spender an unlimited allowance in the same gesture as the mint.
+   *
+   * This is what keeps the approval out of the terminal. The allowance transaction is
+   * unavoidable — `OstiumTradingStorage` pulls collateral with `safeTransferFrom`
+   * (OstiumTradingStorage.sol:486), there is no exchange-side balance to spend from, and
+   * USDW is a plain OpenZeppelin ERC20 with no `permit` to sign instead. What IS avoidable
+   * is meeting it at trade time: a wallet armed here reaches the order form already
+   * allowed, and its first order is a single confirmation.
+   *
+   * Runs after the mint, never instead of it. Skipped outright when the caller named no
+   * spender (`hasSpender`) — `approve` would throw — or when the existing allowance
+   * already covers what this mint hands over.
+   *
+   * A rejected allowance is NOT a failed claim. The USDW is really in the wallet by then,
+   * so `claimed` stays true and the message says what did and did not happen. Losing this
+   * leg is safe: the order form still folds the approval into its own submit, which is the
+   * backstop that makes arming an optimisation rather than a dependency.
+   */
+  async function armAllowance(): Promise<void> {
+    if (!erc20.hasSpender || erc20.allowance >= FAUCET_MINT_USDW) return;
+    try {
+      await erc20.approve(maxUint256);
+      await erc20.refetchAllowance();
+    } catch {
+      setError(
+        'Minted — but the trading allowance was not granted. Your first order will ask for it again.',
+      );
+    }
+  }
+
   async function claim(): Promise<boolean> {
     setError(null);
     setClaimed(false);
@@ -50,6 +82,7 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
       await erc20.claimFaucet();
       await erc20.refetchBalance();
       setClaimed(true);
+      await armAllowance();
       return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

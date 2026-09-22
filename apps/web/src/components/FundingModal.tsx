@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { maxUint256 } from 'viem';
 import { useAccount } from 'wagmi';
 import { useErc20 } from '@/hooks/useErc20';
 import { useVault, useVaultShares } from '@/hooks/useVault';
@@ -112,15 +113,27 @@ export function FundingModal({
     }
   }
 
-  const handleApprove = () =>
-    run('approve', async () => {
-      await erc20.approve(amountRaw!);
-      await erc20.refetchAllowance();
-    });
-
+  /**
+   * The deposit's approval rides inside the request, the same shape the order form uses.
+   *
+   * The vault is a SECOND spender, so this is a second, independent allowance — the
+   * infinite approval the terminal grants `TradingStorage` authorises nothing here, and
+   * neither does arming at the faucet. A first deposit therefore costs two confirmations,
+   * and every one after it costs one.
+   *
+   * For MAX, not `amountRaw`: approving the exact amount consumed the allowance on every
+   * settlement, so each deposit larger than the last quietly demanded a fresh approval
+   * transaction. Withdrawing needs none of this — it moves shares the vault already holds.
+   */
   const handleRequest = () =>
     run('request', async () => {
       if (isDeposit) {
+        if (needsApproval) {
+          setBusy('approve');
+          await erc20.approve(maxUint256);
+          await erc20.refetchAllowance();
+          setBusy('request');
+        }
         const { settlementId } = await vault.requestDeposit(amountRaw!);
         setDeposit({ id: settlementId, amountRaw: amountRaw! });
         await erc20.refetchBalance();
@@ -249,31 +262,29 @@ export function FundingModal({
               </p>
             ) : null}
 
-            {needsApproval && !insufficient ? (
-              <button
-                type="button"
-                className={styles.primary}
-                data-testid="funding-approve"
-                onClick={handleApprove}
-                disabled={busy !== null}
-              >
-                {busy === 'approve' ? 'Approving…' : 'Approve USDW'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={styles.primary}
-                data-testid="funding-request"
-                onClick={handleRequest}
-                disabled={!positive || insufficient || busy !== null}
-              >
-                {busy === 'request'
+            <button
+              type="button"
+              className={styles.primary}
+              data-testid="funding-request"
+              onClick={handleRequest}
+              disabled={!positive || insufficient || busy !== null}
+            >
+              {busy === 'approve'
+                ? 'Approving USDW…'
+                : busy === 'request'
                   ? 'Submitting…'
                   : isDeposit
                     ? 'Request deposit'
                     : 'Request withdrawal'}
-              </button>
-            )}
+            </button>
+
+            {/* Same reason as the order form's notice: two pop-ups from one press reads as
+                the first having failed, and the instinct is to reject the second. */}
+            {busy === 'approve' ? (
+              <p className={styles.muted} role="status" data-testid="funding-approval-notice">
+                First deposit to the vault — it will ask twice: once to allow USDW, then for the deposit itself.
+              </p>
+            ) : null}
 
             {request ? (
               <SettlementState

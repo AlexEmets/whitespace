@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { maxUint256 } from 'viem';
 import { FundingModal } from '@/components/FundingModal';
 
 /**
@@ -118,17 +119,37 @@ describe('<FundingModal> deposit', () => {
     await waitFor(() => expect(requestDepositMock).toHaveBeenCalledWith(1_000_000_000n));
   });
 
-  it('asks for approval first when the vault is not allowed to pull the collateral', async () => {
+  /**
+   * The vault is a second spender, so its allowance is a second, independent record — an
+   * infinite approval granted to TradingStorage by the terminal does nothing here. What
+   * this shares with the terminal is the shape: the approval rides inside the primary
+   * action rather than standing in front of it, and it is for MAX so a deposit larger
+   * than the last one does not demand a fresh one.
+   */
+  it('approves inside the deposit request rather than behind a separate button', async () => {
     balanceState = 1_000_000_000n;
     allowanceState = 0n;
     renderModal();
     fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '1000' } });
 
-    expect(screen.getByTestId('funding-approve')).toBeInTheDocument();
-    expect(screen.queryByTestId('funding-request')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('funding-approve')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('funding-request'));
 
-    fireEvent.click(screen.getByTestId('funding-approve'));
-    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(1_000_000_000n));
+    await waitFor(() => expect(approveMock).toHaveBeenCalledWith(maxUint256));
+    expect(approveMock).not.toHaveBeenCalledWith(1_000_000_000n);
+    await waitFor(() => expect(requestDepositMock).toHaveBeenCalledWith(1_000_000_000n));
+    expect(approveMock.mock.invocationCallOrder[0]!).toBeLessThan(requestDepositMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('does not approve again when the vault allowance already covers the deposit', async () => {
+    balanceState = 1_000_000_000n;
+    allowanceState = 10_000_000_000n;
+    renderModal();
+    fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByTestId('funding-request'));
+
+    await waitFor(() => expect(requestDepositMock).toHaveBeenCalled());
+    expect(approveMock).not.toHaveBeenCalled();
   });
 
   /** The whole point of keeping the lifecycle: a mined `requestDeposit` is NOT a deposit. */
@@ -145,6 +166,19 @@ describe('<FundingModal> deposit', () => {
 });
 
 describe('<FundingModal> withdraw', () => {
+  /** Withdrawing moves shares the vault already holds — there is no ERC-20 pull to
+   * authorise, so an approval on this path would be a transaction that buys nothing. */
+  it('never approves, however short the collateral allowance is', async () => {
+    sharesState = 1_000_000_000n;
+    allowanceState = 0n;
+    renderModal('withdraw');
+    fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByTestId('funding-request'));
+
+    await waitFor(() => expect(requestWithdrawMock).toHaveBeenCalled());
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
   it('is denominated in shares, not USDW, and reads the share balance', () => {
     sharesState = 400_000_000n; // 400.00 shares
     balanceState = 0n; // no USDW — must not be what AVAIL. reports here

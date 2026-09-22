@@ -764,6 +764,15 @@ table.markets-table td {
   cursor: not-allowed;
 }
 
+/* Not an error — the approval leg is working as intended. Muted rather than red, because
+   red next to a button the trader just pressed says something broke. */
+.approval-notice {
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
 .order-summary {
   margin-top: 1rem;
   padding-top: 0.75rem;

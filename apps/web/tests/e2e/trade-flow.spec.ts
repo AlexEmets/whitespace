@@ -59,9 +59,10 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     // hosting a second copy of the form.
     await page.getByTestId('vault-deposit-button').click();
     await page.getByTestId('funding-amount-input').fill('2500');
-    await page.getByTestId('funding-approve').click();
-    await expect(page.getByTestId('funding-request')).toBeVisible();
-
+    // No approval button to press: the vault allowance is granted inside the request
+    // (FundingModal.handleRequest), so the dialog has one action however short the
+    // allowance is.
+    await expect(page.getByTestId('funding-approve')).toHaveCount(0);
     await page.getByTestId('funding-request').click();
     await expect(page.getByTestId('funding-settlement-status')).toContainText('PENDING');
 
@@ -75,7 +76,7 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     await page.getByTestId('funding-modal-close').click();
   });
 
-  await test.step('open a position: approve, submit, see the honest pending state', async () => {
+  await test.step('open a position: one button, submit, see the honest pending state', async () => {
     await page.getByTestId('nav-trade').click();
     // The order field is denominated in the base asset now (terminal_design.pdf's SIZE),
     // and the collateral is derived: 0.1538 BTC at 65,001.00 with the default 10x is
@@ -83,8 +84,9 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     await page.getByTestId('size-input').fill('0.1538');
     await expect(page.getByTestId('direction-long')).toHaveClass(/active/);
 
-    await page.getByTestId('approve-button').click();
-    await expect(page.getByTestId('submit-open-button')).toBeVisible();
+    // terminal_design.pdf gives this panel one action, and so does the implementation:
+    // the allowance is granted inside handleSubmit rather than behind its own button.
+    await expect(page.getByTestId('approve-button')).toHaveCount(0);
     await page.getByTestId('submit-open-button').click();
 
     const pendingBanner = page.getByTestId('order-pending-banner');

@@ -238,30 +238,72 @@ describe('<OpenPositionForm>', () => {
     expect(screen.getByTestId('submit-open-button')).toBeDisabled();
   });
 
-  it('requires an approval before the amount can be opened when allowance is insufficient', async () => {
+  /**
+   * terminal_design.pdf gives the order panel exactly one action — there is no approval
+   * step anywhere in the reference. The allowance transaction itself is unavoidable
+   * (`openTrade` pulls collateral with `safeTransferFrom` and USDW has no `permit` to sign
+   * instead), so it moves inside the submit handler rather than disappearing: one button,
+   * two wallet confirmations, and only on the first order a wallet ever places.
+   */
+  it('approves inside the submit click instead of putting a second button in front of it', async () => {
     allowanceState = 0n;
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
-    expect(screen.getByTestId('approve-button')).toBeInTheDocument();
-    expect(screen.queryByTestId('submit-open-button')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByTestId('approve-button'));
+    expect(screen.queryByTestId('approve-button')).not.toBeInTheDocument();
+    const submit = screen.getByTestId('submit-open-button');
+    expect(submit).toBeEnabled();
+
+    fireEvent.click(submit);
+
     /**
      * Approves MAX, not this order's collateral.
      *
      * Approving the exact amount made every order larger than the last one demand a
-     * second transaction before it could be submitted — which reads as the terminal
-     * refusing to trade. The allowance itself is unavoidable: `openTrade` pulls collateral
-     * out of the wallet with `safeTransferFrom` (there is no exchange balance to spend
-     * from), and USDW has no `permit` to sign instead.
-     *
-     * Asserting max rather than "some bigint" is the point — a regression back to the
-     * exact amount would restore the repeated prompt and this test would still pass if it
-     * only checked that approve ran.
+     * second transaction before it could be submitted. Asserting max rather than "some
+     * bigint" is the point — a regression back to the exact amount would restore the
+     * repeated prompt and this test would still pass if it only checked that approve ran.
      */
     await waitFor(() => expect(approveMock).toHaveBeenCalledWith(maxUint256));
     expect(approveMock).not.toHaveBeenCalledWith(COLLATERAL_FOR_0_01_BTC);
     expect(refetchAllowanceMock).toHaveBeenCalled();
+
+    // Approving and then stopping is the old two-click flow with the button hidden — the
+    // order this click was for has to follow, and follow second.
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0].collateralRaw).toBe(COLLATERAL_FOR_0_01_BTC);
+    expect(approveMock.mock.invocationCallOrder[0]!).toBeLessThan(openTradeMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('spends no second transaction when the allowance already covers the order', async () => {
+    allowanceState = 10_000_000_000n;
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Two wallet pop-ups from one click reads as a failure — "did the first one not work?"
+   * — and the trader's instinct is to reject the second. The notice exists only while the
+   * approval leg is in flight, which is the only moment it is true.
+   */
+  it('warns that the wallet will ask twice, but only while the approval leg is running', async () => {
+    allowanceState = 0n;
+    let release: () => void = () => {};
+    approveMock.mockImplementationOnce(() => new Promise<void>((r) => { release = () => r(); }));
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+
+    expect(screen.queryByTestId('approval-notice')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+
+    expect(await screen.findByTestId('approval-notice')).toHaveTextContent(/twice/i);
+
+    release();
+    await waitFor(() => expect(screen.queryByTestId('approval-notice')).not.toBeInTheDocument());
   });
 
   it('submits the collateral the size converts to, and shows the pending (not "opened") state', async () => {
