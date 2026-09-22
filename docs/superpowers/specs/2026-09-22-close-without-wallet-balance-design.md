@@ -162,7 +162,14 @@ requires a funded wallet for other reasons.
 
 ## Testing
 
-Forge tests against a fork of 1874, which is the only place the real state exists:
+**Not fork tests.** An earlier draft of this spec called for forking 1874; that was wrong.
+The repository has no fork test and no RPC env var — every suite deploys the whole system
+locally in `setUp()` via `DeployScript.deployAll`, with `contracts/test/helpers/SystemFixture.sol`
+as the shared base. Local deployment is also the better instrument here: 1874 has a single
+public RPC that rate-limits, and every case below needs a *constructed* wallet balance,
+which a fork cannot give without cheatcodes anyway.
+
+Forge tests following the existing `SystemFixture` pattern:
 
 - a position whose owner holds **zero** USDW closes fully, and the payout equals today's
   payout for the same inputs — the parity assertion that proves economics are unchanged
