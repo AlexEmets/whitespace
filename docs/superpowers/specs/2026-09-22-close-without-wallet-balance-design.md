@@ -87,6 +87,15 @@ partial close keeps the happy path free of that entirely.
 It also avoids a storage-layout change. A "deferred bond" flag would have needed a new
 field on `PendingMarketOrderV2`; this design adds no state.
 
+### Charging the bond keeps the notional invariant
+
+On the cancel and partial paths the bond is not simply subtracted. Collateral falls, so
+leverage is recomputed exactly as `removeCollateral` does — `tradeSize` stays fixed,
+`newLeverage = tradeSize * PRECISION_6 / newCollateral / 1e4` — and the trade is written
+back with both new values. Subtracting collateral while leaving `leverage` untouched would
+silently shrink the position's notional by `leverage × 1 USDW`, which at 61x is 61 USDW of
+exposure vanishing without a fill.
+
 ### Guard: accounting must never block a close
 
 When the bond is charged (cancel or partial), if either
