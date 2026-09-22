@@ -55,7 +55,14 @@ first, by a test rather than by reading.
 Run: `grep -n "PERCENT_BASE" contracts/src/vendor/ostium/OstiumTrading.sol`
 Record the literal value in the test's NatSpec.
 
-- [ ] **Step 2: Write a characterisation test for both candidate values**
+- [ ] **Step 2: Bootstrap the fixture helpers**
+
+Task 1's test already calls `_openAndFill` and `_requestCloseAndFill`, which do not exist
+yet — build them here before the test that uses them. Port the mechanics from
+`TradeLocal.t.sol:153-180` (open → `_deliver` → close → `_deliver`). Task 2 adds the rest
+of the table; these two are the minimum Task 1 needs.
+
+- [ ] **Step 3: Write a characterisation test for both candidate values**
 
 Create `contracts/test/integration/CloseBond.t.sol`:
 
@@ -93,13 +100,13 @@ contract CloseBondTest is SystemFixture {
 }
 ```
 
-- [ ] **Step 3: Run it**
+- [ ] **Step 4: Run it**
 
 Run: `cd contracts && forge test --match-contract CloseBondTest -vv`
 
 Expected: PASS if `PERCENT_BASE == 10000`. If it FAILS, `PERCENT_BASE` is `100`; stop, set `FULL = 100`, and re-check `useCloseTrade.ts:9` — the frontend would then be sending 10000 into a `closePercentage > PERCENT_BASE` revert, which is a separate live bug to report before continuing.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add contracts/test/integration/CloseBond.t.sol
@@ -181,8 +188,8 @@ Append to `CloseBondTest`:
 
 - [ ] **Step 2: Add every fixture helper this plan uses**
 
-`SystemFixture` exposes none of these yet. Write all of them now, in `CloseBondTest`, so no
-later task is blocked on a missing helper. Port the open/close mechanics from
+Task 1 built `_openAndFill` and `_requestCloseAndFill`. Write the remaining five now, in
+`CloseBondTest`, so no later task is blocked on a missing helper. Port the open/close mechanics from
 `TradeLocal.t.sol:153-180`, which already does open → `_deliver` → close → `_deliver`.
 
 | Helper | Behaviour |
@@ -469,6 +476,10 @@ Add to `OstiumTradingCallbacks.sol`, beside the existing private `unregisterTrad
         storageT.updateTrade(t);
 
         storageT.handleOracleFee(bond);
+        // CHECK THE ARITY BEFORE COPYING THIS LINE. OstiumTrading declares
+        // OracleFeeCharged(orderId, sender, pairIndex, fee) — four args — while this
+        // contract emits a three-arg form at :226. Use whichever the interface in scope
+        // here declares; guessing produces a compile error, not a silent bug.
         emit OracleFeeCharged(0, t.trader, t.pairIndex, bond);
         return true;
     }
