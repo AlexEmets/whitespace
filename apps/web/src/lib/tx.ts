@@ -97,11 +97,16 @@ function explainRevert(data: Hex): string | null {
 
   if (decoded.errorName === 'ERC20InsufficientBalance') {
     const [, balance, needed] = decoded.args as readonly [string, bigint, bigint];
-    // Named in USDW, not raw units, and with the *reason* it is being charged. Closing a
-    // position pulls the flat oracle fee from the wallet (OstiumTrading.sol:310-311), not
-    // from the position's own collateral — which is why a trader who spent everything on
-    // margin cannot close what they opened, and why the figure looks unrelated to the trade.
-    return `Not enough USDW in your wallet: this needs ${formatMoney(needed, COLLATERAL_DECIMALS)} and you hold ${formatMoney(balance, COLLATERAL_DECIMALS)}. Closing charges the oracle fee from your wallet, separately from the position's collateral.`;
+    // Named in USDW rather than raw units, and deliberately silent about WHICH action is
+    // short. An earlier version named closing specifically and explained that the oracle fee
+    // comes out of the wallet. That is true of the contracts deployed today and stops being
+    // true the moment the close-bond migration lands — after it, closing charges the fee to
+    // the position and this error can only come from opening or from a vault deposit. A
+    // message that has to be re-edited in lockstep with a contract migration will be wrong
+    // for whatever window separates the two deploys, so it states only the two figures, which
+    // hold either way.
+    // See docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md.
+    return `Not enough USDW in your wallet: this needs ${formatMoney(needed, COLLATERAL_DECIMALS)} and you hold ${formatMoney(balance, COLLATERAL_DECIMALS)}.`;
   }
 
   if (decoded.errorName === 'CooldownActive') {

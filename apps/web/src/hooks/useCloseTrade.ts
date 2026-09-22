@@ -37,10 +37,14 @@ export function useCloseTrade() {
     // TransactionRevertedError — so the trader paid gas for "it reverted" and nothing more.
     //
     // This is not hypothetical: 0x8a357f2b… reverted with
-    // ERC20InsufficientBalance(trader, 57243, 1000000). Closing pulls the flat
-    // pairOracleFee (1.00 USDW) out of the *wallet* (OstiumTrading.sol:310-311), and a
-    // trader who spent their balance on margin has nothing left to pay it with. Simulating
-    // turns that into a sentence, for free, before the wallet even opens.
+    // ERC20InsufficientBalance(trader, 57243, 1000000), because closing pulled the flat
+    // pairOracleFee (1.00 USDW) out of the *wallet* and a trader who had spent their balance
+    // on margin had nothing left to pay it with.
+    //
+    // The close-bond migration removes that particular cause — the fee will come out of the
+    // position instead. The simulation stays regardless: it is not specific to that revert,
+    // it is what turns ANY close failure into a reason the trader can act on, for free,
+    // before the wallet even opens.
     const { request } = await publicClient.simulateContract({
       account,
       address: TRADING_ADDRESS,

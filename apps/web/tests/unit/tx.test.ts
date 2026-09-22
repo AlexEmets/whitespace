@@ -98,6 +98,11 @@ describe('describeTxError', () => {
     expect(text).toContain('1.00');
     expect(text).toContain('0.06');
     expect(text).not.toContain('57243');
+    // The message must not name WHICH action is short. It used to say the oracle fee comes out
+    // of the wallet on a close — true of the contracts deployed today, false once the close-bond
+    // migration lands. Asserting only the figures let that claim ship unchallenged once already.
+    expect(text).not.toMatch(/clos(e|ing)/i);
+    expect(text).not.toMatch(/oracle fee/i);
   });
 
   it('says when the faucet unlocks rather than that a transaction reverted', () => {
