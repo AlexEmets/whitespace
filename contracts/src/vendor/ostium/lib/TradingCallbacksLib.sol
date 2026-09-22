@@ -209,12 +209,22 @@ library TradingCallbacksLib {
         }
 
         // Raising leverage moves the max-gain price, so a take-profit parked at the old maximum is
-        // now unreachable and the stop-loss may sit past maxSl_P. handleRemoveCollateral — the
-        // other place a position's leverage is recomputed against a fixed notional — corrects both
-        // for exactly this reason, and this matches it, including the tpLastUpdated/slLastUpdated
-        // stamps updateTrade will write.
+        // now unreachable and the stop-loss may sit past maxSl_P. Both are corrected here for the
+        // same reason handleRemoveCollateral corrects them.
+        //
+        // The stop-loss is RE-CLAMPED, not nulled, and that is a deliberate divergence from
+        // handleRemoveCollateral. `correctSl` pulls an out-of-range stop back to the boundary;
+        // `correctToNullSl` deletes it. Measured: with maxSl_P = 85 a single charge moved a stop
+        // from 59,475.915 to 0. That is not an edge case — `correctSl` clamps any wider stop to
+        // exactly that boundary when the trade is registered, so every "widest stop" position sits
+        // ON it by construction and the first charge would strip its downside protection.
+        //
+        // handleRemoveCollateral can null it because the leverage rise there is trader-initiated:
+        // they asked to withdraw collateral and can re-arm the stop. Here the rise is the protocol
+        // taking a fee on a close the trader requested and that failed. Silently removing their
+        // protection as a side effect of our own fee is not a trade they agreed to.
         t.tp = correctTp(t.openPrice, t.tp, t.leverage, initialLeverage, t.buy);
-        t.sl = _correctToNullSl(t.openPrice, t.sl, t.leverage, initialLeverage, t.buy, maxSl_P);
+        t.sl = correctSl(t.openPrice, t.sl, t.leverage, initialLeverage, t.buy, maxSl_P);
 
         return (t, true);
     }

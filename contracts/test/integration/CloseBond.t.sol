@@ -228,6 +228,11 @@ contract CloseBondTest is SystemFixture {
         (, openPrice,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
+    /// @dev The 4th field of the same 10-tuple.
+    function _openSl() internal view returns (uint192 sl) {
+        (,,, sl,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+    }
+
     function _openTp() internal view returns (uint192 tp) {
         (,, tp,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
@@ -722,5 +727,60 @@ contract CloseBondTest is SystemFixture {
     function _systemUsdw() internal view returns (uint256) {
         return IERC20(d.collateral).balanceOf(trader) + IERC20(d.collateral).balanceOf(d.tradingStorage)
             + IERC20(d.collateral).balanceOf(d.vault);
+    }
+
+    /// @notice The stop-loss must survive a bond charge.
+    /// @dev Regression for a defect the fix wave introduced: correcting tp/sl by copying
+    ///      handleRemoveCollateral's `correctToNullSl` DELETED a stop sitting at the widest allowed
+    ///      distance. Measured before the fix: sl 59,475.915 -> 0 on a single cancelled close.
+    ///      Not an edge case — TradingCallbacksLib.correctSl clamps any wider stop to exactly that
+    ///      boundary at registration, so every "widest stop" position sits on it by construction.
+    function test_aBondChargeReClampsTheStopLossInsteadOfDeletingIt() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        // The widest stop the contract accepts: openPrice - openPrice * maxSl_P / leverage.
+        uint8 maxSlP = IOstiumTradingCallbacks(d.callbacks).maxSl_P();
+        uint192 openPrice = _openPrice();
+        uint192 widestSl = uint192(uint256(openPrice) - (uint256(openPrice) * maxSlP) / _openLeverage());
+
+        vm.prank(trader);
+        IOstiumTrading(d.trading).updateSl(0, 0, widestSl);
+        uint192 slBefore = _openSl();
+        assertGt(slBefore, 0, "precondition: the stop must be armed before the charge");
+
+        _requestCloseAndCancel(FULL);
+
+        uint192 slAfter = _openSl();
+        assertGt(slAfter, 0, "a bond charge must not delete the trader's stop-loss");
+        assertLt(slAfter, _openPrice(), "a long's stop must stay below its entry");
+        // For a long the stop sits BELOW entry, so re-clamping to the higher leverage's narrower
+        // boundary moves it UP. Tighter, not wider — and still armed, which is the whole point.
+        assertGe(slAfter, slBefore, "the stop must be pulled to the new boundary, not left past it");
+    }
+
+    /// @notice On MARKET_CLOSED the liquidation guard must value the position at the last observed
+    ///         oracle price, not at its own entry.
+    /// @dev Valued at entry, profitP is 0 by construction, so the guard sees ~97.5% headroom however
+    ///      far underwater the position is and would charge one tick from liquidation. Drive the
+    ///      mark far against the position, then cancel: the charge must be waived.
+    function test_marketClosedValuesThePositionAtTheLastOraclePriceNotItsEntry() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAtLeverage(_maxLeverage(), 1000e6);
+        _drainTraderUsdw();
+
+        // lastTradePrice is only written by an executed trade (OstiumOpenPnl.updateAccTotalPnl),
+        // so move it with a 1% partial close at the lower price. That also leaves a position
+        // behind to charge, which is what the cancel below needs.
+        _requestCloseAndFillAt(FULL / 100, BTC_65K * 97 / 100);
+
+        uint256 devBefore = _devFees();
+        uint256 collateralBefore = _openCollateral();
+        _requestCloseAndCancel(FULL);
+
+        assertEq(_devFees(), devBefore, "a position underwater at the last oracle price must not be charged");
+        assertEq(_openCollateral(), collateralBefore, "a waived charge must leave collateral untouched");
     }
 }

@@ -370,11 +370,22 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
             // NO_TRADE has no position to charge, and WRONG_TRADE refers to a trade that was
             // already replaced, so charging would hit an unrelated position in the same slot.
             if (cancelReason != CancelReason.NO_TRADE && cancelReason != CancelReason.WRONG_TRADE) {
-                // a.price is 0 on the MARKET_CLOSED branch; applyBondToTrade falls back to the
-                // trade's own open price there, which is documented on it.
-                _chargeBondFromPosition(
-                    t, i.tradeId, a.price > 0 ? uint256(uint192(a.price)) : 0, i.initialLeverage
-                );
+                // `a.price` is 0 on the MARKET_CLOSED branch — that absence is why the close
+                // cancelled. Falling back to the trade's own open price would make the liquidation
+                // guard inert rather than merely imprecise: valued at its own entry a position has
+                // profitP == 0 by construction, so the guard sees ~97.5% headroom however far
+                // underwater it actually is, and would charge a position one tick from liquidation.
+                //
+                // `lastTradePrice` is the last oracle price the protocol observed for this pair,
+                // which it already trusts for exactly this kind of blind valuation. It is stale by
+                // definition here, but a stale real price beats a synthetic one that cannot express
+                // a loss. Open price remains the final fallback for a pair that has never traded.
+                int256 lastPrice = IOstiumOpenPnl(registry.getContractAddress('openPnl')).lastTradePrice(t.pairIndex);
+                uint256 valuationPrice = a.price > 0
+                    ? uint256(uint192(a.price))
+                    : (lastPrice > 0 ? uint256(lastPrice) : 0);
+
+                _chargeBondFromPosition(t, i.tradeId, valuationPrice, i.initialLeverage);
             }
             emit MarketCloseCanceled(a.orderId, i.tradeId, trade.trader, trade.pairIndex, trade.index, cancelReason);
         }
