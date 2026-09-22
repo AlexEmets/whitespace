@@ -73,9 +73,10 @@
   text-transform: uppercase;
 }
 
-/* The mockup's headline is the page's one piece of display type — everything else on
-   this screen is 0.6–0.9rem. It carries the whole hero, so it scales with the viewport
-   rather than sitting at a fixed size that looks stranded on a wide monitor. */
+/* The mockup's headline is the page's one piece of display type — nothing else here comes
+   near it (the next largest is .railHeading at 1.54rem). It carries the whole hero, so it
+   scales with the viewport rather than sitting at a fixed size that looks stranded on a
+   wide monitor. */
 .title {
   font-size: clamp(2.75rem, 5.2vw, 4.3rem);
   font-weight: 500;
@@ -139,11 +140,20 @@
   margin-bottom: 2rem;
 }
 
+/* Section titles used to sit at 0.72rem against a 0.68rem .eyebrow — four hundredths of a
+   rem apart, same family, same casing, same tracking. They read as a second kicker rather
+   than as the heading of the block beneath them, and on a long page that leaves nothing to
+   scan by. Raised to open a real three-step scale: eyebrow 0.68 → title 1.05 → railHeading
+   1.54.
+
+   Tracking comes DOWN as the size goes up. 0.18em is a small-caps label setting; carried
+   into 1.05rem it sprawls, and "What you are claiming" would run ~275px on a 320px screen
+   and collide with the padding. */
 .sectionTitle {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 500;
-  letter-spacing: 0.18em;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   margin: 0;
   white-space: nowrap;
@@ -401,6 +411,13 @@
 
   .sectionAside {
     text-align: left;
+  }
+
+  /* nowrap is what keeps a title on one line beside its aside at full width. At 320px the
+     longest title no longer fits on one, and nowrap would push it under the padding rather
+     than break it. */
+  .sectionTitle {
+    white-space: normal;
   }
 
   /* A label and a sentence side by side in a 320px column leaves neither enough width to
