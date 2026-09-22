@@ -253,4 +253,124 @@ contract CloseBondTest is SystemFixture {
 
         assertEq(_devFees(), devBefore + _bond(), "a partial close must keep exactly one bond");
     }
+
+    // -------------------------------------------------------------------------------------
+    // The fix
+    // -------------------------------------------------------------------------------------
+
+    /// The defect this plan exists for. Reproduces reverted tx 0x8a357f2b… on 1874, whose
+    /// revert data decoded to ERC20InsufficientBalance(trader, 57243, 1000000).
+    function test_traderWithNoUsdwCanStillRequestAClose() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        _drainTraderUsdw();
+        assertEq(IERC20(d.collateral).balanceOf(trader), 0, "precondition: the wallet must be empty");
+
+        _requestCloseAndFill(FULL);
+
+        assertEq(_openCollateral(), 0, "a trader holding zero USDW must still be able to close");
+    }
+
+    /// Notional is the protocol's invariant (see removeCollateral, OstiumTrading.sol). Charging
+    /// the bond lowers collateral, so leverage MUST rise to keep collateral x leverage fixed.
+    /// Subtracting collateral alone would delete `leverage x bond` of exposure with no fill.
+    function test_chargingTheBondRaisesLeverageAndPreservesNotional() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        uint256 collateralBefore = _openCollateral();
+        uint32 leverageBefore = _openLeverage();
+        uint256 notionalBefore = collateralBefore * leverageBefore;
+
+        _requestCloseAndCancel(FULL);
+
+        uint256 collateralAfter = _openCollateral();
+        uint32 leverageAfter = _openLeverage();
+
+        assertEq(collateralBefore - collateralAfter, _bond(), "exactly one bond must leave collateral");
+        assertGt(leverageAfter, leverageBefore, "leverage must rise as collateral falls");
+        assertApproxEqRel(
+            collateralAfter * leverageAfter,
+            notionalBefore,
+            1e15,
+            "notional must survive the charge to within rounding"
+        );
+    }
+
+    /// The guard from the design: accounting must never be the reason a close fails. A position
+    /// already at the leverage cap cannot absorb the bond, so the bond is forgone, not reverted.
+    function test_bondIsWaivedRatherThanRevertingNearMaxLeverage() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAtMaxLeverage();
+        _drainTraderUsdw();
+
+        uint256 devBefore = _devFees();
+        uint256 collateralBefore = _openCollateral();
+        _requestCloseAndCancel(FULL);
+
+        assertEq(_devFees(), devBefore, "a bond that cannot be applied safely must be waived");
+        assertEq(_openCollateral(), collateralBefore, "a waived bond must leave collateral untouched");
+        assertGt(_openCollateral(), 0, "the position must survive an unchargeable bond");
+    }
+
+    /// The other half of the guard. Note a position cannot be OPENED below one bond
+    /// (TradingLib's pairMinLevPos floor equals the bond at 10x) — it can only drift there, so
+    /// this state is reached by partially closing down to it.
+    function test_bondIsWaivedWhenCollateralIsBelowIt() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openWithCollateralBelow(_bond());
+        _drainTraderUsdw();
+
+        uint256 devBefore = _devFees();
+        _requestCloseAndCancel(FULL);
+
+        assertEq(_devFees(), devBefore, "a position too small to pay the bond must not be charged");
+    }
+
+    /// Per-path assertions can each hold while the system leaks. This is the invariant that
+    /// matters: USDW is neither invented nor lost across every close path in sequence.
+    function test_usdwIsConservedAcrossEveryClosePath() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+
+        // The vault is the third account, not an afterthought: closing pays rollover and funding
+        // fees to it (TradingCallbacksLib.executeUnregisterTrade), so trader+storage alone is not
+        // a closed system and would show a false leak of exactly those fees.
+        uint256 totalBefore = _systemUsdw();
+
+        _openAndFill(1000e6);
+        _requestCloseAndCancel(FULL);
+        _requestCloseAndFill(FULL / 2);
+        _requestCloseAndFill(FULL);
+
+        assertEq(_systemUsdw(), totalBefore, "USDW must be conserved across trader, storage and vault");
+    }
+
+    /// The end-to-end statement of the whole change: start with nothing in the wallet, finish
+    /// with the position closed and the money returned. This is the defect, inverted.
+    function test_aDrainedTraderEndsWithTheirMoneyBack() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+        _drainTraderUsdw();
+
+        assertEq(IERC20(d.collateral).balanceOf(trader), 0, "precondition: the wallet must be empty");
+
+        _requestCloseAndFill(FULL);
+
+        assertEq(_openCollateral(), 0, "the position must be closed");
+        assertGt(IERC20(d.collateral).balanceOf(trader), 0, "the trader must be paid out");
+    }
+
+    /// Every account USDW can legitimately sit in during a close: the trader, the storage that
+    /// escrows collateral and accrues devFees, and the vault that receives rollover/funding.
+    function _systemUsdw() internal view returns (uint256) {
+        return IERC20(d.collateral).balanceOf(trader) + IERC20(d.collateral).balanceOf(d.tradingStorage)
+            + IERC20(d.collateral).balanceOf(d.vault);
+    }
 }

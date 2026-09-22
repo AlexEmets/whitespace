@@ -333,18 +333,31 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
                         closePercentage
                     );
 
-                    if (closePercentage == 100e2) {
-                        // Full close and successfully closed - refund the oracle fee
-                        uint256 oracleFee = pairsStorage.pairOracleFee(t.pairIndex);
-                        storageT.refundOracleFee(oracleFee);
-                        storageT.transferUsdc(address(storageT), t.trader, oracleFee);
-                        emit OracleFeeRefunded(i.tradeId, t.trader, t.pairIndex, oracleFee);
+                    if (closePercentage != 100e2) {
+                        // A partial close leaves a position behind, so the bond has something to
+                        // come out of. A full close leaves nothing and now costs nothing: upstream
+                        // charged the bond at request time and refunded it here, and those two
+                        // cancelled out exactly — so neither happens any more.
+                        //
+                        // Re-read from storage rather than reusing `t`: unregisterTrade has just
+                        // scaled the stored collateral down by closePercentage, and `t` is a stale
+                        // memory copy from before that write.
+                        _chargeBondFromPosition(storageT.getOpenTrade(t.trader, t.pairIndex, t.index), i.tradeId);
                     }
                 }
             }
         }
 
         if (cancelReason != CancelReason.NONE) {
+            // The one path where the bond still has teeth. A cancelled close consumed an oracle
+            // report and produced nothing, so leaving it free would make close-spam free — the
+            // griefing upstream's wallet charge existed to prevent.
+            //
+            // NO_TRADE has no position to charge, and WRONG_TRADE refers to a trade that was
+            // already replaced, so charging would hit an unrelated position in the same slot.
+            if (cancelReason != CancelReason.NO_TRADE && cancelReason != CancelReason.WRONG_TRADE) {
+                _chargeBondFromPosition(t, i.tradeId);
+            }
             emit MarketCloseCanceled(a.orderId, i.tradeId, trade.trader, trade.pairIndex, trade.index, cancelReason);
         }
 
@@ -600,6 +613,59 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
         }
 
         return trade;
+    }
+
+    /// @notice Charge one oracle-fee bond to a position's own collateral. Returns false, and
+    ///         changes nothing, when it cannot be applied safely.
+    /// @dev Upstream took this bond from the trader's WALLET when a close was requested
+    ///      (OstiumTrading.closeTradeMarket) and refunded it here on a successful full close. A
+    ///      trader who had spent their balance on margin therefore could not close what they had
+    ///      opened: reverted tx 0x8a357f2b… on 1874 decoded to
+    ///      ERC20InsufficientBalance(trader, 57243, 1000000). The bond now comes out of the
+    ///      position, on the two paths where it actually has teeth.
+    ///
+    ///      Collateral falls, so leverage is recomputed against a FIXED notional — the protocol's
+    ///      own invariant, see removeCollateral in OstiumTrading.sol and handleRemoveCollateral
+    ///      below. Subtracting collateral while leaving leverage alone would silently delete
+    ///      `leverage × bond` of exposure with no fill behind it.
+    ///
+    ///      Waiving rather than reverting is deliberate: fee accounting must never be the reason
+    ///      a close fails, which is the whole defect being fixed here. The protocol forgoes at
+    ///      most one bond in a rare case.
+    ///
+    ///      Kept in this contract rather than in TradingCallbacksLib on purpose. Storage checks
+    ///      msg.sender for onlyTradingOrCallbacks (OstiumTradingStorage.sol:142-147); a library
+    ///      function is DELEGATECALLed, so moving this across that boundary would change nothing
+    ///      visible here and silently break the access check.
+    function _chargeBondFromPosition(IOstiumTradingStorage.Trade memory t, uint256 tradeId) private returns (bool) {
+        if (t.leverage == 0) return false;
+
+        (IOstiumTradingStorage storageT,, IOstiumPairsStorage pairsStorage) = getContracts();
+
+        uint256 bond = pairsStorage.pairOracleFee(t.pairIndex);
+        // Strictly less than, not less-or-equal: a position reduced to exactly zero collateral is
+        // not a position, and newCollateral is a divisor below.
+        if (t.collateral <= bond) return false;
+
+        uint256 tradeSize = t.collateral.mulDiv(t.leverage, 100, Math.Rounding.Ceil);
+        uint256 newCollateral = t.collateral - bond;
+        uint32 newLeverage = (tradeSize * PRECISION_6 / newCollateral / 1e4).toUint32();
+
+        if (newLeverage > TradingCallbacksLib.getEffectiveMaxLeverage(t.pairIndex, t.isDayTrade, pairsStorage)) {
+            return false;
+        }
+
+        t.collateral = newCollateral;
+        t.leverage = newLeverage;
+        storageT.updateTrade(t);
+
+        // Group collateral tracks the same money as the trade's own field. handleRemoveCollateral
+        // updates both together; omitting this drifts the group accounting by one bond per charge.
+        pairsStorage.updateGroupCollateral(t.pairIndex, bond, t.buy, false);
+
+        storageT.handleOracleFee(bond);
+        emit OracleFeeCharged(tradeId, t.trader, bond);
+        return true;
     }
 
     function unregisterTrade(

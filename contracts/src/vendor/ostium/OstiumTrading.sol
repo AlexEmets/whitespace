@@ -306,11 +306,13 @@ contract OstiumTrading is IOstiumTrading, Delegatable, Initializable {
 
         uint256 orderId = _priceRouter().getPrice(pairIndex, IOstiumPriceUpKeep.OrderType.MARKET_CLOSE, block.timestamp);
 
-        // Always charge oracle fee for both partial and full closes to prevent griefing
-        uint256 oracleFee = pairsStorage.pairOracleFee(pairIndex);
-        storageT.transferUsdc(sender, address(storageT), oracleFee);
-        storageT.handleOracleFee(oracleFee);
-        emit OracleFeeCharged(orderId, sender, pairIndex, oracleFee);
+        // The oracle-fee bond is NOT taken here. Upstream pulled it from the trader's
+        // wallet at request time to make cancelled closes costly, which meant a trader who
+        // spent their balance on margin could not close what they opened — reverted tx
+        // 0x8a357f2b… on 1874. It is charged from the position instead, on the two paths
+        // where it has teeth: OstiumTradingCallbacks handles cancel and partial close.
+        // Request-spam is separately bounded by checkNoPendingTriggers above and by
+        // maxPendingMarketOrders in TradingLib.getCloseTradeRevert.
 
         storageT.storePendingMarketOrder(
             IOstiumTradingStorage.PendingMarketOrderV2(
