@@ -227,4 +227,37 @@ newly listed market showed a dash for change and volume while BTC showed real fi
 
 ## Review
 
-_(changed / verified / left — filled in at the end)_
+**Changed.** Four commits on `main`, all pushed and deployed:
+- `e77d531` ETH/USD and SOL/USD listed on chain 1874 (no code — the registry already had
+  them; the deployment record's `market` object became a `markets` array).
+- `e1dfed5` WBT/USD support: `whitebit_perp` as a second source, per-market bounds threaded
+  through publisher → liquidator → API → frontend (30 files).
+- `07b3a9c` WBT/USD listed at 25x / $100k.
+- `552b9a7` change and volume now shown for markets younger than 24h, labelled with the
+  window they actually cover.
+
+**Verified.** On chain: `pairsCount() == 4`; each pair's `feed` byte-identical to
+`asciiToBytes32Hex` from the publisher's registry; `openInterest(i,2)` non-zero for all
+four. On prod: publisher reports BTC/ETH/SOL at 4/3 healthy and WBT at 2/2, none degraded;
+`/markets` returns four rows with the right leverage and OI caps; `/price/1..3` all answer
+`"source":"publisher"`; `/` and `/trade` return 200. Tests: shared 49, price-publisher 68,
+liquidator 47, api 54, web 316 — all green, `tsc --noEmit` clean for web and api. The WBT
+feed was measured live before and after the staleness fix (26 degraded samples per ~100 →
+2), and the change figures were recomputed against real prod candles for all four markets.
+
+**Left.**
+- `services/indexer/test/decode.test.ts` fails at collection on a clean tree, unrelated to
+  this work: `fixtures/open-report-tx.json` was captured before the phase-A oracle
+  migration and does not contain the current `priceUpKeep` address from
+  `deployments/1874.json`. Flagged, not fixed — it is someone's call whether to re-capture
+  the fixture or pin the old address.
+- The local dev `services/price-publisher/.env` was edited to add `whitebit_perp`; it is
+  gitignored, so a second developer's copy will silently run WBT at 1/2 until they do the
+  same. The startup `MISCONFIGURED` warning is what will tell them.
+- WBT's index rests on one exchange. That risk was accepted deliberately and is bounded by
+  25x / $100k, not removed. If WhiteBIT is wrong, both books are wrong together and only
+  the on-chain `CONTRACT_MAX_DEVIATION_BPS` (500) stands between that and a filled order.
+- Not measured: whether WBT's 2-of-2 feed stays healthy across a WhiteBIT maintenance
+  window or a venue-side disconnect. The 100 s runs cover ordinary quiet, not an outage.
+- `e2e` (`trade-flow.spec`) was not run; it is known red at HEAD for unrelated reasons
+  (`mockChain` missing PairInfos functions), so it would not have been evidence either way.
