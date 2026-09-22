@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useMarkets } from '@/hooks/useMarkets';
-import { useMarket24h } from '@/hooks/useMarket24h';
+import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { collateralToRaw, formatMoney } from '@/lib/money';
@@ -23,7 +23,12 @@ function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; f
         </Link>
       </td>
       <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : <span className="dash">—</span>}</td>
-      <td className={change && change.changeBps >= 0n ? 'pos' : change ? 'neg' : 'dash'}>
+      {/* The column is headed "24h"; a market younger than that discloses its real window
+          per row rather than letting the header speak for a period it has not lived. */}
+      <td
+        className={change && change.changeBps >= 0n ? 'pos' : change ? 'neg' : 'dash'}
+        title={change?.truncated ? `Over ${formatWindowLabel(change.windowSeconds)} — this market is newer than 24h` : undefined}
+      >
         {change ? `${formatMoney(change.changeBps, 2, { grouping: false, signDisplay: true })}%` : '—'}
       </td>
       {/* No funding-rate endpoint in the read API (D3) — honest dash, not fabricated. */}

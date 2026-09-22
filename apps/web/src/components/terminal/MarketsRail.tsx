@@ -1,7 +1,7 @@
 'use client';
 
 import { useMarkets } from '@/hooks/useMarkets';
-import { useMarket24h } from '@/hooks/useMarket24h';
+import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { formatCompactMoney, formatMoney } from '@/lib/money';
@@ -33,11 +33,24 @@ function RailRow({
         </span>
         <span>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</span>
       </span>
-      <span className="price-line meta">
+      {/* The rail is too narrow to caption the window inline, so a market younger than a
+          day carries it in the tooltip instead of silently passing a few hours of change
+          off as a day's. The figures themselves are real either way. */}
+      <span
+        className="price-line meta"
+        title={
+          change?.truncated
+            ? `Change and volume over ${formatWindowLabel(change.windowSeconds)} — this market is newer than 24h`
+            : undefined
+        }
+      >
         <span className={change ? '' : 'dash'} data-testid={`rail-volume-${pairIndex}`}>
           {change ? formatCompactMoney(change.volume, COLLATERAL_DECIMALS) : '—'}
         </span>
-        <span className={change && change.changeBps >= 0n ? 'pos' : change ? 'neg' : 'dash'}>
+        <span
+          className={change && change.changeBps >= 0n ? 'pos' : change ? 'neg' : 'dash'}
+          data-testid={`rail-change-${pairIndex}`}
+        >
           {change ? `${formatMoney(change.changeBps, 2, { grouping: false, signDisplay: true })}%` : '—'}
         </span>
       </span>
@@ -46,7 +59,7 @@ function RailRow({
 }
 
 /** Left markets rail. Rendered directly from `/markets` — as many rows as the API
- * returns (currently one, BTC/USD), never padded toward a fuller-looking list. */
+ * returns, never padded toward a fuller-looking list. */
 export function MarketsRail({ pairIndex, onSelect }: { pairIndex: number | null; onSelect: (pairIndex: number) => void }) {
   const { markets, loading } = useMarkets();
 

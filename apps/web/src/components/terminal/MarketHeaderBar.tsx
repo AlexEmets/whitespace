@@ -1,6 +1,6 @@
 'use client';
 
-import { useMarket24h } from '@/hooks/useMarket24h';
+import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
@@ -38,9 +38,13 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
         <div className="last-price" data-testid="mark-price">
           {price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}
         </div>
+        {/* The caption is the window the figure actually covers, not a fixed "24h": a
+            market listed this morning has hours of history, and labelling its change as a
+            day's would be a number and a period that never met. */}
         {change ? (
           <div className={change.changeBps >= 0n ? 'pos' : 'neg'}>
-            {formatMoney(change.changeBps, 2, { grouping: false, signDisplay: true })}% · 24h
+            {formatMoney(change.changeBps, 2, { grouping: false, signDisplay: true })}% ·{' '}
+            {formatWindowLabel(change.windowSeconds)}
           </div>
         ) : (
           <div className="dash">— · 24h</div>

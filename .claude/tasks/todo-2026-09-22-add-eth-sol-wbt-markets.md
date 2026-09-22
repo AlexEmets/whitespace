@@ -175,11 +175,40 @@ real exchanges. Two defects surfaced that no unit test could have:
 
 ## Phase 3 — list WBT/USD on-chain
 
-- [ ] 3.1 Confirm the publisher serves `WBT/USD` with `healthyCount: 2`, `degraded: false`.
-- [ ] 3.2 Dry-run `runAddMarkets()` with `MARKETS=WBT/USD`, `MARKET_MAX_LEVERAGE=2500`,
-      `MARKET_MAX_OI=100000000000`. Separate run from Phase 1 — the env vars apply to
-      every market in a run, and WBT's caps differ.
-- [ ] 3.3 Broadcast, then verify `pairs(3)` and its OI cap and leverage on-chain.
+- [x] 3.0 Prod `.env` updated (backup at `services/price-publisher/.env.bak-2026-09-22`):
+      `whitebit_perp` added to `PUBLISHER_VENUES`, `WBT/USD` to `PUBLISHER_MARKETS`.
+      Then `deploy/deploy.sh` — pulled `e1dfed5`, rebuilt, restarted the stack; all five
+      units active and the running server postdates the build.
+- [x] 3.1 Confirmed on prod after the deploy: `WBT/USD healthy=2/2 degraded=false`,
+      venues `[whitebit_perp, whitebit]`, index 86.5955. No `MISCONFIGURED` warning, and
+      both `connecting whitebit … (WBT_USDT)` and `connecting whitebit_perp … (WBT_PERP)`
+      present in the startup log.
+- [x] 3.2 Dry-run: 5 txs, 613,494 gas. `feed` byte-identical to the publisher's feedId,
+      `maxLeverage 2500` (25x), `maxOI 100000 USD`, group 0, fee 0, pairIndex 3.
+- [x] 3.3 Broadcast via the same per-tx calldata replay (4 sends, `addPair` guarded on
+      `pairsCount == 3`); all `status=0x1` first attempt. Verified on chain:
+      `pairsCount == 4`, `pairs(3)` is WBT/USD at 25x, `openInterest(3,2) == 1e11` ($100k).
+      Prod API: `/markets` returns 4 rows, `/price/3` is `"source":"publisher"` with
+      `minHealthyVenues: 2` and `degraded: false`.
+
+## Phase 4 — change % for markets younger than 24h (follow-up request)
+
+`useMarket24h` asked for 1h candles over 25h and returned null below two of them, so every
+newly listed market showed a dash for change and volume while BTC showed real figures.
+
+- [x] 4.1 `useMarket24h.ts` now walks progressively finer series — 1h/25h, then 5m/6h,
+      then 1m/2h — and takes the first with two candles, falling back to a lone candle's
+      open→close rather than showing nothing. It returns `windowSeconds` and `truncated`
+      so the figure can be labelled with the period it actually covers.
+- [x] 4.2 `MarketHeaderBar` printed a hardcoded `· 24h` beside the change; it now prints
+      `formatWindowLabel(windowSeconds)`. `MarketsRail`, `MarketsTable` and `TickerStrip`
+      disclose a short window in a `title` tooltip, since none has room for inline copy.
+      Stale "currently one, BTC/USD" comments in the rail and ticker removed.
+- [x] 4.3 New `tests/unit/useMarket24h.test.tsx` (6 tests); the hook had none. Web suite:
+      24 files, 316 tests, `tsc --noEmit` clean.
+- [x] 4.4 Verified against live prod candles: BTC +0.34% / 24h (25×1h), ETH +0.00% / 2h,
+      SOL +0.17% / 2h, WBT −0.03% / 15m (fell through to the 5m series). All four render
+      a number; the three young ones are flagged truncated.
 
 ## Verification gate
 
