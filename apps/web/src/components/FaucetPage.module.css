@@ -160,11 +160,17 @@
 
 /* The mockup leaves most of this band empty on purpose — the panel occupies roughly the
    left half and the rest is the rail and air. Capping the width is what produces that;
-   without it the panel stretches and the composition collapses into one wide box. */
+   without it the panel stretches and the composition collapses into one wide box.
+ *
+ * `margin-inline: auto` is a deliberate departure from the mockup, which butts the panel
+ * against the left edge. Centred, the leftover air sits on both sides of the control
+ * instead of piling up to its right. Do not "restore" this to the mockup without asking —
+ * it was changed on request. It is a no-op below 1100px, where the cap is lifted. */
 .claimCol {
   display: grid;
   gap: 1.25rem;
   max-width: 37rem;
+  margin-inline: auto;
 }
 
 /* Bottom-aligned so the pull-quote finishes level with the panel, as drawn. */
