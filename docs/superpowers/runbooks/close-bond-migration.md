@@ -101,9 +101,21 @@ The second is worse: it can strand closes. Therefore:
    keys must return the new addresses. Then exercise the actual defect: from a wallet holding
    **zero** USDW with an open position, close it. That is the acceptance test — not that the
    transactions mined.
-6. **Update the frontend.** `apps/web/src/lib/deployment.ts` reads addresses from
+6. **Redeploy the indexer, and backfill from the switch block.** The charge emits
+   `OracleFeeBondCharged(tradeId, trader, collateral, leverage, tp, sl)`, a new event with a
+   new handler in `services/indexer/src/handlers/tradingCallbacks.ts`. An indexer running the
+   old build will not decode it, and because the handler writes absolute post-charge state
+   rather than a delta, every charge it misses leaves that position's `collateral` 1 USDW
+   high and its `leverage` 0.01x low **permanently** — a later full close then subtracts the
+   drifted notional from open interest, so the drift outlives the position. Start the new
+   indexer from the block of the `updateContract` calls, not from head.
+7. **Update the frontend.** `apps/web/src/lib/deployment.ts` reads addresses from
    `deployments/1874.json`; update both entries and redeploy the web app. The old addresses
    stay valid as rollback targets.
+8. **Rollback also means rolling the indexer back.** The old contracts never emit
+   `OracleFeeBondCharged`, so the new handler simply goes quiet — harmless. The reverse is
+   not: leaving the old indexer running against the new contracts is the silent-drift case
+   in step 6.
 
 ## Rollback
 
