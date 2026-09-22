@@ -58,6 +58,23 @@ function NextStep({ href, kicker, children }: { href: string; kicker: string; ch
   );
 }
 
+/** Same card, but leaving the site. The arrow differs from NextStep's on purpose: both
+ * sit in the same visual vocabulary, and the only thing distinguishing "another page
+ * here" from "someone else's site" is that glyph. */
+function OutboundStep({ href, kicker, children }: { href: string; kicker: string; children: ReactNode }) {
+  return (
+    <a href={href} className={styles.card} target="_blank" rel="noreferrer noopener">
+      <span>
+        <span className={styles.cardKicker}>{kicker}</span>
+        <span className={styles.cardText}>{children}</span>
+      </span>
+      <span className={styles.cardArrow} aria-hidden="true">
+        ↗
+      </span>
+    </a>
+  );
+}
+
 export function FaucetPage() {
   const { isConnected } = useAccount();
 
@@ -113,6 +130,48 @@ export function FaucetPage() {
             practice.
           </p>
         </aside>
+      </section>
+
+      {/* Placed directly under the claim, not at the foot of the page: a wallet holding
+          no WBT cannot send the claim transaction either, so the visitor most likely to
+          need this is the one who just watched the button above fail. USDW and gas are
+          different tokens from different faucets, and nothing else on this page says so. */}
+      <section className={styles.pair} data-testid="faucet-gas">
+        <div className={styles.pairCol}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>You also need gas</h2>
+          </div>
+          <p className={styles.pairNote}>
+            USDW is collateral. Gas on Whitechain {CHAIN_ID} is paid in WBT, the chain&rsquo;s native token, and this
+            faucet cannot mint it — including for the claim above.
+          </p>
+          <div className={styles.defs}>
+            <DefRow label="Official faucet" value="0.5 WBT, once per rolling 24 hours" />
+            <DefRow label="Requires" value="A GitHub account at least 30 days old, plus a captcha" />
+            {/* Worth stating: the usual reason a second claim fails is not the wallet. */}
+            <DefRow label="Limited by" value="Your wallet, your IP and your GitHub account, counted separately" />
+            <DefRow label="Enough for" value="Several hundred transactions at the chain's ~5 gwei" />
+          </div>
+        </div>
+
+        <div className={styles.pairCol}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Where to get WBT</h2>
+          </div>
+          <p className={styles.pairNote}>
+            The faucet is the only source that costs nothing to set up. The bridge is the answer to &ldquo;0.5 a day is
+            not enough&rdquo; — it needs WBT on Ethereum Sepolia first, and its size is capped by how much the
+            destination side is holding, not by the published daily limit.
+          </p>
+          <div className={styles.cards}>
+            <OutboundStep href="https://faucet.testnet.whitechain.io" kicker="Faucet">
+              Claim 0.5 WBT for this network
+            </OutboundStep>
+            <OutboundStep href="https://bridge.testnet.whitechain.io" kicker="Portal bridge">
+              Move WBT from Ethereum Sepolia — it arrives as native gas
+            </OutboundStep>
+          </div>
+        </div>
       </section>
 
       <section className={styles.pair}>

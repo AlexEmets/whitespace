@@ -69,4 +69,49 @@ describe('<FaucetPage>', () => {
     render(<FaucetPage />);
     expect(screen.getByTestId('faucet-page')).toHaveTextContent(/this one is immediate/i);
   });
+
+  /**
+   * A wallet with no WBT cannot send the claim transaction on this very page, so the page
+   * owes the visitor the fact that gas is a different token from a different faucet —
+   * and the terms, because the 0.5/24h drip is the thing people hit and misread as a bug.
+   */
+  it('says gas is a separate token this faucet cannot mint, with the real drip terms', () => {
+    render(<FaucetPage />);
+    const gas = screen.getByTestId('faucet-gas');
+
+    expect(gas).toHaveTextContent(/WBT/);
+    expect(gas).toHaveTextContent(/this faucet cannot mint it/i);
+    expect(gas).toHaveTextContent(/0\.5 WBT, once per rolling 24 hours/i);
+    expect(gas).toHaveTextContent(/GitHub account at least 30 days old/i);
+  });
+
+  /**
+   * The two sources are someone else's sites. Rendering them with the same card as the
+   * in-app links would be fine visually and wrong behaviourally — these must open away
+   * from a page holding a connected wallet, and must not leak the opener.
+   */
+  it('links out to the faucet and the bridge as external destinations', () => {
+    render(<FaucetPage />);
+    const gas = screen.getByTestId('faucet-gas');
+
+    const faucet = gas.querySelector('a[href="https://faucet.testnet.whitechain.io"]');
+    const bridge = gas.querySelector('a[href="https://bridge.testnet.whitechain.io"]');
+
+    for (const link of [faucet, bridge]) {
+      expect(link).not.toBeNull();
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link?.getAttribute('rel')).toMatch(/noopener/);
+    }
+  });
+
+  /** The published cap is 1,000/day, but a transfer is rejected when the destination side
+   * is short — measured at ~210 WBT. Promising the headline number would send people to
+   * a bridge that refuses them, so the page must not state one. */
+  it('does not promise a bridge amount it cannot guarantee', () => {
+    render(<FaucetPage />);
+    const gas = screen.getByTestId('faucet-gas');
+
+    expect(gas).toHaveTextContent(/capped by how much the destination side is holding/i);
+    expect(gas).not.toHaveTextContent(/1,000 per day/i);
+  });
 });
