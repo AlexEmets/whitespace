@@ -166,6 +166,30 @@ describe('<OpenPositionForm>', () => {
   });
 
   /**
+   * The reference labels the submit `BUY · LONG BTC`. Naming the asset on the button
+   * matters more here than on a single-market venue: the market is chosen in a rail three
+   * columns away, and this is the last thing read before a signature.
+   */
+  it('names the market and the direction on the submit button', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('submit-open-button')).toHaveTextContent('Buy · Long BTC');
+
+    fireEvent.click(screen.getByTestId('direction-short'));
+    expect(screen.getByTestId('submit-open-button')).toHaveTextContent('Sell · Short BTC');
+  });
+
+  /** The leverage actually in force is the most consequential number on the panel — it
+   * sets the size and how far price must move to liquidate — so it is rendered, not
+   * implied by a slider position. */
+  it('states the selected leverage as a figure, not only as a slider position', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('leverage-value')).toHaveTextContent('10×');
+
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '25' } });
+    expect(screen.getByTestId('leverage-value')).toHaveTextContent('25×');
+  });
+
+  /**
    * `OstiumTrading.openTrade` does not move the collateral — `OstiumTradingStorage` does,
    * via `safeTransferFrom` at OstiumTradingStorage.sol:486, so the token sees
    * TradingStorage as the spender. Approving Trading instead granted an allowance nothing

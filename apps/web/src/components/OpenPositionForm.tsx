@@ -124,6 +124,11 @@ export function OpenPositionForm({
    * listed. */
   const baseAsset = market?.from ?? 'BASE';
 
+  // Position of the slider's fill stop, 0–100. Guards the 1x-max case, where the track has
+  // no range at all and `(1-1)/(1-1)` would be NaN.
+  const leverageFillPercent =
+    maxLeverageX > 1 ? ((leverageX - 1) / (maxLeverageX - 1)) * 100 : 100;
+
   const sizeBaseRaw = useMemo(() => {
     try {
       if (!sizeInput.trim()) return 0n;
@@ -364,6 +369,9 @@ export function OpenPositionForm({
           <span>Leverage</span>
           <span data-testid="leverage-value">{leverageX}×</span>
         </div>
+        {/* WebKit has no `::-moz-range-progress` equivalent, so the filled part of the
+            track is painted as a gradient stop and the stop position has to come from
+            here. Firefox ignores it and uses the real pseudo-element. */}
         <input
           data-testid="leverage-slider"
           type="range"
@@ -371,6 +379,7 @@ export function OpenPositionForm({
           max={Math.max(1, maxLeverageX)}
           step={1}
           value={leverageX}
+          style={{ ['--fill' as string]: `${leverageFillPercent}%` }}
           onChange={(e) => handleLeverageChange(Number(e.target.value))}
         />
         <div className="bounds">
@@ -418,7 +427,10 @@ export function OpenPositionForm({
             ? 'Approving USDW…'
             : state.phase === 'submitting'
               ? 'Submitting…'
-              : `${buy ? 'Buy · Long' : 'Sell · Short'}`}
+              : /* The reference names the asset on the button — `BUY · LONG BTC`. It is the
+                   last thing read before signing, and on a terminal where the market is
+                   chosen in a rail three columns away, the confirmation belongs here. */
+                `${buy ? 'Buy · Long' : 'Sell · Short'} ${baseAsset}`}
         </button>
         {/* Two wallet pop-ups from one click reads as the first one having failed, and the
             instinct is to reject the second. Said only while the approval leg is actually
