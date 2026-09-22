@@ -60,6 +60,29 @@
         "0xe4d159a08531c730217ac8f5aa27319927c21b9908f94a776970128b8c6652a6",
         "0x34a15401857cc2d4e04e311e708cbe63625dced6aaf4f6f25df91d25cf155162"
       ]
+    },
+    {
+      "pairIndex": 3,
+      "from": "WBT",
+      "to": "USD",
+      "feedId": "WBT/USD",
+      "oracle": "WBT/USD",
+      "registryKey": "WBT/USDPriceUpkeep",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 2500,
+      "maxOpenInterest": "100000000000",
+      "fundingSpringFactor": "1000000000000",
+      "maxFundingFeePerBlock": "0",
+      "listedAt": "2026-09-22",
+      "listedBy": "Operate.s.sol runAddMarkets() calldata, replayed per-tx over the flaky 1874 RPC",
+      "note": "The one market not quoted inside the spread bound by any exchange but WhiteBIT. Fed by that exchange's two independent books (WBT_USDT + WBT_PERP) under MARKET_BOUNDS_OVERRIDES in packages/shared/src/bounds.mjs: minHealthyVenues 2, stalenessBoundMs 8000. Listed at 25x and $100k OI rather than the 100x/$1M the four-venue markets carry, because its index rests on a single exchange.",
+      "txs": [
+        "0x7896d312b5ccdeafe752562dc669c851774461c5aebadb7f6569bdcc3d197b58",
+        "0xd635450cbd2cd88b7b7f61560c48bb2f8cd6e370b158121ad2aaa71ff0b9c01e",
+        "0x7833e2220e27b28994b524c7d392594bf8930ba7216479c5a989ff877744528c",
+        "0xc4891f8152e253d7fd06a502878b6930e7ab860c567e7da3b678f6bf90f56fc7"
+      ]
     }
   ],
   "roles": {
