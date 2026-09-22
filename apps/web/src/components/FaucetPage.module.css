@@ -1,0 +1,411 @@
+/*
+ * /faucet, built against docs/design/Whitespace Faucet-print-selection.png.
+ *
+ * Every other account-scoped page (/portfolio, /points) is a vertical stack of
+ * full-width bands, which is what components/portfolio/accountPage.module.css builds.
+ * This mockup is not that shape: it runs a rule down the page at ~79% and parks a
+ * right rail beside the hero and the claim panel, then closes with two half-width
+ * columns. Widening the shared shell to cover both shapes would restyle two pages that
+ * have their own mockups, so the faucet carries its own layout and borrows only
+ * `AccountState` from the shell.
+ *
+ * The backdrops are the landing page's, not new art: `--hero-grid` behind the hero and
+ * `--hero-dot` in the rail are the same tokens globals.css already paints the brand
+ * render with, so this page ships no image asset either.
+ */
+
+.page {
+  --pad: 2.25rem;
+  /* The mockup puts the rule at 78.6% of a 1600px viewport — a 342px rail. */
+  --rail: 25rem;
+  padding-bottom: 5rem;
+}
+
+/* ---------- Bands ---------- */
+
+/* Main column + rail, with the rule between them carried by the rail's own border so it
+   ends exactly where the band does. A band with no rail passes `--rail: 0` via .solo. */
+.band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--rail);
+  border-bottom: 1px solid var(--border);
+}
+
+.rail {
+  border-left: 1px solid var(--border);
+  padding: 2.5rem 2rem 2.5rem 1.75rem;
+  min-width: 0;
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+/* The ruled backdrop. Masked to nothing by the bottom of the band so it reads as
+   texture the page emerges from rather than as a table someone forgot to fill in. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(to right, var(--hero-grid) 0 1px, transparent 1px 68px),
+    repeating-linear-gradient(to bottom, var(--hero-grid) 0 1px, transparent 1px 68px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 96%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 96%);
+}
+
+.heroMain {
+  padding: 3.25rem var(--pad) 3rem;
+  min-width: 0;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* The mockup's headline is the page's one piece of display type — everything else on
+   this screen is 0.6–0.9rem. It carries the whole hero, so it scales with the viewport
+   rather than sitting at a fixed size that looks stranded on a wide monitor. */
+.title {
+  font-size: clamp(2.75rem, 5.2vw, 4.3rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0.9rem 0 0;
+}
+
+.lede {
+  color: var(--fg-muted);
+  font-size: 1.05rem;
+  line-height: 1.9;
+  max-width: 31em;
+  margin: 1.5rem 0 0;
+}
+
+/* Vertically centred against the headline rather than pinned to the top: the mockup
+   sets these three rows level with the middle of the hero, which is what stops them
+   reading as a caption on the title. */
+.heroRail {
+  display: grid;
+  align-content: center;
+  gap: 0.75rem;
+}
+
+.metaRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+}
+
+.metaKey {
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+}
+
+.metaValue {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* ---------- Claim band ---------- */
+
+.claimMain {
+  padding: 2.6rem var(--pad) 2.75rem;
+  min-width: 0;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem 3rem;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.sectionTitle {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sectionAside {
+  color: var(--fg-dim);
+  font-size: 0.88rem;
+  line-height: 1.7;
+  text-align: right;
+  max-width: 28em;
+  margin: 0;
+}
+
+/* The mockup leaves most of this band empty on purpose — the panel occupies roughly the
+   left half and the rest is the rail and air. Capping the width is what produces that;
+   without it the panel stretches and the composition collapses into one wide box. */
+.claimCol {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 37rem;
+}
+
+/* Bottom-aligned so the pull-quote finishes level with the panel, as drawn. */
+.claimRail {
+  position: relative;
+  display: grid;
+  align-content: end;
+  gap: 1rem;
+}
+
+/* The scattered dots from the landing hero, one single-stop radial each. Behind the
+   copy, and non-interactive. */
+.claimRail::before {
+  content: '';
+  position: absolute;
+  /* Not bled outward with a negative inset: the rail is the last column, so a right-hand
+     bleed pushes past the viewport and gives the whole document a horizontal scrollbar
+     for the sake of a decorative dot. */
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 23%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 78% 28%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 55% 52%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 33% 73%, var(--hero-dot) 0 1.5px, transparent 1.5px),
+    radial-gradient(circle at 71% 81%, var(--hero-dot) 0 1.5px, transparent 1.5px);
+}
+
+.railHeading {
+  font-size: 1.54rem;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin: 0.15rem 0 0;
+}
+
+.railBody {
+  color: var(--fg-muted);
+  font-size: 0.96rem;
+  line-height: 1.85;
+  margin: 0.35rem 0 0;
+}
+
+/* ---------- Closing pair ---------- */
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
+}
+
+.pairCol {
+  padding: 2.4rem var(--pad) 2.75rem;
+  min-width: 0;
+}
+
+.pairCol + .pairCol {
+  border-left: 1px solid var(--border);
+}
+
+.pairNote {
+  color: var(--fg-dim);
+  font-size: 0.92rem;
+  line-height: 1.75;
+  max-width: 34em;
+  margin: -1.1rem 0 1.75rem;
+}
+
+/* ---------- Definition rows ----------
+   Not the shell's `.defs`: that one is `tabular-nums` + `white-space: nowrap`, tuned for
+   figures. These values are sentences ("It is not a stablecoin and not redeemable"), and
+   nowrap sends them straight out of a half-width column on anything but a wide desktop. */
+
+.defs {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.defRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.defRow:last-child {
+  border-bottom: none;
+}
+
+.defKey {
+  font-family: var(--font-sans);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.defValue {
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  text-align: right;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* ---------- Link cards ---------- */
+
+.cards {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.05rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.card:hover,
+.card:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg-raised);
+  outline: none;
+}
+
+.cardKicker {
+  display: block;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.cardText {
+  display: block;
+  font-family: var(--font-sans);
+  color: var(--fg);
+  font-size: 1rem;
+  line-height: 1.5;
+  margin-top: 0.45rem;
+}
+
+/* The arrow is the affordance — these cards have no button and no underline — so it
+   moves on hover. Nothing else on the card does, which is what makes it read as the
+   thing being pointed at. */
+.cardArrow {
+  color: var(--accent);
+  font-size: 0.85rem;
+  transition: transform 140ms ease;
+}
+
+.card:hover .cardArrow,
+.card:focus-visible .cardArrow {
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardArrow {
+    transition: none;
+  }
+
+  .card:hover .cardArrow,
+  .card:focus-visible .cardArrow {
+    transform: none;
+  }
+}
+
+/* ---------- Narrow ----------
+   The rail is editorial, not load-bearing, so it goes under the column it annotates
+   rather than being squeezed; its rule turns from a vertical divide into a horizontal
+   one so the band still reads as two parts. */
+
+@media (max-width: 1100px) {
+  .band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding: 1.9rem var(--pad);
+  }
+
+  .claimRail {
+    align-content: start;
+  }
+
+  .claimCol {
+    max-width: none;
+  }
+
+  /* Full-bleed, the pull-quote's line runs the width of the viewport and stops being
+     readable as a quote. It keeps its own measure instead. */
+  .railHeading,
+  .railBody {
+    max-width: 34em;
+  }
+}
+
+@media (max-width: 860px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pairCol + .pairCol {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (max-width: 620px) {
+  .page {
+    --pad: 1.25rem;
+  }
+
+  .sectionAside {
+    text-align: left;
+  }
+
+  /* A label and a sentence side by side in a 320px column leaves neither enough width to
+     be read; stacked, both keep their measure. */
+  .defRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+  }
+
+  .defValue {
+    text-align: left;
+  }
+}

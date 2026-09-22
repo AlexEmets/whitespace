@@ -50,41 +50,54 @@ export function FaucetPanel() {
         </div>
         <div>
           <dt className="mono-upper">Cadence</dt>
-          <dd>Once per {FAUCET_COOLDOWN_HOURS}h, per address</dd>
+          <dd className={styles.factText}>Once per {FAUCET_COOLDOWN_HOURS}h, per address</dd>
         </div>
       </dl>
 
-      {isConnected ? (
-        <button
-          type="button"
-          className={styles.action}
-          data-testid="faucet-panel-button"
-          onClick={faucet.claim}
-          disabled={faucet.pending}
-        >
-          {/* The pending state is not decoration: `claimFaucet` waits for its receipt, which
-              on this chain is several seconds of a button that would otherwise look inert —
-              indistinguishable from a click that never registered. */}
-          {faucet.pending ? 'Claiming… confirm in your wallet' : 'Request test tokens'}
-        </button>
-      ) : (
-        <p className={styles.muted} data-testid="faucet-disconnected">
-          Connect a wallet to mint.
-        </p>
-      )}
+      {/* The action and everything that comments on it share one padded cell, below the
+          last rule — so the readout above reads as facts and this reads as the control. */}
+      <div className={styles.foot}>
+        {isConnected ? (
+          <button
+            type="button"
+            className={styles.action}
+            data-testid="faucet-panel-button"
+            onClick={faucet.claim}
+            disabled={faucet.pending}
+          >
+            {/* The pending state is not decoration: `claimFaucet` waits for its receipt, which
+                on this chain is several seconds of a button that would otherwise look inert —
+                indistinguishable from a click that never registered. */}
+            {faucet.pending ? (
+              'Claiming… confirm in your wallet'
+            ) : (
+              <>
+                Request test tokens
+                <span className={styles.arrow} aria-hidden="true">
+                  →
+                </span>
+              </>
+            )}
+          </button>
+        ) : (
+          <p className={styles.muted} data-testid="faucet-disconnected">
+            Connect a wallet to mint.
+          </p>
+        )}
 
-      {faucet.claimed ? (
-        <p className={styles.ok} role="status" data-testid="faucet-panel-success">
-          Minted. Your balance above is the post-mint figure, read back from the token.
-        </p>
-      ) : null}
-      {faucet.error ? (
-        <p className="error-text" role="alert" data-testid="faucet-panel-error">
-          {faucet.error}
-        </p>
-      ) : null}
+        {faucet.claimed ? (
+          <p className={styles.ok} role="status" data-testid="faucet-panel-success">
+            Minted. Your balance above is the post-mint figure, read back from the token.
+          </p>
+        ) : null}
+        {faucet.error ? (
+          <p className="error-text" role="alert" data-testid="faucet-panel-error">
+            {faucet.error}
+          </p>
+        ) : null}
 
-      <p className={styles.muted}>Testnet collateral on Whitechain 1874. It has no value and cannot be redeemed.</p>
+        <p className={styles.muted}>Testnet collateral on Whitechain 1874. It has no value and cannot be redeemed.</p>
+      </div>
     </section>
   );
 }

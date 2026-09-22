@@ -1,111 +1,197 @@
-/* Scoped to FaucetPanel. Same tokens as the terminal panels so it does not read as a
-   different product when it sits next to them. */
+/* Scoped to FaucetPanel, drawn from docs/design/Whitespace Faucet-print-selection.png.
+   Same tokens as the terminal panels so it does not read as a different product when it
+   sits next to them.
+
+   The mockup separates the panel's four parts with full-bleed rules rather than gaps,
+   which is why every cell carries its own padding and the panel itself has none. The
+   rules are what make one box read as a readout with a control at the bottom, instead of
+   as four unrelated things inside a border. */
 
 .panel {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 0.9rem 1rem 1rem;
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: 4px;
+  /* The internal rules run edge to edge; without this they poke through the rounded
+     corners. */
+  overflow: hidden;
 }
 
 .head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.65rem;
+  gap: 1rem;
+  padding: 0.8rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
   color: var(--fg);
 }
 
 .badge {
-  padding: 0.1rem 0.35rem;
-  font-size: 0.55rem;
-  letter-spacing: 0.08em;
-  color: var(--fg-dim);
+  padding: 0.25rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
   border: 1px solid var(--border);
   border-radius: 2px;
 }
 
 .balanceRow {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  padding: 0.65rem 0.7rem;
-  background: var(--bg-raised);
-  border-radius: 3px;
+  display: grid;
+  gap: 0.7rem;
+  padding: 1.55rem 1.2rem 1.45rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .balanceLabel {
-  font-size: 0.55rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
   color: var(--fg-dim);
 }
 
+/* The largest figure on the page after the headline. It is the one number the visitor
+   came to change, and the mockup sizes it accordingly. */
 .balance {
   display: flex;
   align-items: baseline;
-  gap: 0.35rem;
+  gap: 0.5rem;
   font-family: var(--font-mono);
-  font-size: 1.15rem;
+  font-size: clamp(1.9rem, 5.5vw, 2.7rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--fg);
 }
 
 .unit {
-  font-size: 0.6rem;
-  letter-spacing: 0.06em;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
   color: var(--fg-muted);
 }
 
 .facts {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--border);
   margin: 0;
 }
 
+.facts > div {
+  padding: 0.85rem 1.2rem 0.95rem;
+  min-width: 0;
+}
+
+.facts > div + div {
+  border-left: 1px solid var(--border);
+}
+
 .facts dt {
-  font-size: 0.55rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.16em;
   color: var(--fg-dim);
 }
 
 .facts dd {
-  margin: 0.15rem 0 0;
+  margin: 0.5rem 0 0;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.72rem;
   color: var(--fg);
 }
 
+/* The cadence is a sentence, not a figure. Monospace is this app's convention for
+   numbers; applying it to prose in a half-width cell only costs the sentence its
+   wrapping. */
+.factText {
+  font-family: var(--font-sans);
+  font-variant-numeric: normal;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.foot {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1.2rem;
+}
+
 .action {
-  padding: 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
   font-family: inherit;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--bg);
   background: var(--long);
   border: none;
   border-radius: 3px;
   cursor: pointer;
+  transition: filter 140ms ease;
+}
+
+.action:hover:not(:disabled),
+.action:focus-visible:not(:disabled) {
+  filter: brightness(1.1);
+  outline: none;
 }
 
 .action:disabled {
   color: var(--fg-muted);
   background: var(--bg-raised);
-  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px var(--border);
   cursor: default;
+  filter: none;
+}
+
+/* Hidden while pending: the label changes to "Claiming…", and an arrow pointing forward
+   next to a control that is waiting says the wrong thing. */
+.arrow {
+  transition: transform 140ms ease;
+}
+
+.action:hover:not(:disabled) .arrow {
+  transform: translateX(3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action,
+  .arrow {
+    transition: none;
+  }
+
+  .action:hover:not(:disabled) .arrow {
+    transform: none;
+  }
 }
 
 .ok {
   margin: 0;
-  font-size: 0.62rem;
-  line-height: 1.4;
+  font-size: 0.8rem;
+  line-height: 1.5;
   color: var(--long);
 }
 
 .muted {
   margin: 0;
-  font-size: 0.6rem;
-  line-height: 1.45;
+  font-size: 0.77rem;
+  line-height: 1.6;
   color: var(--fg-dim);
+}
+
+@media (max-width: 480px) {
+  .facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .facts > div + div {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
