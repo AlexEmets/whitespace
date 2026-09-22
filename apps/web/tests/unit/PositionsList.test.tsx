@@ -99,10 +99,28 @@ describe('<PositionsList>', () => {
     expect(await screen.findByTestId('close-pending')).toHaveTextContent(/pending keeper execution/i);
   });
 
-  it('supports a partial close percentage', async () => {
+  /**
+   * The row now ends in a single `Close` (terminal_design.pdf), so the default action must
+   * be a FULL close — a button labelled Close that silently exited 25% of a leveraged
+   * position would be the worst possible default.
+   */
+  it('closes the whole position from the row button', async () => {
     render(<PositionsList />);
-    fireEvent.change(screen.getByTestId('close-percent-input'), { target: { value: '25' } });
     fireEvent.click(screen.getByTestId('close-position-button'));
+
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
+    expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 10000 }); // FULL_CLOSE_PERCENT
+  });
+
+  /** Partial closing moved behind the chevron rather than being removed: the contract
+   * takes a percentage and dropping the capability to match a picture would lose real
+   * function. It must stay hidden until asked for, and then submit the exact percentage. */
+  it('keeps partial closing available behind the chevron', async () => {
+    render(<PositionsList />);
+    expect(screen.queryByTestId('close-partial-row')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('close-partial-toggle'));
+    fireEvent.click(screen.getByTestId('close-partial-25'));
 
     await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
     expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 2500 });

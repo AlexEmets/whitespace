@@ -480,10 +480,13 @@ table.markets-table td {
 
 /* ---------- Terminal ---------- */
 
+/* 90px of nav plus the 33px ticker row that now sits above the terminal. Subtracting both
+   is what keeps the grid exactly one viewport tall instead of introducing a page scrollbar
+   the moment the strip mounts. */
 .terminal-grid {
   display: grid;
   grid-template-columns: 220px 1fr 260px 320px;
-  min-height: calc(100vh - 90px);
+  min-height: calc(100vh - 90px - 33px);
 }
 
 @media (max-width: 1200px) {
@@ -1124,9 +1127,9 @@ table.data-table td {
 }
 
 /* ---------- Close control (positions table) ----------
-   The percentage and the button that acts on it are one control. Previously a bare
-   number input with an inline width, a stray "%" text node and a default button sat
-   loose in the cell — three unrelated-looking widgets for what is a single decision. */
+   terminal_design.pdf ends the row in a single `Close`. The chevron beside it opens the
+   partial sizes, which the contract supports and the reference simply does not draw —
+   hiding the capability entirely would remove function to match a picture. */
 .close-control {
   display: inline-flex;
   align-items: stretch;
@@ -1137,35 +1140,67 @@ table.data-table td {
   background: var(--bg-raised);
 }
 
-.close-control .close-percent {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.35rem 0 0.5rem;
-  gap: 0.1rem;
-  color: var(--fg-muted);
-  font-size: 0.68rem;
-}
-
-.close-control .close-percent input {
-  width: 2.4rem;
-  border: none;
-  background: transparent;
-  color: var(--fg);
-  font-family: var(--font-mono);
+.close-control .close-more {
+  padding: 0 0.4rem;
   font-size: 0.72rem;
-  text-align: right;
-  padding: 0;
+  line-height: 1;
+  color: var(--fg-muted);
+  transform: rotate(-90deg);
 }
 
-/* The spinners are noise at this size and push the digits off-centre. */
-.close-control .close-percent input::-webkit-outer-spin-button,
-.close-control .close-percent input::-webkit-inner-spin-button {
-  appearance: none;
-  margin: 0;
+.close-control .close-more[aria-expanded='true'] {
+  transform: rotate(90deg);
+  color: var(--fg);
 }
-.close-control .close-percent input {
-  appearance: textfield;
-  -moz-appearance: textfield;
+
+.close-partial {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+}
+
+.close-partial button {
+  padding: 0.2rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--fg-muted);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.close-partial button:hover:not(:disabled) {
+  color: var(--short);
+  border-color: var(--short);
+}
+
+.close-partial button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+/* The side marker the reference puts before each position's symbol. */
+.side-bar {
+  display: inline-block;
+  width: 2px;
+  height: 0.8em;
+  margin-right: 0.45rem;
+  vertical-align: -0.05em;
+  border-radius: 1px;
+}
+
+.side-bar.long {
+  background: var(--long);
+}
+
+.side-bar.short {
+  background: var(--short);
+}
+
+.row-leverage {
+  color: var(--fg-dim);
+  font-size: 0.66rem;
 }
 
 .close-control button {

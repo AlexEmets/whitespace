@@ -7,6 +7,7 @@ import { DepthPanel } from '@/components/terminal/DepthPanel';
 import { TerminalTabs } from '@/components/terminal/TerminalTabs';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import { PriceChart } from '@/components/PriceChart';
+import { TickerStrip } from '@/components/TickerStrip';
 import { useMarkets } from '@/hooks/useMarkets';
 import { leverageToRaw } from '@/lib/money';
 
@@ -27,22 +28,29 @@ export default function TradePage() {
   const maxLeverage = market ? leverageToRaw(market.maxLeverage) : 0n;
 
   return (
-    <div className="terminal-grid">
-      <MarketsRail pairIndex={pairIndex} onSelect={setPairIndex} />
+    <>
+      {/* terminal_design.pdf runs a ticker row between the nav and the terminal. It was
+          built for the landing page and simply never mounted here. Every entry is a real
+          listed market — the reference's eight are not invented into existence, the strip
+          just shows however many there are. */}
+      <TickerStrip />
+      <div className="terminal-grid">
+        <MarketsRail pairIndex={pairIndex} onSelect={setPairIndex} />
 
-      <div className="terminal-center">
-        <MarketHeaderBar market={market} />
-        <PriceChart pairIndex={pairIndex} />
-        <TerminalTabs />
+        <div className="terminal-center">
+          <MarketHeaderBar market={market} />
+          <PriceChart pairIndex={pairIndex} />
+          <TerminalTabs />
+        </div>
+
+        {/* The ladder quotes fill prices for the market the trader is actually looking at,
+            so it follows the rail's selection rather than defaulting to the first market. */}
+        <DepthPanel pairIndex={pairIndex ?? undefined} />
+
+        <div className="terminal-right">
+          <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} market={market} />
+        </div>
       </div>
-
-      {/* The ladder quotes fill prices for the market the trader is actually looking at,
-          so it follows the rail's selection rather than defaulting to the first market. */}
-      <DepthPanel pairIndex={pairIndex ?? undefined} />
-
-      <div className="terminal-right">
-        <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} market={market} />
-      </div>
-    </div>
+    </>
   );
 }

@@ -166,7 +166,9 @@ describe('<PortfolioView> connected', () => {
     hasPrice.value = true;
     render(<PortfolioView />);
     const row = screen.getByTestId('portfolio-position-0-0');
-    expect(row).toHaveTextContent('BTC-USD');
+    // `-PERP`, not `-USD`: terminal_design.pdf names markets by instrument, and
+    // lib/markets.ts is now the single place that decides it.
+    expect(row).toHaveTextContent('BTC-PERP');
     expect(row).toHaveTextContent('110.00');
     expect(screen.getByTestId('portfolio-position-pnl')).toHaveTextContent('+100.00');
   });

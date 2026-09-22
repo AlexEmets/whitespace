@@ -8,16 +8,23 @@ import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
+import { marketLabel } from '@/lib/markets';
 import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, priceToRaw } from '@/lib/money';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
 
+/** The partial-close sizes offered behind the chevron. The contract takes any percentage
+ * (`closeTradeMarket`'s `closePercentage`); these are the three anyone actually reaches
+ * for, and a fixed set removes the typo class that a free number input invites on a
+ * control that exits a leveraged position. */
+const PARTIAL_PERCENTS = [25, 50, 75] as const;
+
 function PositionRow({ position, market }: { position: PositionSummary; market: MarketSummary | undefined }) {
   const { address } = useAccount();
   const { data: price } = usePrice(position.pairIndex);
   const { closeTrade, isPending } = useCloseTrade();
-  const [closePercent, setClosePercent] = useState(100);
+  const [partialOpen, setPartialOpen] = useState(false);
   const [status, setStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -76,9 +83,13 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
 
   return (
     <tr data-testid={`position-row-${position.pairIndex}-${position.index}`}>
+      {/* The reference marks each row's side with a coloured bar before the symbol, which
+          is the only place the row says long or short — SIZE carries a sign, but a bar is
+          read at a glance across a stack of rows. */}
       <td>
-        {market ? `${market.from}-${market.to}` : `#${position.pairIndex}`}{' '}
-        <span className={position.buy ? 'pos' : 'neg'}>{formatLeverage(position.leverage)}</span>
+        <span className={`side-bar ${position.buy ? 'long' : 'short'}`} aria-hidden="true" />
+        {marketLabel(market, position.pairIndex)}{' '}
+        <span className="row-leverage">{formatLeverage(position.leverage)}</span>
       </td>
       <td className={position.buy ? 'pos' : 'neg'}>{formatMoney(signedSize, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false, signDisplay: true })}</td>
       <td>
@@ -95,30 +106,49 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}
       </td>
       <td>
-        {/* One control, not three loose ones: the percentage and the action that consumes
-            it belong together, and a bare number input beside a default button read as
-            debug affordances rather than a way to exit a leveraged position. */}
+        {/* terminal_design.pdf's positions row ends in a single `Close` button, so that is
+            what the row shows: one click closes the whole position, which is what the
+            overwhelming majority of closes are.
+
+            Partial closing is NOT dropped — `closeTradeMarket` takes a percentage and the
+            contract supports it, so hiding the capability entirely would remove real
+            function to match a picture. It moves behind the chevron instead, where it
+            costs nothing until someone wants it. */}
         <div className="close-control">
-          <label className="close-percent">
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={closePercent}
-              data-testid="close-percent-input"
-              onChange={(e) => setClosePercent(Number(e.target.value))}
-            />
-            <span aria-hidden="true">%</span>
-          </label>
           <button
             type="button"
             data-testid="close-position-button"
             disabled={!price || isPending || status === 'submitting'}
-            onClick={() => handleClose(closePercent)}
+            onClick={() => handleClose(100)}
           >
             {status === 'submitting' ? 'Closing…' : 'Close'}
           </button>
+          <button
+            type="button"
+            className="close-more"
+            aria-expanded={partialOpen}
+            aria-label="Close part of this position"
+            data-testid="close-partial-toggle"
+            onClick={() => setPartialOpen((v) => !v)}
+          >
+            ‹
+          </button>
         </div>
+        {partialOpen ? (
+          <div className="close-partial" data-testid="close-partial-row">
+            {PARTIAL_PERCENTS.map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                data-testid={`close-partial-${pct}`}
+                disabled={!price || isPending || status === 'submitting'}
+                onClick={() => handleClose(pct)}
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
+        ) : null}
         {status === 'submitted' ? (
           <span data-testid="close-pending" role="status">
             {' '}
