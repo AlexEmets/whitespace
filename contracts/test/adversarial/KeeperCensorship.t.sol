@@ -5,6 +5,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {SystemFixture} from "../helpers/SystemFixture.sol";
 import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
+import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
 import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
 
@@ -215,6 +216,134 @@ contract KeeperCensorshipTest is SystemFixture {
             abi.encodeWithSelector(IOstiumTrading.NotYourOrder.selector, orderId, trader)
         );
         IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The same censorship, applied to a CLOSE
+    // -------------------------------------------------------------------------------------
+
+    /// @dev Open a position, then request a close and abandon the order — the close-side shape of
+    ///      everything above. Returns the pending order id.
+    function _openThenAbandonAClose() internal returns (uint256 orderId) {
+        _openPositionAtBaseline(trader, COLLATERAL);
+
+        vm.recordLogs();
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarket(
+            0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
+        );
+        (orderId,) = _lastPriceRequest();
+    }
+
+    function _devFees() internal view returns (uint256) {
+        return IOstiumTradingStorage(d.tradingStorage).devFees();
+    }
+
+    /// @notice **The measurement.** `closeTradeMarketTimeout` must move no USDW at all.
+    ///
+    /// @dev    It used to refund one oracle fee here — `refundOracleFee` plus a
+    ///         `transferUsdc(storageT -> sender)` — which was balanced only by the wallet charge
+    ///         `closeTradeMarket` took at request time. That charge is gone (the bond now comes
+    ///         out of the position, on the paths where it has teeth), so the refund was paying
+    ///         the trader out of the escrow that backs every other trader's collateral. Here it
+    ///         is asserted to zero on every account at once, so a re-introduction shows up as a
+    ///         balance diff rather than as slow drift nobody reads.
+    function test_closeTimeoutMovesNoUsdwBecauseNoBondWasEverCharged() public {
+        uint256 orderId = _openThenAbandonAClose();
+
+        uint256 traderBefore = IERC20(d.collateral).balanceOf(trader);
+        uint256 storageBefore = IERC20(d.collateral).balanceOf(d.tradingStorage);
+        uint256 vaultBefore = IERC20(d.collateral).balanceOf(d.vault);
+        uint256 devBefore = _devFees();
+        uint256 collateralBefore = _collateralOf(trader, 0);
+
+        _advance(MARKET_ORDERS_TIMEOUT);
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+
+        assertEq(IERC20(d.collateral).balanceOf(trader), traderBefore, "the trader must be paid nothing");
+        assertEq(
+            IERC20(d.collateral).balanceOf(d.tradingStorage),
+            storageBefore,
+            "the collateral escrow must not be drawn down"
+        );
+        assertEq(IERC20(d.collateral).balanceOf(d.vault), vaultBefore, "the vault must be untouched");
+        assertEq(_devFees(), devBefore, "devFees must not be debited");
+        assertEq(_collateralOf(trader, 0), collateralBefore, "the position itself must be untouched");
+    }
+
+    /// @notice And it is repeatable, which is what made the leak a drain rather than a rounding
+    ///         error: the timeout clears the `PENDING_CLOSE` trigger, so the trader can request
+    ///         another close, abandon it, and reclaim again, for as long as they like.
+    function test_repeatedCloseTimeoutsDrainNothing() public {
+        _openPositionAtBaseline(trader, COLLATERAL);
+
+        uint256 traderBefore = IERC20(d.collateral).balanceOf(trader);
+        uint256 storageBefore = IERC20(d.collateral).balanceOf(d.tradingStorage);
+        uint256 devBefore = _devFees();
+
+        for (uint256 n = 0; n < 10; n++) {
+            vm.recordLogs();
+            vm.prank(trader);
+            IOstiumTrading(d.trading).closeTradeMarket(
+                0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
+            );
+            (uint256 orderId,) = _lastPriceRequest();
+
+            _advance(MARKET_ORDERS_TIMEOUT);
+            vm.prank(trader);
+            IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+        }
+
+        assertEq(IERC20(d.collateral).balanceOf(trader), traderBefore, "ten cycles must pay out nothing");
+        assertEq(
+            IERC20(d.collateral).balanceOf(d.tradingStorage), storageBefore, "and take nothing from escrow"
+        );
+        assertEq(_devFees(), devBefore, "and leave devFees where they were");
+    }
+
+    /// @notice **The amplifier that made this a liveness bug, not just a leak.** The refund went
+    ///         through `refundOracleFee`, which reverts `RefundOracleFeeFailed` when
+    ///         `devFees < amount`. Governance sweeping fees — a routine action — could therefore
+    ///         weld shut the only escape from an undelivered close, for every trader at once.
+    ///
+    /// @dev    Driven through the real `claimFees(onlyGov)` path rather than by poking storage,
+    ///         so this is the sequence an operator can actually produce.
+    function test_closeTimeoutSurvivesGovSweepingEveryFee() public {
+        uint256 orderId = _openThenAbandonAClose();
+
+        uint256 fees = _devFees();
+        assertGt(fees, 0, "precondition: opening must have accrued a fee to sweep");
+        vm.prank(gov);
+        IOstiumTradingStorage(d.tradingStorage).claimFees(fees);
+        assertEq(_devFees(), 0, "precondition: devFees must be empty, the state that used to brick this");
+
+        _advance(MARKET_ORDERS_TIMEOUT);
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+
+        assertGt(_collateralOf(trader, 0), 0, "the position must survive the timeout");
+    }
+
+    /// @notice The timeout releases the `PENDING_CLOSE` trigger, so a censored close does not lock
+    ///         the position shut — the close-side counterpart of
+    ///         `test_traderCanTradeAgainAfterACensoredOrder`.
+    function test_positionCanStillBeClosedAfterACensoredClose() public {
+        uint256 orderId = _openThenAbandonAClose();
+
+        _advance(MARKET_ORDERS_TIMEOUT);
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+
+        vm.recordLogs();
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarket(
+            0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
+        );
+        (uint256 orderId2, uint32 ts2) = _lastPriceRequest();
+        _deliver(orderId2, _signed(ts2, BTC_65K));
+
+        assertEq(_collateralOf(trader, 0), 0, "a retried close must fill");
     }
 
     // -------------------------------------------------------------------------------------

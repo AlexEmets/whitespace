@@ -10,7 +10,10 @@ import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.
 import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
 import {IOstiumTradingCallbacks} from "../../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
 import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
+import {IOstiumPairInfos} from "../../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
+import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
 import {TradingLib} from "../../src/vendor/ostium/lib/TradingLib.sol";
+import {TradingCallbacksLib} from "../../src/vendor/ostium/lib/TradingCallbacksLib.sol";
 
 /// @notice The oracle-fee bond on the close path.
 /// @dev See docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md.
@@ -54,13 +57,22 @@ contract CloseBondTest is SystemFixture {
     /// @dev Request a close at `pct` (the `closePercentage` argument, precision-2 — see `FULL`
     ///      above) and deliver a valid report so it fills. Ported from `TradeLocal.t.sol:164-172`.
     function _requestCloseAndFill(uint16 pct) internal {
+        _requestCloseAndFillAt(pct, BTC_65K);
+    }
+
+    /// @dev `_requestCloseAndFill` at an arbitrary report price. `wantedPrice` tracks the report
+    ///      rather than staying pinned at $65,000 on purpose: `closeTradeMarketCallback` measures
+    ///      slippage as `wantedPrice * slippageP / 100 / 100` — 1% at `slippageP = 100` — so a
+    ///      close delivered more than 1% away from the requested price cancels with `SLIPPAGE`
+    ///      instead of filling, which is a different branch from the one the caller is testing.
+    function _requestCloseAndFillAt(uint16 pct, int192 price) internal {
         vm.recordLogs();
         vm.prank(trader);
         IOstiumTrading(d.trading).closeTradeMarket(
-            0, 0, pct, uint192(uint256(int256(BTC_65K))), 100
+            0, 0, pct, uint192(uint256(int256(price))), 100
         );
         (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
-        _deliver(orderId, _signed(timestamp, BTC_65K));
+        _deliver(orderId, _signed(timestamp, price));
     }
 
     /// @dev Same wire fields `_signed` builds, but with `isMarketOpen: false`. Signing
@@ -126,27 +138,47 @@ contract CloseBondTest is SystemFixture {
     ///      inside `pairMinLevPos`, `maxOpenInterest` and `groupMaxCollateral` (20% of a
     ///      100,000e6 vault) — see `Operate.s.sol`'s `PAIR_MAX_LEVERAGE`/`PAIR_MAX_OI`/
     ///      `GROUP_MAX_COLLATERAL_P` constants.
-    function _openAtMaxLeverage() internal {
-        uint32 maxLeverage = TradingLib.getEffectiveMaxLeverage(0, false, IOstiumPairsStorage(d.pairsStorage));
-        (uint256 orderId, uint32 timestamp) = _openMarketTrade(trader, 1000e6, maxLeverage, true);
+    /// @dev The pair's effective cap for an overnight trade, which is what every leverage check on
+    ///      the close path compares against.
+    function _maxLeverage() internal view returns (uint32) {
+        return TradingLib.getEffectiveMaxLeverage(0, false, IOstiumPairsStorage(d.pairsStorage));
+    }
+
+    function _openAtLeverage(uint32 leverage, uint256 collateral) internal {
+        (uint256 orderId, uint32 timestamp) = _openMarketTrade(trader, collateral, leverage, true);
         _deliver(orderId, _signed(timestamp, BTC_65K));
     }
 
-    /// @dev A position cannot be opened directly with collateral at or below the bond, and
-    ///      reaching it via a partial close needs more care than the obvious percentage math:
-    ///      at this pair's 10x baseline leverage, `pairMinLevPos`'s $10 floor caps how low a
-    ///      partial close can push collateral at exactly $1 — the same value as the bond
-    ///      (`FEE_MIN_LEV_POS` / 10x == `FEE_ORACLE_FEE`, both `Operate.s.sol` constants) — so
-    ///      there is zero rounding slack for `closePercentage`'s 0.01% granularity to land at or
-    ///      under it without instead landing just under the floor and reverting
-    ///      `BelowMinLevPos` (confirmed by running this at 10x: collateral net of the opening
-    ///      fee is 999e6, not the nominal 1000e6, and the resulting `closePercentage` overshoots
-    ///      the floor by exactly 1e3). Opening at max leverage instead (`_openAtMaxLeverage`)
-    ///      drops that floor to $0.10, which is comfortable headroom, then a ceiling-rounded
-    ///      `closePercentage` (so the amount removed is never less than `collateral - bond`)
-    ///      partially closes down to at or under the bond without touching the floor.
+    /// @dev Opens directly at `TradingLib.getEffectiveMaxLeverage` rather than working up to it
+    ///      via `removeCollateral`: `OstiumTrading.sol`'s open-time check is `t.leverage >
+    ///      maxLeverage`, so leverage exactly equal to the cap is accepted on open, not just
+    ///      reachable afterward. $1,000 collateral at this pair's 100.00x cap sits comfortably
+    ///      inside `pairMinLevPos`, `maxOpenInterest` and `groupMaxCollateral` (20% of a
+    ///      100,000e6 vault) — see `Operate.s.sol`'s `PAIR_MAX_LEVERAGE`/`PAIR_MAX_OI`/
+    ///      `GROUP_MAX_COLLATERAL_P` constants.
+    function _openAtMaxLeverage() internal {
+        _openAtLeverage(_maxLeverage(), 1000e6);
+    }
+
+    /// @dev A position cannot be opened directly with collateral at or below the bond, so this
+    ///      state is reached by partially closing down to it. The leverage matters twice and in
+    ///      opposite directions:
+    ///
+    ///      - `pairMinLevPos`'s $10 notional floor becomes a collateral floor of
+    ///        `$10 * 100 / leverage`. At the 10x baseline that floor is exactly $1 — the same
+    ///        value as the bond (`FEE_MIN_LEV_POS` / 10x == `FEE_ORACLE_FEE`, both
+    ///        `Operate.s.sol` constants) — leaving zero slack for `closePercentage`'s 0.01%
+    ///        granularity to land at or under the bond rather than just under the floor, which
+    ///        reverts `BelowMinLevPos`. So this cannot be built at 10x.
+    ///      - Half the cap puts that floor at $0.20, comfortable slack, while keeping leverage
+    ///        far enough under `maxLeverage` that the post-charge leverage recompute is provably
+    ///        not what rejects the bond. That isolation is the point: this helper's caller names
+    ///        the below-the-bond guard, so no other guard may be reachable in the state it builds.
+    ///
+    ///      A ceiling-rounded `closePercentage` makes the amount removed never less than
+    ///      `collateral - bond`, so the remainder lands at or under the bond, never above it.
     function _openWithCollateralBelow(uint256 bond) internal {
-        _openAtMaxLeverage();
+        _openAtLeverage(_maxLeverage() / 2, 1000e6);
         uint256 collateral = _openCollateral();
         uint256 toRemove = collateral - bond;
         uint16 pct = uint16((toRemove * FULL + collateral - 1) / collateral); // ceil division
@@ -189,6 +221,113 @@ contract CloseBondTest is SystemFixture {
     ///      buy, isDayTrade)` — leverage is the 6th field.
     function _openLeverage() internal view returns (uint32 leverage) {
         (,,,,, leverage,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+    }
+
+    /// @dev The 2nd and 3rd fields of the same 10-tuple.
+    function _openPrice() internal view returns (uint192 openPrice) {
+        (, openPrice,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+    }
+
+    function _openTp() internal view returns (uint192 tp) {
+        (,, tp,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+    }
+
+    function _tradeInfo() internal view returns (IOstiumTradingStorage.TradeInfo memory) {
+        return IOstiumTradingStorage(d.tradingStorage).getOpenTradeInfo(trader, 0, 0);
+    }
+
+    /// @dev The long side of the pair's group collateral. `_chargeBondFromPosition` must debit
+    ///      this in lockstep with the trade's own collateral field, the way
+    ///      `handleRemoveCollateral` does — they track the same money.
+    function _groupCollateral() internal view returns (uint256) {
+        return IOstiumPairsStorage(d.pairsStorage).groupCollateral(0, true);
+    }
+
+    /// @dev How far the open position is above its liquidation margin, valued at `price`.
+    ///
+    ///      This is what the bond eats: the leverage recompute holds `collateral x leverage`
+    ///      fixed, and `liqMarginValue` is a pure function of that product
+    ///      (`OstiumPairInfos.getTradeLiquidationMargin`), so charging one bond drops `tradeValue`
+    ///      by exactly one bond and leaves `liqMarginValue` where it was.
+    ///
+    ///      Rollover and funding are passed as zero rather than read: `Deploy.s.sol` sets
+    ///      `OPEN_ROLLOVER_FEE = 0` and `Operate.s.sol` sets `maxFundingFeePerBlock: 0`, so both
+    ///      accumulators are pinned at zero for this fixture's whole life. Anything non-zero here
+    ///      would mean the fixture changed underneath this helper.
+    function _headroomAt(uint256 collateral, uint32 leverage, int192 price) internal view returns (int256) {
+        IOstiumPairInfos pairInfos = IOstiumPairInfos(d.pairInfos);
+        (int256 profitP,) = TradingCallbacksLib.currentPercentProfit(
+            int256(uint256(_openPrice())),
+            int256(price),
+            true,
+            int32(leverage),
+            int32(_tradeInfo().initialLeverage)
+        );
+        return int256(pairInfos.getTradeValuePure(collateral, profitP, 0, 0))
+            - int256(pairInfos.getTradeLiquidationMargin(collateral, leverage, _maxLeverage()));
+    }
+
+    /// @dev The *mid* price to sign so that a long position of `collateral` at `leverage` is left
+    ///      exactly `headroom` above its liquidation margin when the close executes.
+    ///
+    ///      Inverts `_headroomAt`. `headroom = collateral x (1e8 + profitP - rawAdjustedThreshold)
+    ///      / 1e8`, so the profit percentage that produces a wanted headroom is
+    ///      `profitP = headroom x 1e8 / collateral + rawAdjustedThreshold - 1e8`, and
+    ///      `currentPercentProfit` inverts to `price = openPrice + profitP x openPrice /
+    ///      (1e6 x leverage)`. The `+ 1e18` at the end converts the execution price back to a mid:
+    ///      a long closes against the bid, and `ReportLib.btcReport` quotes `bid = price - 1e18`.
+    function _midPriceLeavingHeadroom(uint256 collateral, uint32 leverage, uint256 headroom)
+        internal
+        view
+        returns (int192)
+    {
+        uint256 rawAdjustedThreshold =
+            uint256(IOstiumPairInfos(d.pairInfos).liqMarginThresholdP()) * leverage * 1e6 / _maxLeverage();
+
+        int256 openPrice = int256(uint256(_openPrice()));
+        int256 profitP =
+            int256(headroom * 1e8 / collateral) + int256(rawAdjustedThreshold) - 1e8;
+
+        return int192(openPrice + profitP * openPrice / (1e6 * int256(uint256(leverage))) + 1e18);
+    }
+
+    /// @dev Registers this test contract as `tradesUpKeep` so it can drive
+    ///      `OstiumTrading.executeAutomationOrder` directly. `_onlyTradesUpKeep` is a bare
+    ///      `msg.sender == registry.getContractAddress('tradesUpKeep')` check and
+    ///      `OstiumRegistry.registerContract` only demands the address have code, so the real
+    ///      `OstiumTradesUpKeep` — which does nothing but forward — buys nothing here.
+    function _becomeTradesUpKeep() internal {
+        bytes32[] memory names = new bytes32[](1);
+        address[] memory addrs = new address[](1);
+        names[0] = "tradesUpKeep";
+        addrs[0] = address(this);
+        vm.prank(gov);
+        IOstiumRegistry(d.registry).registerContracts(names, addrs);
+    }
+
+    /// @dev Retire the open position through its own take-profit, exactly as a keeper would:
+    ///      request the price, then deliver a report that trips the trigger.
+    function _executeTp(int192 price) internal {
+        vm.recordLogs();
+        IOstiumTrading(d.trading).executeAutomationOrder(
+            IOstiumTradingStorage.LimitOrder.TP, trader, 0, 0, block.timestamp
+        );
+        (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
+        _deliver(orderId, _signed(timestamp, price));
+    }
+
+    /// @dev The cancel reason on the last `MarketCloseCanceled` in the recorded logs.
+    function _lastCloseCancelReason() internal returns (IOstiumTradingCallbacks.CancelReason) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256("MarketCloseCanceled(uint256,uint256,address,uint256,uint256,uint8)");
+        for (uint256 j = logs.length; j > 0; j--) {
+            if (logs[j - 1].topics.length > 0 && logs[j - 1].topics[0] == sig) {
+                (,, IOstiumTradingCallbacks.CancelReason reason) =
+                    abi.decode(logs[j - 1].data, (uint256, uint256, IOstiumTradingCallbacks.CancelReason));
+                return reason;
+            }
+        }
+        revert("no MarketCloseCanceled emitted");
     }
 
     // -------------------------------------------------------------------------------------
@@ -300,41 +439,195 @@ contract CloseBondTest is SystemFixture {
         );
     }
 
-    /// The guard from the design: accounting must never be the reason a close fails. A position
-    /// already at the leverage cap cannot absorb the bond, so the bond is forgone, not reverted.
-    function test_bondIsWaivedRatherThanRevertingNearMaxLeverage() public {
+    /// The leverage cap is NOT a reason to waive. `maxLeverage` constrains a leverage the TRADER
+    /// asked for — at open, or by removing collateral — not a protocol fee that the trader does
+    /// not choose. Waiving on it made a position opened AT the cap permanently exempt, which made
+    /// close-request spam permanently free against it: request, let the report come back market
+    /// closed, repeat, forever, for the price of gas.
+    ///
+    /// Measured before the fix over 25 back-to-back cycles: devFees delta 0, collateral delta 0.
+    function test_bondIsStillChargedAtTheLeverageCap() public {
         _configureAll();
         _fundTrader(10_000e6);
         _openAtMaxLeverage();
         _drainTraderUsdw();
 
+        uint32 cap = _maxLeverage();
+        assertEq(_openLeverage(), cap, "precondition: the position must sit exactly at the cap");
+
         uint256 devBefore = _devFees();
         uint256 collateralBefore = _openCollateral();
-        _requestCloseAndCancel(FULL);
 
-        assertEq(_devFees(), devBefore, "a bond that cannot be applied safely must be waived");
-        assertEq(_openCollateral(), collateralBefore, "a waived bond must leave collateral untouched");
-        assertGt(_openCollateral(), 0, "the position must survive an unchargeable bond");
+        uint256 cycles = 5;
+        for (uint256 n = 0; n < cycles; n++) {
+            _requestCloseAndCancel(FULL);
+        }
+
+        assertEq(_devFees(), devBefore + cycles * _bond(), "every cancelled close must cost one bond");
+        assertEq(
+            collateralBefore - _openCollateral(), cycles * _bond(), "each bond must come out of collateral"
+        );
+        assertGt(_openLeverage(), cap, "leverage rises past the cap, which is the point: notional is fixed");
     }
 
-    /// The other half of the guard. Note a position cannot be OPENED below one bond
-    /// (TradingLib's pairMinLevPos floor equals the bond at 10x) — it can only drift there, so
-    /// this state is reached by partially closing down to it.
+    /// The first guard: a position too small to pay the bond. Reached by partially closing down
+    /// to it at half the cap, where `pairMinLevPos` leaves slack — see `_openWithCollateralBelow`.
+    /// Deliberately NOT at max leverage: both waive conditions would hold there and only source
+    /// ordering would decide which one fired, so the test would pass without exercising its name.
     function test_bondIsWaivedWhenCollateralIsBelowIt() public {
         _configureAll();
         _fundTrader(10_000e6);
         _openWithCollateralBelow(_bond());
         _drainTraderUsdw();
 
+        assertLt(_openLeverage(), _maxLeverage(), "precondition: the cap must not be in play here");
+
         uint256 devBefore = _devFees();
+        uint256 collateralBefore = _openCollateral();
         _requestCloseAndCancel(FULL);
 
         assertEq(_devFees(), devBefore, "a position too small to pay the bond must not be charged");
+        assertEq(_openCollateral(), collateralBefore, "a waived bond must leave collateral untouched");
     }
 
-    /// Per-path assertions can each hold while the system leaks. This is the invariant that
-    /// matters: USDW is neither invented nor lost across every close path in sequence.
-    function test_usdwIsConservedAcrossEveryClosePath() public {
+    /// The second guard, and the one that has teeth. `liqMarginValue` is a function of NOTIONAL,
+    /// which the recompute holds FIXED — so it does not move, while `tradeValue` falls by the
+    /// whole bond. A trader partially closing a losing position to de-risk can therefore be made
+    /// liquidatable by the fee itself, and then loses the entire remainder to `liquidationFee`.
+    ///
+    /// The state: half the cap (so the leverage recompute is provably not what rejects the bond),
+    /// closed 50% at a price that leaves the remainder exactly half a bond above its liquidation
+    /// margin. Solvent, so the close is not a liquidation — but with less than one bond of
+    /// headroom, so the charge must be waived.
+    function test_bondIsWaivedWhenItWouldPushThePositionUnderLiquidation() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+
+        uint32 leverage = _maxLeverage() / 2;
+        _openAtLeverage(leverage, 1000e6);
+
+        uint256 collateral = _openCollateral();
+        uint256 remaining = collateral - collateral * (FULL / 2) / FULL;
+        int192 mid = _midPriceLeavingHeadroom(remaining, leverage, _bond() / 2);
+
+        uint256 devBefore = _devFees();
+        uint256 groupBefore = _groupCollateral();
+        _requestCloseAndFillAt(FULL / 2, mid);
+
+        assertEq(_devFees(), devBefore, "a bond that would liquidate the remainder must be waived");
+        assertEq(_openCollateral(), remaining, "only the partial close itself may move collateral");
+        assertEq(_openLeverage(), leverage, "a waived bond must not touch leverage either");
+        assertEq(
+            groupBefore - _groupCollateral(),
+            collateral - remaining,
+            "group collateral must fall by the closed portion and nothing more"
+        );
+
+        // The state actually reached, asserted rather than assumed: still solvent, by less than
+        // one bond. `mid - 1e18` is the bid, which is what a long closes against. Checked after
+        // the assertions above so that a regression reports the defect rather than the setup —
+        // against the unfixed contracts this same reading is NEGATIVE, which is the finding:
+        // the fee itself had made the position liquidatable.
+        int256 headroom = _headroomAt(_openCollateral(), _openLeverage(), mid - 1e18);
+        assertGt(headroom, 0, "the remainder must still be above its liquidation margin");
+        assertLt(headroom, int256(_bond()), "... by less than one bond, or the waive proves nothing");
+    }
+
+    /// Raising leverage moves the max-gain price, so a take-profit parked at the old maximum
+    /// becomes unreachable: the TP order never fires in that band while the trader keeps paying
+    /// rollover. `handleRemoveCollateral` — the other place leverage is recomputed against a fixed
+    /// notional — calls `correctTp`/`correctToNullSl` for exactly this reason. So does the bond.
+    function test_chargingTheBondCorrectsTheTakeProfit() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        uint192 openPrice = _openPrice();
+        uint192 tpBefore = _openTp();
+        uint32 stampBefore = _tradeInfo().tpLastUpdated;
+        assertGt(tpBefore, 0, "precondition: registerTrade parks tp at the max-gain price, never 0");
+
+        vm.warp(block.timestamp + 5); // so a re-stamped tpLastUpdated is observable
+        _requestCloseAndCancel(FULL);
+
+        uint32 leverage = _openLeverage();
+        // `TradingCallbacksLib.correctTp` recomputes the max-gain price as
+        // `openPrice + openPrice * MAX_GAIN_P / leverage`, with MAX_GAIN_P = 900.
+        assertEq(
+            _openTp(),
+            openPrice + uint192(uint256(openPrice) * 900 / leverage),
+            "tp must be the max-gain price for the NEW leverage"
+        );
+        assertLt(_openTp(), tpBefore, "a higher leverage means a nearer max-gain price");
+
+        // The interaction this inherits from handleRemoveCollateral, stated so it cannot regress
+        // silently: updateTrade routes tp through _updateTp, which re-stamps tpLastUpdated, and
+        // OstiumTrading.executeAutomationOrder returns NO_TP for any report timestamped at or
+        // before that stamp. Same behaviour as handleRemoveCollateral today, by design.
+        assertGt(_tradeInfo().tpLastUpdated, stampBefore, "correcting tp re-stamps tpLastUpdated");
+        assertEq(uint256(_tradeInfo().tpLastUpdated), block.timestamp, "the stamp is the current block");
+    }
+
+    /// C3. A TP/SL/LIQ automation close can retire trade A while A's own market close is still in
+    /// flight, and `firstEmptyTradeIndex` hands the freed slot straight to trade B. The stored
+    /// tradeId check has to run on the MARKET_CLOSED branch too, or B pays A's bond and has its
+    /// leverage raised to fund a close it never asked for.
+    function test_aBondNeverLandsOnTheTradeThatReplacedTheOneItWasFor() public {
+        _configureAll();
+        _becomeTradesUpKeep();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        uint256 tradeIdA = _tradeInfo().tradeId;
+
+        // Park A's take-profit just above spot so a keeper can trip it in this block.
+        vm.prank(trader);
+        IOstiumTrading(d.trading).updateTp(0, 0, uint192(uint256(int256(BTC_65K))) + 100e18);
+
+        // A close for A goes in flight.
+        vm.recordLogs();
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarket(0, 0, FULL, uint192(uint256(int256(BTC_65K))), 100);
+        (uint256 orderIdA, uint32 timestampA) = _lastPriceRequest();
+
+        // A is retired underneath it by its own TP. Nothing rejects this: executeAutomationOrder
+        // only checks the TP trigger, not PENDING_CLOSE (TradingLib.checkNoPendingTrigger).
+        _executeTp(BTC_65K + 200e18);
+        assertEq(_openCollateral(), 0, "precondition: A's slot must actually be free");
+
+        // B takes the freed index.
+        _openAndFill(2000e6);
+        assertTrue(_tradeInfo().tradeId != tradeIdA, "precondition: B must be a different trade");
+
+        uint256 collateralB = _openCollateral();
+        uint32 leverageB = _openLeverage();
+        uint256 devBefore = _devFees();
+        uint256 groupBefore = _groupCollateral();
+
+        // A's report finally lands, market closed.
+        vm.recordLogs();
+        _deliver(orderIdA, _marketClosedReport(timestampA));
+
+        assertEq(
+            uint8(_lastCloseCancelReason()),
+            uint8(IOstiumTradingCallbacks.CancelReason.WRONG_TRADE),
+            "a report for a retired trade must cancel WRONG_TRADE, not MARKET_CLOSED"
+        );
+        assertEq(_devFees(), devBefore, "B must not pay A's bond");
+        assertEq(_openCollateral(), collateralB, "B's collateral must be untouched");
+        assertEq(_openLeverage(), leverageB, "B's leverage must be untouched");
+        assertEq(_groupCollateral(), groupBefore, "group collateral must be untouched");
+    }
+
+    /// Every close path in sequence, asserted on the values that actually move.
+    ///
+    /// The charge moves no tokens at all — it decrements `collateral` and increments `devFees`,
+    /// both inside `OstiumTradingStorage` — so a balance-conservation check across trader, storage
+    /// and vault cannot fail for any defect in this change and is not the assertion here. These
+    /// are: `devFees`, the position's `collateral` and `leverage`, and the pair's group
+    /// collateral, step by step. Conservation is still checked at the end, as the weaker
+    /// backstop it is.
+    function test_everyClosePathMovesExactlyTheRightNumbers() public {
         _configureAll();
         _fundTrader(10_000e6);
 
@@ -342,13 +635,70 @@ contract CloseBondTest is SystemFixture {
         // fees to it (TradingCallbacksLib.executeUnregisterTrade), so trader+storage alone is not
         // a closed system and would show a false leak of exactly those fees.
         uint256 totalBefore = _systemUsdw();
+        uint256 bond = _bond();
 
         _openAndFill(1000e6);
+        uint256 collateral = _openCollateral();
+        uint32 leverage = _openLeverage();
+        uint256 devFees = _devFees();
+        uint256 group = _groupCollateral();
+        assertEq(group, collateral, "group collateral starts as the one open position's collateral");
+
+        // 1. A cancelled close: one bond out of the position, leverage up, no position closed.
         _requestCloseAndCancel(FULL);
+        assertEq(_devFees(), devFees + bond, "a cancelled close credits exactly one bond to devFees");
+        assertEq(_openCollateral(), collateral - bond, "... debited from the position's collateral");
+        assertEq(_groupCollateral(), group - bond, "... and from group collateral, in lockstep");
+        assertGt(_openLeverage(), leverage, "... with leverage raised to hold notional fixed");
+        collateral = _openCollateral();
+        leverage = _openLeverage();
+        devFees = _devFees();
+        group = _groupCollateral();
+
+        // 2. A partial close: the closed half leaves, then one more bond out of the remainder.
         _requestCloseAndFill(FULL / 2);
+        uint256 closed = collateral - collateral * (FULL / 2) / FULL; // what the close itself left
+        assertEq(_devFees(), devFees + bond, "a partial close also keeps exactly one bond");
+        assertEq(_openCollateral(), closed - bond, "the bond comes out of what the close left behind");
+        assertEq(_groupCollateral(), group - (collateral - closed) - bond, "group tracks both debits");
+        assertGt(_openLeverage(), leverage, "the bond raises leverage on the remainder too");
+        devFees = _devFees();
+
+        // 3. A full close: nothing is left to charge, and nothing is charged.
         _requestCloseAndFill(FULL);
+        assertEq(_devFees(), devFees, "a full close is bond-neutral");
+        assertEq(_openCollateral(), 0, "a full close clears the position");
+        assertEq(_groupCollateral(), 0, "and clears its group collateral");
 
         assertEq(_systemUsdw(), totalBefore, "USDW must be conserved across trader, storage and vault");
+    }
+
+    /// The design's headline parity assertion: this change must not alter what a full close pays.
+    ///
+    /// Before it, the trader paid one bond from the wallet at request time and got that same bond
+    /// back at execution; the two cancelled out exactly, so the net payout was the trade value and
+    /// nothing else. After it, neither leg happens. `_expectedFullClosePayout` measures the payout
+    /// by actually running the close against the live position and rolling the state back — the
+    /// contract asked directly, rather than the contract's own fee formulas replayed against
+    /// themselves — and the drained-wallet close must match it to the unit.
+    function test_fullClosePayoutMatchesWhatThePreChangeContractsPaid() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+
+        uint256 expected = _expectedFullClosePayout();
+        assertGt(expected, 0, "precondition: the measurement must have actually run a close");
+
+        uint256 devBefore = _devFees();
+        _drainTraderUsdw();
+        _requestCloseAndFill(FULL);
+
+        assertEq(
+            IERC20(d.collateral).balanceOf(trader),
+            expected,
+            "a full close must pay exactly what it paid before the bond moved off the wallet"
+        );
+        assertEq(_devFees(), devBefore, "and must be bond-neutral, which is what makes those equal");
     }
 
     /// The end-to-end statement of the whole change: start with nothing in the wallet, finish
