@@ -22,6 +22,18 @@
   --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas,
     'Courier New', monospace;
 
+  /* The proportional face, loaded alongside the mono in src/app/layout.tsx. The split is
+     by what the text *is*, not by where it sits: `--font-sans` carries headings, prose
+     and link text; `--font-mono` keeps every figure, data table, small uppercase label,
+     the wordmark and the ticker. docs/design/pages.pdf and the faucet mockup are set
+     this way; the two older mockups (landing, terminal) were monospace throughout, which
+     is why everything used to inherit `--font-mono` from `body`.
+     The inner var() fallback is there for the same reason as the mono one above: a
+     component rendered outside the root layout would otherwise invalidate the property
+     and drop the whole declaration. */
+  --font-sans: var(--font-schibsted-grotesk, 'Schibsted Grotesk'), ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
   /* Landing hero art (landing_design.pdf): the brand sphere is drawn purely with radial
      gradients, so its two body tones, its diffuse top-left highlight and the ambient
      bloom live here with the rest of the palette instead of being inlined in the
@@ -38,6 +50,24 @@
   box-sizing: border-box;
 }
 
+/* Monospace stays the *inherited* default and prose opts into `--font-sans` below, rather
+   than the other way round. Both directions produce the interface the September mockups
+   draw; they differ entirely in how they fail.
+ *
+ * An audit of every rule in this app found ~100 that carry a figure, a data-table cell or
+ * a small uppercase label, against roughly a quarter as many that carry prose. Worse, ten
+ * of them make monospace *load-bearing for layout*, not just for looks: the `.formula`
+ * blocks in /docs are `white-space: pre` with hand-padded `=` columns, nine `max-width`
+ * values in that file are in `ch` (which resolves against the element's own font), the
+ * price-axis chips in PriceChart are drawn into a hard-coded 66px SVG gutter, and the
+ * money columns in /portfolio are `white-space: nowrap`.
+ *
+ * So: a missed opt-in leaves a paragraph in monospace — visible on sight, harmless. A
+ * missed opt-out would ship a silently misaligned column of prices in a trading UI. The
+ * default belongs on the safe side of that asymmetry, and new code inherits it.
+ *
+ * 13px stays the root size. Every size here is expressed in rem, so moving it would
+ * rescale the entire interface — the terminal included — for one page's measure. */
 html,
 body {
   margin: 0;
@@ -45,6 +75,19 @@ body {
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
+/* The prose opt-in. Headings and running text on every page; anything that is a figure,
+   a table, a label or a control keeps the inherited monospace without saying so. */
+h1,
+h2,
+h3,
+h4,
+p,
+li,
+blockquote,
+dd {
+  font-family: var(--font-sans);
 }
 
 a {
@@ -57,7 +100,12 @@ select {
   font-family: var(--font-mono);
 }
 
+/* Declares the family it is named after, rather than relying on inheritance. Several of
+   its users are `<h2>`/`<p>`, which the prose opt-in above would otherwise pull into the
+   sans — and a class called `mono-upper` that renders proportional is a trap. Class beats
+   element, so this wins wherever both apply. */
 .mono-upper {
+  font-family: var(--font-mono);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }

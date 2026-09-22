@@ -51,7 +51,7 @@
 
 .lede {
   color: var(--fg-muted);
-  font-size: 0.78rem;
+  font-size: 0.97rem;
   line-height: 1.7;
   max-width: 44em;
   margin: 0.85rem 0 0;
@@ -119,8 +119,9 @@
 }
 
 .tileNote {
+  font-family: var(--font-sans);
   color: var(--fg-dim);
-  font-size: 0.64rem;
+  font-size: 0.8rem;
   line-height: 1.6;
   margin-top: 0.6rem;
 }
@@ -148,15 +149,17 @@
 }
 
 .sectionNote {
+  font-family: var(--font-sans);
   color: var(--fg-dim);
-  font-size: 0.66rem;
+  font-size: 0.82rem;
   line-height: 1.6;
   max-width: 52em;
 }
 
 .sectionFoot {
+  font-family: var(--font-sans);
   color: var(--fg-dim);
-  font-size: 0.66rem;
+  font-size: 0.82rem;
   line-height: 1.7;
   margin: 0.9rem 0 0;
   max-width: 60em;
@@ -208,8 +211,9 @@
 }
 
 .stateBody {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
-  font-size: 0.75rem;
+  font-size: 0.93rem;
   line-height: 1.75;
   max-width: 42em;
   margin: 0 auto;
@@ -231,8 +235,9 @@
 }
 
 .stateDetail {
+  font-family: var(--font-sans);
   color: var(--fg-dim);
-  font-size: 0.66rem;
+  font-size: 0.82rem;
   margin-top: 0.9rem;
   word-break: break-word;
 }
@@ -301,9 +306,10 @@
 }
 
 .fundingNote {
+  font-family: var(--font-sans);
   margin: 0;
   max-width: 46em;
-  font-size: 0.68rem;
+  font-size: 0.85rem;
   line-height: 1.6;
   color: var(--fg-dim);
 }
