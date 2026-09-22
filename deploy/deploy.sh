@@ -35,13 +35,46 @@ main() {
   # of 1909 MB total, and `next build` peaks near 807 MB of real (PSS) memory. Building
   # with the stack up leaves the box a few tens of megabytes from the ceiling — it survives
   # on the 2 GB swapfile, which is the backstop, not the plan.
-  pnpm --filter @whitespace/web build
+  build_web
+
+  # Refuse to restart onto a tree with no build. `next start` against an empty .next
+  # crash-loops and Caddy serves 502 — which is exactly how this script took the site down
+  # on 2026-09-22 after a build failure it did not notice.
+  if [ ! -f apps/web/.next/BUILD_ID ]; then
+    echo "    FAIL: the build produced no .next/BUILD_ID — NOT restarting web" >&2
+    echo "    The site is currently DOWN (web was stopped for the build)." >&2
+    echo "    Recover with: rm -rf apps/web/.next && pnpm --filter @whitespace/web build" >&2
+    echo "    then: sudo systemctl start whitespace-indexer whitespace-web" >&2
+    exit 1
+  fi
 
   echo "==> restarting the stack"
   ws_ctl restart whitespace-publisher whitespace-keeper whitespace-api
   ws_ctl start whitespace-indexer whitespace-web
 
   verify_running_build
+}
+
+# `next build` can fail in "Collecting build traces" against a .next left behind by an
+# earlier build. Observed 2026-09-22:
+#
+#   Collecting build traces ...
+#   [Error: ENOENT: ... '.next/server/app/icon.svg/route.js.nft.json']
+#
+# The build then exits WITHOUT writing BUILD_ID or static/, while having already replaced
+# server/ — so there is no usable tree left to fall back to. The same commit built cleanly
+# on the dev machine, so it is stale on-box state, not the code.
+#
+# Retry once from a clean .next rather than pre-emptively deleting it every deploy: the
+# incremental cache is what keeps an on-box build near 60s, and paying that cost on every
+# deploy to defend against an occasional failure is the wrong trade.
+build_web() {
+  if pnpm --filter @whitespace/web build; then
+    return 0
+  fi
+  echo "    build failed — clearing .next and retrying once" >&2
+  rm -rf apps/web/.next
+  pnpm --filter @whitespace/web build
 }
 
 ws_ctl() {
