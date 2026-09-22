@@ -96,14 +96,20 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         {formatMoney(position.openPrice, PRICE_DECIMALS_NUM)}
       </td>
       <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</td>
-      {/* Read from the contract for THIS trade slot, so it includes the funding and
-          rollover this position has actually accrued — see hooks/useLiquidationPrice.ts
-          for why the order form uses a different function for its estimate. */}
-      <td className={liqPrice !== null ? 'neg' : 'dash'} data-testid="liq-price">
-        {liqPrice !== null ? formatMoney(liqPrice, PRICE_DECIMALS_NUM) : '—'}
-      </td>
+      {/* UPnL sits before Liq. so the two coloured columns — SIZE and UPNL — are the only
+          things on the row carrying a signal, and the eye runs entry -> mark -> result. */}
       <td data-testid="unrealized-pnl" className={pnl !== null && pnl >= 0n ? 'pos' : 'neg'}>
         {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}
+      </td>
+      {/* Read from the contract for THIS trade slot, so it includes the funding and
+          rollover this position has actually accrued — see hooks/useLiquidationPrice.ts
+          for why the order form uses a different function for its estimate.
+
+          Deliberately NOT red. A liquidation price is a level, not a loss: colouring every
+          row's Liq. cell red makes four healthy positions look like four margin calls, and
+          it competes with UPnL, which is the cell whose colour actually means something. */}
+      <td className={liqPrice !== null ? undefined : 'dash'} data-testid="liq-price">
+        {liqPrice !== null ? formatMoney(liqPrice, PRICE_DECIMALS_NUM) : '—'}
       </td>
       <td>
         {/* terminal_design.pdf's positions row ends in a single `Close` button, so that is
@@ -184,8 +190,8 @@ export function PositionsList() {
           <th>Size</th>
           <th>Entry</th>
           <th>Mark</th>
-          <th>Liq.</th>
           <th>UPnL</th>
+          <th>Liq.</th>
           <th>Close</th>
         </tr>
       </thead>

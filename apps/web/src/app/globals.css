@@ -1171,8 +1171,8 @@ table.data-table td {
 }
 
 .close-partial button:hover:not(:disabled) {
-  color: var(--short);
-  border-color: var(--short);
+  color: var(--fg);
+  border-color: var(--fg-dim);
 }
 
 .close-partial button:disabled {
@@ -1203,11 +1203,14 @@ table.data-table td {
   font-size: 0.66rem;
 }
 
+/* Neutral, not red. Closing is not a loss — it is the ordinary way out of a position, and
+   a red button on every row reads as a warning the row is not making. The only coloured
+   things left on a position row are SIZE and UPNL, which is where colour carries meaning. */
 .close-control button {
   border: none;
   border-left: 1px solid var(--border);
   background: transparent;
-  color: var(--short);
+  color: var(--fg);
   font-family: var(--font-mono);
   font-size: 0.7rem;
   letter-spacing: 0.04em;
@@ -1216,7 +1219,8 @@ table.data-table td {
 }
 
 .close-control button:hover:not(:disabled) {
-  background: var(--short-dim);
+  background: var(--bg-panel);
+  color: var(--fg);
 }
 
 .close-control button:disabled {
@@ -1309,4 +1313,29 @@ table.data-table td {
 .market-header .stat-cell .stat-value,
 .data-table td {
   letter-spacing: normal;
+}
+
+/* ---------- Positions table width ----------
+   With `table-layout: auto` the browser sizes each column to its content and dumps the
+   leftover ~180px into the last one, so the row bunched to the left with the Close button
+   stranded mid-panel and dead space after it. Fixed layout with declared widths spreads
+   the values across the panel and lets the action sit against the right edge. */
+table.data-table[data-testid='positions-table'] {
+  table-layout: fixed;
+}
+
+table.data-table[data-testid='positions-table'] th,
+table.data-table[data-testid='positions-table'] td {
+  width: 13%;
+}
+
+/* The symbol carries a side bar, a name and a leverage badge — it needs the extra room. */
+table.data-table[data-testid='positions-table'] th:first-child,
+table.data-table[data-testid='positions-table'] td:first-child {
+  width: 22%;
+}
+
+table.data-table[data-testid='positions-table'] th:last-child,
+table.data-table[data-testid='positions-table'] td:last-child {
+  text-align: right;
 }

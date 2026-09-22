@@ -47,8 +47,8 @@ export function OpenPositionsTable({
             <th className={styles.num}>Notional</th>
             <th className={styles.num}>Entry</th>
             <th className={styles.num}>Mark</th>
-            <th className={styles.num}>Liq.</th>
             <th className={styles.num}>Unrealised PnL</th>
+            <th className={styles.num}>Liq.</th>
             <th>Opened</th>
           </tr>
         </thead>
@@ -97,13 +97,6 @@ export function OpenPositionsTable({
                 <td className={styles.num}>
                   {price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : <Dash reason="no live price for this market right now" />}
                 </td>
-                {/* Same ruling as the terminal's Liq. column: the real trigger is a
-                    tradeValue-vs-liqMarginValue test over on-chain funding and rollover
-                    accumulators this app does not read, and the obvious view function
-                    disagrees with it at the boundary. */}
-                <td className={styles.num}>
-                  <Dash reason="requires the on-chain funding/rollover state this app does not read — see Docs, Margin and liquidation" />
-                </td>
                 <td
                   className={`${styles.num} ${pnl === null ? '' : pnl >= 0n ? 'pos' : 'neg'}`}
                   data-testid="portfolio-position-pnl"
@@ -113,6 +106,13 @@ export function OpenPositionsTable({
                   ) : (
                     formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })
                   )}
+                </td>
+                {/* Same ruling as the terminal's Liq. column: the real trigger is a
+                    tradeValue-vs-liqMarginValue test over on-chain funding and rollover
+                    accumulators this app does not read, and the obvious view function
+                    disagrees with it at the boundary. */}
+                <td className={styles.num}>
+                  <Dash reason="requires the on-chain funding/rollover state this app does not read — see Docs, Margin and liquidation" />
                 </td>
                 <td className={styles.rowTime}>
                   {formatUtcMinute(position.openedAt)}

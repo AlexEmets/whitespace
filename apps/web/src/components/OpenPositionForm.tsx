@@ -451,7 +451,9 @@ export function OpenPositionForm({
           {/* A real contract read (getTradeLiquidationPricePure at rollover=funding=0 —
               see hooks/useLiquidationPrice.ts), not a formula reimplemented here. Still a
               dash until there is a price, a size and a leverage to evaluate it at. */}
-          <span className={estLiqPrice !== null ? 'neg' : 'dash'} data-testid="est-liq-price">
+          {/* Neutral, matching the positions table: a liquidation price is a level, not a
+              loss, and red here competed with the figures whose colour means something. */}
+          <span className={estLiqPrice !== null ? undefined : 'dash'} data-testid="est-liq-price">
             {estLiqPrice !== null ? formatMoney(estLiqPrice, PRICE_DECIMALS_NUM) : '—'}
           </span>
         </div>

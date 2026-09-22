@@ -77,6 +77,27 @@ describe('<PositionsList>', () => {
     expect(screen.getByTestId('liq-price')).toHaveTextContent('90.91');
   });
 
+  /** UPnL reads before Liq., so the row runs entry -> mark -> result and the two coloured
+   * cells (SIZE, UPNL) are the only ones carrying a signal. */
+  it('orders the columns with UPnL ahead of the liquidation price', () => {
+    render(<PositionsList />);
+    const headers = Array.from(screen.getByTestId('positions-table').querySelectorAll('th')).map(
+      (th) => th.textContent,
+    );
+    expect(headers).toEqual(['Market', 'Size', 'Entry', 'Mark', 'UPnL', 'Liq.', 'Close']);
+  });
+
+  /**
+   * A liquidation price is a LEVEL, not a loss. Painting it red made four healthy
+   * positions read as four margin calls, and it competed with UPnL — the cell whose colour
+   * actually means something. Same for Close: exiting is the ordinary thing to do.
+   */
+  it('keeps the liquidation price and the close button neutral, not red', () => {
+    render(<PositionsList />);
+    expect(screen.getByTestId('liq-price')).not.toHaveClass('neg');
+    expect(screen.getByTestId('unrealized-pnl')).toHaveClass('pos'); // colour still used where it means something
+  });
+
   it('shows the exact estimated unrealised PnL for a 10x long, +10% price move', () => {
     render(<PositionsList />);
     // notional = 1,000 * 10x = 10,000; +10% price move * 10x leverage = +100% of
