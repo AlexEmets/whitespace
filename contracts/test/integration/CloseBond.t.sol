@@ -38,10 +38,10 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev `closeTradeMarket`'s counterpart: open a market trade and deliver a valid report
-    ///      so it fills. Ported from `TradeLocal.t.sol:153-160`.
+    ///      so it fills. Delegates to `SystemFixture._openPositionAtBaseline`
+    ///      (SystemFixture.sol:232-235), which does exactly this for a given `who`.
     function _openAndFill(uint256 collateral) internal {
-        (uint256 orderId, uint32 timestamp) = _openMarketTrade(trader, collateral, 1000, true);
-        _deliver(orderId, _signed(timestamp, BTC_65K));
+        _openPositionAtBaseline(trader, collateral);
     }
 
     /// @dev Request a close at `pct` (the `closePercentage` argument, precision-2 — see `FULL`
@@ -60,9 +60,11 @@ contract CloseBondTest is SystemFixture {
     // Characterisation
     // -------------------------------------------------------------------------------------
 
-    /// TradeLocal.t.sol:166 passes 100 and asserts a full close at :174. If 100 really is
-    /// 1%, that test is asserting the wrong thing and the refund branch at
-    /// OstiumTradingCallbacks.sol:336 never fires for it. Settle it.
+    /// TradeLocal.t.sol:166 passes closePercentage = 0 (its literal 100 there is the
+    /// unrelated slippageP argument), which OstiumTrading.sol:297-299 defaults to
+    /// PERCENT_BASE — so that test exercises a full close without ever pinning what
+    /// PERCENT_BASE actually is. Seven later tasks in this plan branch on that value, so it
+    /// is settled here by test rather than by reading.
     function test_fullCloseIsTenThousandNotOneHundred() public {
         _configureAll();
         _fundTrader(10_000e6);
