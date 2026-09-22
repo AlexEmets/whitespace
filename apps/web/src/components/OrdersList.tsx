@@ -8,6 +8,7 @@ import { explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
 import type { OrderSummary } from '@/lib/types';
 import { Money } from './Money';
+import { describeTxError } from '@/lib/tx';
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending — waiting for keeper',
@@ -50,7 +51,7 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
       await reclaim(order.orderId);
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
     }
   }
 

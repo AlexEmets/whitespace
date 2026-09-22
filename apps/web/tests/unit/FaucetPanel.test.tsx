@@ -3,6 +3,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { maxUint256 } from 'viem';
 import { FaucetPanel } from '@/components/FaucetPanel';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
+import {
+  ContractFunctionExecutionError,
+  ContractFunctionRevertedError,
+  UserRejectedRequestError,
+  encodeErrorResult,
+  parseAbi,
+} from 'viem';
 
 const claimFaucetMock = vi.fn(async () => {});
 const refetchBalanceMock = vi.fn(async () => {});
@@ -79,13 +86,54 @@ describe('<FaucetPanel>', () => {
     await waitFor(() => expect(screen.getByTestId('faucet-panel-button')).not.toBeDisabled());
   });
 
-  it('surfaces a rejected claim instead of silently doing nothing', async () => {
-    claimFaucetMock.mockRejectedValueOnce(new Error('User rejected the request.'));
+  /**
+   * This case used to assert the opposite — that a rejection is shown — while feeding the
+   * panel a plain `Error`, which is not what a wallet throws. A real MetaMask rejection is
+   * a `UserRejectedRequestError`, and reporting it in red tells the user their own click
+   * was a malfunction. Silence is the behaviour; the plain-Error version of this test was
+   * passing without exercising it.
+   */
+  it('says nothing when the user rejects the claim in the wallet', async () => {
+    claimFaucetMock.mockRejectedValueOnce(
+      new ContractFunctionExecutionError(new UserRejectedRequestError(new Error('denied')), {
+        abi: [],
+        functionName: 'claim',
+      }),
+    );
     render(<FaucetPanel />);
 
     fireEvent.click(screen.getByTestId('faucet-panel-button'));
 
-    expect(await screen.findByTestId('faucet-panel-error')).toHaveTextContent('User rejected the request.');
+    await waitFor(() => expect(screen.getByTestId('faucet-panel-button')).not.toBeDisabled());
+    expect(screen.queryByTestId('faucet-panel-error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('faucet-panel-success')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The failure a real user hit: `USDW.claim()` reverted with `CooldownActive` because the
+   * token mints once per address per 24h (contracts/src/mocks/USDW.sol:27-30). The panel
+   * rendered "Transaction reverted on chain", which reads as a broken faucet rather than a
+   * working one that has already paid.
+   */
+  it('explains the 24h cooldown rather than reporting a reverted transaction', async () => {
+    const data = encodeErrorResult({
+      abi: parseAbi(['error CooldownActive(uint256 availableAt)']),
+      errorName: 'CooldownActive',
+      args: [1790097009n],
+    });
+    claimFaucetMock.mockRejectedValueOnce(
+      new ContractFunctionExecutionError(
+        new ContractFunctionRevertedError({ abi: [], data, functionName: 'claim' }),
+        { abi: [], functionName: 'claim' },
+      ),
+    );
+    render(<FaucetPanel />);
+
+    fireEvent.click(screen.getByTestId('faucet-panel-button'));
+
+    const error = await screen.findByTestId('faucet-panel-error');
+    expect(error).toHaveTextContent(/already paid this address/i);
+    expect(error).not.toHaveTextContent(/reverted on chain/i);
     expect(screen.queryByTestId('faucet-panel-success')).not.toBeInTheDocument();
   });
 

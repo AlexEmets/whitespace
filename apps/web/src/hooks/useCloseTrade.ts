@@ -1,6 +1,6 @@
 'use client';
 
-import { usePublicClient, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
@@ -26,17 +26,30 @@ export interface CloseTradeParams {
  * degraded mode (only opens are blocked), so this hook has no degraded-mode gate. */
 export function useCloseTrade() {
   const publicClient = usePublicClient();
+  const { address: account } = useAccount();
   const { writeContractAsync, isPending } = useWriteContract();
 
   async function closeTrade(params: CloseTradeParams) {
     if (!publicClient) throw new Error('useCloseTrade: no public client');
 
-    const hash = await writeContractAsync({
+    // Simulated before it is sent, which is the only point at which the chain will say
+    // *why* a close cannot happen. Once mined, a revert reason is not in the receipt — see
+    // TransactionRevertedError — so the trader paid gas for "it reverted" and nothing more.
+    //
+    // This is not hypothetical: 0x8a357f2b… reverted with
+    // ERC20InsufficientBalance(trader, 57243, 1000000). Closing pulls the flat
+    // pairOracleFee (1.00 USDW) out of the *wallet* (OstiumTrading.sol:310-311), and a
+    // trader who spent their balance on margin has nothing left to pay it with. Simulating
+    // turns that into a sentence, for free, before the wallet even opens.
+    const { request } = await publicClient.simulateContract({
+      account,
       address: TRADING_ADDRESS,
       abi: TRADING_ABI,
       functionName: 'closeTradeMarket',
       args: [params.pairIndex, params.index, params.closePercentage, params.marketPriceRaw, Number(params.slippageBps)],
     });
+
+    const hash = await writeContractAsync(request);
 
     const receipt = await confirmTx(publicClient, hash, 'close the position');
     return { hash, receipt };

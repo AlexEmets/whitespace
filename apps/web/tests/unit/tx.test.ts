@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { TransactionRevertedError, confirmTx } from '@/lib/tx';
+import {
+  ContractFunctionExecutionError,
+  ContractFunctionRevertedError,
+  UserRejectedRequestError,
+  encodeErrorResult,
+  parseAbi,
+} from 'viem';
+import { TransactionRevertedError, confirmTx, describeTxError } from '@/lib/tx';
 
 /**
  * Written after a real revert on Whitechain 1874: `0x356a2a3b…`, an `openTrade` that
@@ -42,5 +49,90 @@ describe('confirmTx', () => {
       (e) => e,
     )) as TransactionRevertedError;
     expect(err.hash).toBe(HASH);
+  });
+});
+
+/**
+ * Written from two real failures on Whitechain 1874.
+ *
+ * `0x8a357f2b…` — a `closeTradeMarket` that reverted with
+ * `ERC20InsufficientBalance(0x43Ac…B06B, 57243, 1000000)`. Closing pulls the flat
+ * `pairOracleFee` (1.00 USDW) straight from the trader's wallet
+ * (OstiumTrading.sol:310-311) and the wallet held 0.057243. The UI rendered
+ * "Transaction reverted on chain" and nothing else, so the one fact that would have
+ * explained it — the trader needs a whole USDW in hand to close — was never shown.
+ *
+ * The same session's faucet claim reverted with `CooldownActive`, and a rejected close
+ * before that rendered viem's full multi-paragraph dump, docs link and all, into a table
+ * cell.
+ */
+describe('describeTxError', () => {
+  const INSUFFICIENT = encodeErrorResult({
+    abi: parseAbi(['error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)']),
+    errorName: 'ERC20InsufficientBalance',
+    args: ['0x43Ac53c54EaE7E31b6c717FE17a8cE31ba2cB06B', 57243n, 1000000n],
+  });
+
+  function reverted(data: `0x${string}`) {
+    return new ContractFunctionExecutionError(
+      new ContractFunctionRevertedError({ abi: [], data, functionName: 'closeTradeMarket' }),
+      { abi: [], functionName: 'closeTradeMarket' },
+    );
+  }
+
+  /** Rejecting is a deliberate act, not a fault. A red alert for it reads as a bug. */
+  it('says nothing at all when the user rejected the signature', () => {
+    const err = new ContractFunctionExecutionError(new UserRejectedRequestError(new Error('denied')), {
+      abi: [],
+      functionName: 'closeTradeMarket',
+    });
+    expect(describeTxError(err)).toBeNull();
+  });
+
+  it('says nothing for a bare EIP-1193 4001 from a wallet that throws no viem error', () => {
+    expect(describeTxError({ code: 4001, message: 'User rejected the request.' })).toBeNull();
+  });
+
+  it('names both figures for an insufficient balance, in USDW rather than raw units', () => {
+    const text = describeTxError(reverted(INSUFFICIENT)) ?? '';
+    expect(text).toContain('1.00');
+    expect(text).toContain('0.06');
+    expect(text).not.toContain('57243');
+  });
+
+  it('says when the faucet unlocks rather than that a transaction reverted', () => {
+    const availableAt = 1790097009n;
+    const data = encodeErrorResult({
+      abi: parseAbi(['error CooldownActive(uint256 availableAt)']),
+      errorName: 'CooldownActive',
+      args: [availableAt],
+    });
+    const text = describeTxError(reverted(data)) ?? '';
+    expect(text).toMatch(/faucet/i);
+    expect(text).toMatch(/already/i);
+  });
+
+  /** The complaint that started this: viem's `message` is a multi-paragraph block with a
+   *  docs link and a version stamp, and five call sites rendered it verbatim. */
+  it('never returns viem’s multi-line dump for an unrecognised error', () => {
+    const err = new ContractFunctionExecutionError(new ContractFunctionRevertedError({ abi: [], data: '0xdeadbeef', functionName: 'closeTradeMarket' }), {
+      abi: [],
+      functionName: 'closeTradeMarket',
+    });
+    const text = describeTxError(err) ?? '';
+    expect(text).not.toContain('\n');
+    expect(text).not.toContain('viem.sh');
+    expect(text).not.toMatch(/Request Arguments/i);
+    expect(text.length).toBeGreaterThan(0);
+  });
+
+  it('passes a reverted-on-chain error through, since it is already one sentence', () => {
+    const text = describeTxError(new TransactionRevertedError('close the position', HASH)) ?? '';
+    expect(text).toContain('close the position');
+    expect(text).not.toContain('\n');
+  });
+
+  it('falls back to a plain string for a non-Error throw', () => {
+    expect(describeTxError('boom')).toBe('boom');
   });
 });

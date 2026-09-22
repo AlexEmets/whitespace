@@ -11,6 +11,7 @@ import { VAULT_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal } from '@/lib/money';
 import { Modal } from './Modal';
 import styles from './FundingModal.module.css';
+import { describeTxError } from '@/lib/tx';
 
 export type FundingMode = 'deposit' | 'withdraw';
 
@@ -107,7 +108,7 @@ export function FundingModal({
     try {
       await fn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
     } finally {
       setBusy(null);
     }

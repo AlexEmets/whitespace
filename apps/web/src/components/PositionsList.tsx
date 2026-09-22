@@ -11,6 +11,7 @@ import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, priceToRaw } from '@/lib/money';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
+import { describeTxError } from '@/lib/tx';
 
 function PositionRow({ position, market }: { position: PositionSummary; market: MarketSummary | undefined }) {
   const { address } = useAccount();
@@ -65,8 +66,11 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
       });
       setStatus('submitted');
     } catch (err) {
-      setStatus('error');
-      setErrorMessage(err instanceof Error ? err.message : String(err));
+      // A rejected signature is not a failure: fall back to idle so the row simply offers
+      // Close again, rather than accusing the trader of an error they chose.
+      const message = describeTxError(err);
+      setStatus(message === null ? 'idle' : 'error');
+      setErrorMessage(message);
     }
   }
 

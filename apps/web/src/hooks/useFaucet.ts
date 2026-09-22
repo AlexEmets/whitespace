@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { maxUint256 } from 'viem';
 import type { Erc20Handle } from '@/hooks/useErc20';
+import { describeTxError } from '@/lib/tx';
 
 /** What `USDW.claim()` mints per call, and how often the token allows it. Mirrors
  * contracts/src/mocks/USDW.sol — shown to the user so the faucet's refusal after a
@@ -85,7 +86,7 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
       await armAllowance();
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeTxError(err));
       return false;
     } finally {
       setPending(false);
