@@ -229,7 +229,7 @@ describe('decodes PairAdded and MaxOpenInterestUpdated market-config logs', () =
     if (decoded.eventName !== 'PairAdded') throw new Error('wrong event');
     expect(decoded.args.from).toMatch(/^0x4254430+$/); // "BTC" in hex, right-padded
     expect(decoded.args.to).toMatch(/^0x5553440+$/); // "USD" in hex, right-padded
-    expect(decoded.args.index).toBe(operational.market.pairIndex);
+    expect(decoded.args.index).toBe(operational.markets[0].pairIndex);
   });
 
   it('MaxOpenInterestUpdated decodes to exactly 1_000_000_000_000 (PRECISION_6), matching the config file', () => {
@@ -239,7 +239,7 @@ describe('decodes PairAdded and MaxOpenInterestUpdated market-config logs', () =
       topics: maxOiLog.topics as [`0x${string}`, ...`0x${string}`[]],
     });
     if (decoded.eventName !== 'MaxOpenInterestUpdated') throw new Error('wrong event');
-    expect(decoded.args.value).toBe(BigInt(operational.market.maxOpenInterest));
+    expect(decoded.args.value).toBe(BigInt(operational.markets[0].maxOpenInterest));
     expect(decoded.args.value).toBe(1_000_000_000_000n);
   });
 });
