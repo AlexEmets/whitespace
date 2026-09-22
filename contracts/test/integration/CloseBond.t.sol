@@ -783,4 +783,129 @@ contract CloseBondTest is SystemFixture {
         assertEq(_devFees(), devBefore, "a position underwater at the last oracle price must not be charged");
         assertEq(_openCollateral(), collateralBefore, "a waived charge must leave collateral untouched");
     }
+
+    /// @dev Same request+deliver as `_requestCloseAndCancel`, but leaves the recorded logs intact
+    ///      for the caller to decode. `_requestCloseAndCancel` consumes them itself (via its own
+    ///      `vm.getRecordedLogs()`) to assert the cancel reason, which would leave nothing behind
+    ///      for an `OracleFeeBondCharged` check run afterward.
+    function _requestCloseAndDeliverMarketClosed(uint16 pct) internal {
+        vm.prank(trader);
+        IOstiumTrading(d.trading).closeTradeMarket(
+            0, 0, pct, uint192(uint256(int256(BTC_65K))), 100
+        );
+        (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
+        _deliver(orderId, _marketClosedReport(timestamp));
+    }
+
+    /// @dev Scans the recorded logs for `OracleFeeBondCharged`, decoding it if present rather than
+    ///      reverting on absence — the waive test below needs to assert it is NOT there.
+    function _findOracleFeeBondCharged()
+        internal
+        returns (bool found, uint256 tradeId, address trader_, uint256 collateral, uint32 leverage, uint192 tp, uint192 sl)
+    {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 sig = keccak256("OracleFeeBondCharged(uint256,address,uint256,uint32,uint192,uint192)");
+        for (uint256 j = logs.length; j > 0; j--) {
+            if (logs[j - 1].topics.length > 0 && logs[j - 1].topics[0] == sig) {
+                tradeId = uint256(logs[j - 1].topics[1]);
+                trader_ = address(uint160(uint256(logs[j - 1].topics[2])));
+                (collateral, leverage, tp, sl) = abi.decode(logs[j - 1].data, (uint256, uint32, uint192, uint192));
+                return (true, tradeId, trader_, collateral, leverage, tp, sl);
+            }
+        }
+        return (false, 0, address(0), 0, 0, 0, 0);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // I2 — the indexer's only signal for this mutation.
+    // -------------------------------------------------------------------------------------
+
+    /// @notice A cancelled close must emit `OracleFeeBondCharged` carrying the position's
+    ///         resulting state, not just an opaque amount like the pre-existing `OracleFeeCharged`.
+    /// @dev Without this, `services/indexer` has no way to learn the mutation
+    ///      `_chargeBondFromPosition` makes: it only ever sees `MarketCloseCanceled`, which
+    ///      touches the order row, not the position's collateral/leverage.
+    function test_chargingTheBondEmitsOracleFeeBondChargedOnCancelledClose() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+        uint256 tradeId = _tradeInfo().tradeId;
+
+        vm.recordLogs();
+        _requestCloseAndDeliverMarketClosed(FULL);
+
+        (
+            bool found,
+            uint256 loggedTradeId,
+            address loggedTrader,
+            uint256 loggedCollateral,
+            uint32 loggedLeverage,
+            uint192 loggedTp,
+            uint192 loggedSl
+        ) = _findOracleFeeBondCharged();
+
+        assertTrue(found, "a charged bond must emit OracleFeeBondCharged");
+        assertEq(loggedTradeId, tradeId, "event must carry the charged trade's id");
+        assertEq(loggedTrader, trader, "event must carry the trade's trader");
+        assertEq(loggedCollateral, _openCollateral(), "event collateral must match the position's new collateral");
+        assertEq(loggedLeverage, _openLeverage(), "event leverage must match the position's new leverage");
+        assertEq(loggedTp, _openTp(), "event tp must match the position's corrected tp");
+        assertEq(loggedSl, _openSl(), "event sl must match the position's corrected sl");
+    }
+
+    /// @notice A partial close's bond charge must also emit `OracleFeeBondCharged`, with the
+    ///         FINAL post-charge collateral/leverage — not the intermediate value the close
+    ///         itself leaves behind before `_chargeBondFromPosition` runs.
+    /// @dev `MarketCloseExecutedV2`'s indexer handler sets collateral to what the close alone
+    ///      leaves; this event must carry the number that comes after it, so an indexer applying
+    ///      both events in log order (as `MarketCloseExecutedV2` fires first on-chain — see
+    ///      OstiumTradingCallbacks.sol) lands on the right final state either way.
+    function test_chargingTheBondEmitsOracleFeeBondChargedOnPartialClose() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openAndFill(1000e6);
+        uint256 tradeId = _tradeInfo().tradeId;
+
+        vm.recordLogs();
+        _requestCloseAndFill(FULL / 2);
+
+        (
+            bool found,
+            uint256 loggedTradeId,
+            address loggedTrader,
+            uint256 loggedCollateral,
+            uint32 loggedLeverage,
+            uint192 loggedTp,
+            uint192 loggedSl
+        ) = _findOracleFeeBondCharged();
+
+        assertTrue(found, "a partial close that charges a bond must emit OracleFeeBondCharged");
+        assertEq(loggedTradeId, tradeId, "event must carry the same trade's id across a partial close");
+        assertEq(loggedTrader, trader, "event must carry the trade's trader");
+        assertEq(
+            loggedCollateral,
+            _openCollateral(),
+            "event collateral must be the FINAL collateral, after both the partial close and the bond"
+        );
+        assertEq(loggedLeverage, _openLeverage(), "event leverage must match the position's new leverage");
+        assertEq(loggedTp, _openTp(), "event tp must match the position's corrected tp");
+        assertEq(loggedSl, _openSl(), "event sl must match the position's corrected sl");
+    }
+
+    /// @notice A waived bond (collateral too small to pay it) must emit NOTHING — an indexer that
+    ///         saw a spurious `OracleFeeBondCharged` here would write a mutation that never
+    ///         happened.
+    function test_waivedBondEmitsNoOracleFeeBondCharged() public {
+        _configureAll();
+        _fundTrader(10_000e6);
+        _openWithCollateralBelow(_bond());
+        _drainTraderUsdw();
+        assertLt(_openLeverage(), _maxLeverage(), "precondition: the cap must not be in play here");
+
+        vm.recordLogs();
+        _requestCloseAndDeliverMarketClosed(FULL);
+
+        (bool found,,,,,,) = _findOracleFeeBondCharged();
+        assertFalse(found, "a waived bond must not emit OracleFeeBondCharged");
+    }
 }

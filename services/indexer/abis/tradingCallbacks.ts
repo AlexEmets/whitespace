@@ -112,4 +112,16 @@ export const tradingCallbacksAbi = [
       { name: 'sl', type: 'uint192', indexed: false },
     ],
   },
+  {
+    type: 'event',
+    name: 'OracleFeeBondCharged',
+    inputs: [
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'collateral', type: 'uint256', indexed: false },
+      { name: 'leverage', type: 'uint32', indexed: false },
+      { name: 'tp', type: 'uint192', indexed: false },
+      { name: 'sl', type: 'uint192', indexed: false },
+    ],
+  },
 ] as const;

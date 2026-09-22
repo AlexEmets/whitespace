@@ -92,6 +92,14 @@ interface IOstiumTradingCallbacks {
     event TradeSizeRefUpdated(uint256 value);
     event DevFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
     event OracleFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
+    // Emitted once, only when applyBondToTrade actually applies the charge (never on a waive),
+    // from both places OracleFeeCharged above fires with a position argument:
+    // _chargeBondFromPosition's cancelled-close and partial-close paths. Carries the position's
+    // resulting state so an off-chain indexer can update it directly, mirroring what
+    // RemoveCollateralExecuted already carries for the other mid-life collateral mutation.
+    event OracleFeeBondCharged(
+        uint256 indexed tradeId, address indexed trader, uint256 collateral, uint32 leverage, uint192 tp, uint192 sl
+    );
     event VaultOpeningFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
     event VaultLiqFeeCharged(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint256 amount);
     event RemoveCollateralRejected(

@@ -333,3 +333,23 @@ ponder.on('TradingCallbacks:RemoveCollateralExecuted', async ({ event, context }
     'RemoveCollateralExecuted->position',
   );
 });
+
+// --- Oracle-fee bond charged out of a position's own collateral (a cancelled close or a
+// partial close) — OstiumTradingCallbacks._chargeBondFromPosition. Carries the position's
+// resulting absolute state, so this simply overwrites rather than subtracting a delta like
+// RemoveCollateralExecuted above: for the partial-close path the contract re-reads the trade
+// from storage AFTER the close has already scaled collateral down, so `collateral` here is
+// already the final post-close, post-charge value regardless of handler ordering. No order
+// row to touch here — MarketCloseCanceled/MarketCloseExecutedV2 already resolve it. ------
+
+ponder.on('TradingCallbacks:OracleFeeBondCharged', async ({ event, context }) => {
+  const { tradeId, collateral, leverage, tp, sl } = event.args;
+
+  await updateIfExists(
+    context.db,
+    position,
+    { tradeId },
+    { collateral, leverage, tp, sl },
+    'OracleFeeBondCharged->position',
+  );
+});

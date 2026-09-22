@@ -694,6 +694,7 @@ contract OstiumTradingCallbacks is IOstiumTradingCallbacks, Initializable {
 
         storageT.handleOracleFee(bond);
         emit OracleFeeCharged(tradeId, t.trader, bond);
+        emit OracleFeeBondCharged(tradeId, t.trader, t.collateral, t.leverage, t.tp, t.sl);
         return true;
     }
 
