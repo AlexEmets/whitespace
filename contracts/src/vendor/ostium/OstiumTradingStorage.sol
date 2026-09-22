@@ -462,12 +462,11 @@ contract OstiumTradingStorage is IOstiumTradingStorage, Initializable {
         devFees += _amount;
     }
 
-    function refundOracleFee(uint256 _amount) external onlyTradingOrCallbacks {
-        if (_amount > devFees) {
-            revert RefundOracleFeeFailed();
-        }
-        devFees -= _amount;
-    }
+    // refundOracleFee was removed with its only caller, OstiumTrading.closeTradeMarketTimeout.
+    // It paid back a bond that closeTradeMarket no longer takes from the wallet, so every call
+    // was a net withdrawal from the collateral escrow, and it bricked the timeout path outright
+    // once devFees fell below one bond. devFees is only ever credited now (handleOracleFee) and
+    // debited by gov (claimFees).
 
     function claimFees(uint256 _amount) external onlyGov {
         uint256 _devFees = devFees;

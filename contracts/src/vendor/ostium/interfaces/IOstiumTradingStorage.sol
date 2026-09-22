@@ -109,7 +109,6 @@ interface IOstiumTradingStorage {
     error NotTrading(address a);
     error NotManager(address a);
     error NotCallbacks(address a);
-    error RefundOracleFeeFailed();
     error NotTradingOrCallbacks(address a);
     error NotManagerOrMaxOIKeeper(address a);
     error NoOpenLimitOrder(address _trader, uint16 _pairIndex, uint8 _index);
@@ -240,8 +239,9 @@ interface IOstiumTradingStorage {
         uint32 leverage,
         bool isBuy
     ) external returns (uint256, uint256);
+    // refundOracleFee is deliberately absent: closeTradeMarketTimeout was its only caller and the
+    // bond it refunded is no longer taken from the wallet at close-request time.
     function handleOracleFee(uint256 _amount) external;
-    function refundOracleFee(uint256 _amount) external;
     function storePendingRemoveCollateral(PendingRemoveCollateral calldata request, uint256 orderId) external;
     function getPendingRemoveCollateral(uint256 orderId) external view returns (PendingRemoveCollateral memory);
     function unregisterPendingRemoveCollateral(uint256 orderId) external;

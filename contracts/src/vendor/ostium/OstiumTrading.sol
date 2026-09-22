@@ -735,11 +735,13 @@ contract OstiumTrading is IOstiumTrading, Delegatable, Initializable {
                 emit MarketCloseFailed(tradeId, sender, trade.pairIndex);
             }
         }
-        // Always refund oracle fee regardless of partial or full close
-        uint256 oracleFee = _pairsStorage().pairOracleFee(trade.pairIndex);
-        storageT.refundOracleFee(oracleFee);
-        storageT.transferUsdc(address(storageT), sender, oracleFee);
-        emit OracleFeeRefunded(tradeId, sender, trade.pairIndex, oracleFee);
+        // No bond refund here. Upstream took one oracle fee from the trader's WALLET in
+        // closeTradeMarket and paid it back on this path and on a successful full close; those
+        // two halves cancelled out. closeTradeMarket no longer takes it (the bond now comes out
+        // of the position, in OstiumTradingCallbacks), so refunding it here would pay the trader
+        // USDW out of the escrow that backs every other trader's collateral — and would revert
+        // RefundOracleFeeFailed the moment devFees fell below one bond, welding shut the only
+        // escape from an undelivered close.
 
         emit MarketCloseTimeoutExecutedV2(
             _order,
