@@ -4,7 +4,7 @@ pragma solidity 0.8.24;
 import {Test, Vm} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {DeployScript} from "../../script/Deploy.s.sol";
+import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
 import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
@@ -54,7 +54,7 @@ contract OracleHardeningTest is Test {
 
     DeployScript internal deployer;
     OperateScript internal operator;
-    DeployScript.Deployment internal d;
+    SystemDeployer.Deployment internal d;
 
     address internal gov = address(0x60F);
     address internal dev = address(0xDE7);
@@ -75,7 +75,7 @@ contract OracleHardeningTest is Test {
 
         deployer = new DeployScript();
         d = deployer.deployAll(
-            DeployScript.Roles({
+            SystemDeployer.Roles({
                 gov: gov, dev: dev, manager: manager, owner: address(this), marketMaker: marketMaker
             })
         );
@@ -314,8 +314,8 @@ contract OracleHardeningTest is Test {
 
     function test_installHardenedVerifierRejectsNonGov() public {
         // Fresh system, so the install has work to do and reaches the registry write.
-        DeployScript.Deployment memory fresh = new DeployScript().deployAll(
-            DeployScript.Roles({
+        SystemDeployer.Deployment memory fresh = new DeployScript().deployAll(
+            SystemDeployer.Roles({
                 gov: gov, dev: dev, manager: manager, owner: address(this), marketMaker: marketMaker
             })
         );
@@ -897,7 +897,7 @@ contract OracleMigrationWindowTest is Test {
 
     DeployScript internal deployer;
     OperateScript internal operator;
-    DeployScript.Deployment internal d;
+    SystemDeployer.Deployment internal d;
 
     address internal gov = address(0x60F);
     address internal dev = address(0xDE7);
@@ -911,7 +911,7 @@ contract OracleMigrationWindowTest is Test {
     function setUp() public {
         deployer = new DeployScript();
         d = deployer.deployAll(
-            DeployScript.Roles({
+            SystemDeployer.Roles({
                 gov: gov, dev: dev, manager: manager, owner: address(this), marketMaker: marketMaker
             })
         );

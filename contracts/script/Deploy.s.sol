@@ -53,7 +53,12 @@ contract RegistryBootstrap {
     }
 }
 
-contract DeployScript is Script {
+/// @notice The whole vendored system, deployed and wired in one call. Abstract so a script that
+///         must also CONFIGURE the system (`DeployTestnet.s.sol`) can inherit it: broadcast, like
+///         `vm.prank`, only attributes calls made directly by the broadcasting contract, so
+///         deploying through a separate `DeployScript` instance would make that instance — not the
+///         deployer EOA — the creator of the registry bootstrap.
+abstract contract SystemDeployer is Script {
     struct Deployment {
         address registry;
         address collateral;
@@ -95,14 +100,16 @@ contract DeployScript is Script {
     uint16 internal constant MAX_DISCOUNT_THRESHOLD_P = 11000;    // 110%, must be > 10000
     int256 internal constant OPEN_ROLLOVER_FEE = 0;               // greenfield: no history
 
-    function _proxy(address implementation, bytes memory initCall) internal returns (address) {
+    /// @dev Named apart from `OperateScript._proxy` so a script inheriting both compiles.
+    function _erc1967(address implementation, bytes memory initCall) internal returns (address) {
         return address(new ERC1967Proxy(implementation, initCall));
     }
 
     /// @notice Deploy the full system, wire the registry, and replay the migration chain.
     /// @param r Role assignments. `gov`, `dev`, `manager` and `owner` MUST be four distinct
     ///          addresses — OstiumRegistry reverts with `HasAlreadyRole` on any collision.
-    function deployAll(Roles memory r) public returns (Deployment memory d) {
+    /// @param marketOrdersTimeout Blocks before a trader may reclaim an unfilled market order.
+    function _deployAll(Roles memory r, uint16 marketOrdersTimeout) internal returns (Deployment memory d) {
         require(
             r.gov != address(0) && r.dev != address(0) && r.manager != address(0)
                 && r.owner != address(0) && r.marketMaker != address(0),
@@ -139,30 +146,30 @@ contract DeployScript is Script {
         // Verifier is not upgradeable upstream: it takes the registry in its constructor.
         d.verifier = address(new OstiumVerifier(reg));
 
-        d.tradingStorage = _proxy(
+        d.tradingStorage = _erc1967(
             address(new OstiumTradingStorage()),
             abi.encodeCall(OstiumTradingStorage.initialize, (reg, d.collateral))
         );
-        d.pairsStorage = _proxy(
+        d.pairsStorage = _erc1967(
             address(new OstiumPairsStorage()),
             abi.encodeCall(OstiumPairsStorage.initialize, (reg))
         );
-        d.pairInfos = _proxy(
+        d.pairInfos = _erc1967(
             address(new OstiumPairInfos()),
             abi.encodeCall(
                 OstiumPairInfos.initialize,
                 (reg, r.manager, LIQ_MARGIN_THRESHOLD_P, MAX_NEGATIVE_PNL_ON_OPEN_P)
             )
         );
-        d.callbacks = _proxy(
+        d.callbacks = _erc1967(
             address(new OstiumTradingCallbacks()),
             abi.encodeCall(OstiumTradingCallbacks.initialize, (reg))
         );
-        d.openPnl = _proxy(
+        d.openPnl = _erc1967(
             address(new OstiumOpenPnl()),
             abi.encodeCall(OstiumOpenPnl.initialize, (reg))
         );
-        d.priceRouter = _proxy(
+        d.priceRouter = _erc1967(
             address(new OstiumPriceRouter()),
             abi.encodeCall(
                 OstiumPriceRouter.initialize, (reg, MAX_TS_VALIDITY, FIRST_ORDER_ID)
@@ -180,22 +187,22 @@ contract DeployScript is Script {
         // first pair (one entry per distinct oracle type, not per pair). The omission is
         // pinned by test_priceUpKeepIsNotRegisteredUnderItsStructName in
         // test/integration/DeployLocal.t.sol; see docs/runbooks/deploy-testnet.md.
-        d.priceUpKeep = _proxy(
+        d.priceUpKeep = _erc1967(
             address(new OstiumPrivatePriceUpKeep()),
             abi.encodeCall(OstiumPrivatePriceUpKeep.initialize, (reg))
         );
-        d.trading = _proxy(
+        d.trading = _erc1967(
             address(new OstiumTrading()),
             abi.encodeCall(
                 OstiumTrading.initialize,
-                (reg, MAX_ALLOWED_COLLATERAL, MARKET_ORDERS_TIMEOUT, TRIGGER_TIMEOUT)
+                (reg, MAX_ALLOWED_COLLATERAL, marketOrdersTimeout, TRIGGER_TIMEOUT)
             )
         );
 
         // Vault: note _asset comes FIRST and _registry second, and the parameter list
         // is eight items long. Verified against src/vendor/ostium/OstiumVault.sol:109.
         uint16[2] memory withdrawLockThresholdsP = [uint16(10), uint16(20)];
-        d.vault = _proxy(
+        d.vault = _erc1967(
             address(new OstiumVault()),
             abi.encodeCall(
                 OstiumVault.initialize,
@@ -258,6 +265,15 @@ contract DeployScript is Script {
         OstiumVault(d.vault).initializeV2();
         OstiumVault(d.vault).initializeV3();
         OstiumVault(d.vault).initializeV4(marketMaker);
+    }
+
+}
+
+contract DeployScript is SystemDeployer {
+    /// @notice The original phase-1 entry point: the system as 1874 was first deployed, with a
+    ///         30-block market-order timeout.
+    function deployAll(Roles memory r) public returns (Deployment memory d) {
+        return _deployAll(r, MARKET_ORDERS_TIMEOUT);
     }
 
     function run() external returns (Deployment memory) {

@@ -4,7 +4,7 @@ pragma solidity 0.8.24;
 import {Test, Vm} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-import {DeployScript} from "../../script/Deploy.s.sol";
+import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
 import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
@@ -23,7 +23,7 @@ contract TradeLocalTest is Test {
 
     DeployScript internal deployer;
     OperateScript internal operator;
-    DeployScript.Deployment internal d;
+    SystemDeployer.Deployment internal d;
 
     address internal gov = address(0x60F);
     address internal dev = address(0xDE7);
@@ -39,7 +39,7 @@ contract TradeLocalTest is Test {
         signer = vm.addr(SIGNER_KEY);
         deployer = new DeployScript();
         d = deployer.deployAll(
-            DeployScript.Roles({
+            SystemDeployer.Roles({
                 gov: gov, dev: dev, manager: manager, owner: address(this), marketMaker: marketMaker
             })
         );

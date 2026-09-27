@@ -3,14 +3,14 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {DeployScript} from "../../script/Deploy.s.sol";
+import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
 import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
 import {OstiumPairInfos} from "../../src/vendor/ostium/OstiumPairInfos.sol";
 
 contract DeployLocalTest is Test {
     DeployScript internal deployer;
-    DeployScript.Deployment internal d;
+    SystemDeployer.Deployment internal d;
 
     // Four mutually distinct addresses: OstiumRegistry rejects any collision.
     address internal gov = address(0x60F);
@@ -21,7 +21,7 @@ contract DeployLocalTest is Test {
     function setUp() public {
         deployer = new DeployScript();
         d = deployer.deployAll(
-            DeployScript.Roles({
+            SystemDeployer.Roles({
                 gov: gov,
                 dev: dev,
                 manager: manager,
