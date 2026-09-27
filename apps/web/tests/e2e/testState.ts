@@ -57,4 +57,6 @@ export class TestState {
   // deployments/1874-operational.json proof trade's open price.
   indexPrice = '65000000000000000000000';
   degraded = false;
+  /** PairInfos priceImpactK (PRECISION_18-scaled). 0 = no size-dependent impact. */
+  priceImpactK = 0n;
 }

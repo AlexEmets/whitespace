@@ -9,11 +9,26 @@ import {
 import { CHAIN_ID } from '../../src/lib/config';
 import { COLLATERAL_ADDRESS, PAIRS_STORAGE_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_ADDRESS, VAULT_ADDRESS } from '../../src/lib/deployment';
 import { ERC20_ABI, PAIRS_STORAGE_ABI, PAIR_INFOS_ABI, TRADING_ABI, VAULT_ABI } from '../../src/lib/abi';
+import { PAIR_INFOS_IMPACT_ABI } from '../../src/lib/abiPairInfos';
 import { MOCK_TRADER_ADDRESS, type TestState } from './testState';
 
 const CHAIN_ID_HEX = numberToHex(CHAIN_ID);
 let receiptCounter = 0;
 let blockCounter = 10;
+
+/**
+ * A call the mock does not model. It is answered as an `execution reverted` JSON-RPC error —
+ * what a real node returns for a selector the contract lacks — instead of throwing inside the
+ * route handler, which used to tear down the whole page session and fail unrelated tests.
+ */
+export class UnmockedCallError extends Error {
+  constructor(to: string, data: string) {
+    super(`execution reverted: unmocked eth_call ${data.slice(0, 10)} on ${to}`);
+    this.name = 'UnmockedCallError';
+  }
+}
+
+const PAIR_INFOS_READ_ABI = [...PAIR_INFOS_ABI, ...PAIR_INFOS_IMPACT_ABI];
 
 interface EthRequestPayload {
   method: string;
@@ -84,7 +99,28 @@ export function createMockChain(state: TestState) {
     }
 
     if (addressEquals(to, PAIR_INFOS_ADDRESS)) {
-      const decoded = decodeFunctionData({ abi: PAIR_INFOS_ABI, data });
+      const decoded = decodeFunctionData({ abi: PAIR_INFOS_READ_ABI, data });
+      if (decoded.functionName === 'getPairPriceImpactK') {
+        return encodeFunctionResult({
+          abi: PAIR_INFOS_IMPACT_ABI,
+          functionName: 'getPairPriceImpactK',
+          result: state.priceImpactK,
+        });
+      }
+      if (decoded.functionName === 'pairDynamicSpreadParams') {
+        return encodeFunctionResult({
+          abi: PAIR_INFOS_IMPACT_ABI,
+          functionName: 'pairDynamicSpreadParams',
+          result: [0n, 0n, state.priceImpactK],
+        });
+      }
+      if (decoded.functionName === 'pairDynamicSpreadState') {
+        return encodeFunctionResult({
+          abi: PAIR_INFOS_IMPACT_ABI,
+          functionName: 'pairDynamicSpreadState',
+          result: [0n, 0n, 0],
+        });
+      }
       if (decoded.functionName === 'pairOpeningFees') {
         // Matches the ruling's stated real config: opening fees are currently zero.
         return encodeFunctionResult({
@@ -103,7 +139,38 @@ export function createMockChain(state: TestState) {
       }
     }
 
-    return '0x';
+    throw new UnmockedCallError(to, data);
+  }
+
+  /**
+   * The app simulates every write (`simulateContract`) before asking the wallet to sign it.
+   * A simulated write succeeds here with empty return data — the state change itself is
+   * modelled in handleSendTransaction when the transaction is actually sent.
+   */
+  function isSimulatedWrite(data: Hex): boolean {
+    for (const abi of [ERC20_ABI, VAULT_ABI, TRADING_ABI] as const) {
+      try {
+        const { functionName } = decodeFunctionData({ abi, data });
+        const item = (abi as readonly { type: string; name?: string; stateMutability?: string }[]).find(
+          (i) => i.type === 'function' && i.name === functionName,
+        );
+        return item?.stateMutability === 'nonpayable' || item?.stateMutability === 'payable';
+      } catch {
+        // not this ABI — try the next
+      }
+    }
+    return false;
+  }
+
+  /** Decodes with the app's own ABIs; a selector none of them know is also "unmocked". */
+  function safeHandleCall(callParams: { to?: string; data?: Hex }): Hex {
+    if (callParams.data && isSimulatedWrite(callParams.data)) return '0x';
+    try {
+      return handleCall(callParams);
+    } catch (err) {
+      if (err instanceof UnmockedCallError) throw err;
+      throw new UnmockedCallError(callParams.to ?? '0x', callParams.data ?? '0x');
+    }
   }
 
   function makeReceipt(hash: Hex, to: Address, logs: unknown[]) {
@@ -238,7 +305,7 @@ export function createMockChain(state: TestState) {
       case 'eth_getTransactionCount':
         return numberToHex(receiptCounter);
       case 'eth_call':
-        return handleCall((params[0] as { to?: string; data?: Hex }) ?? {});
+        return safeHandleCall((params[0] as { to?: string; data?: Hex }) ?? {});
       case 'eth_sendTransaction':
         return handleSendTransaction((params[0] as { to?: string; data?: Hex }) ?? {});
       case 'eth_getTransactionReceipt':

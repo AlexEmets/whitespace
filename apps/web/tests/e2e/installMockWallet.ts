@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { CHAIN_INFO } from '../../src/lib/config';
-import { createMockChain } from './mockChain';
+import { createMockChain, UnmockedCallError } from './mockChain';
 import type { TestState } from './testState';
 
 /**
@@ -138,7 +138,12 @@ export async function installMockWallet(
 
   await page.route(CHAIN_INFO.rpc, async (route) => {
     const body = route.request().postDataJSON() as { jsonrpc: string; id: number; method: string; params?: unknown[] };
-    const result = await chain.handleRequest({ method: body.method, params: body.params });
-    await route.fulfill({ json: { jsonrpc: '2.0', id: body.id, result } });
+    try {
+      const result = await chain.handleRequest({ method: body.method, params: body.params });
+      await route.fulfill({ json: { jsonrpc: '2.0', id: body.id, result } });
+    } catch (err) {
+      if (!(err instanceof UnmockedCallError)) throw err;
+      await route.fulfill({ json: { jsonrpc: '2.0', id: body.id, error: { code: 3, message: err.message } } });
+    }
   });
 }
