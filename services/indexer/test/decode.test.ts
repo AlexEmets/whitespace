@@ -1,6 +1,6 @@
 // Decodes real event logs captured from Whitechain testnet 1874 (see
 // fixtures/README.md) using the exact ABI fragments this indexer subscribes
-// to, and asserts the decoded values match deployments/1874-operational.json
+// to, and asserts the decoded values match fixtures/capture.json
 // — the task's required check: "assert your decoder reproduces the known
 // open price 65001000000000000000000 and collateral 999000000."
 import { describe, it, expect } from 'vitest';
@@ -14,8 +14,9 @@ import { priceUpKeepAbi } from '../abis/priceUpKeep.js';
 import openRequestFixture from '../fixtures/open-request-tx.json' with { type: 'json' };
 import openReportFixture from '../fixtures/open-report-tx.json' with { type: 'json' };
 import closeReportFixture from '../fixtures/close-report-tx.json' with { type: 'json' };
-import operational from '../../../deployments/1874-operational.json' with { type: 'json' };
-import deployment from '../../../deployments/1874.json' with { type: 'json' };
+// Addresses and expected values frozen when the receipts were captured — NOT the live
+// deployment manifest, which a redeploy rewrites (see fixtures/capture.json).
+import capture from '../fixtures/capture.json' with { type: 'json' };
 
 type RawLog = {
   address: string;
@@ -45,7 +46,7 @@ const TOPIC0_PRICE_REQUESTED_V2 = '0x0b34af4df6d01bd2b84814169152cd26e9cccd4bccf
 describe('decodes MarketOpenExecuted from the real proof-trade open report tx', () => {
   const raw = findLog(
     openReportFixture.result.logs as RawLog[],
-    deployment.contracts.callbacks,
+    capture.contracts.callbacks,
     TOPIC0_MARKET_OPEN_EXECUTED,
   );
 
@@ -65,27 +66,27 @@ describe('decodes MarketOpenExecuted from the real proof-trade open report tx', 
 
   it('reproduces the known open price exactly (65001000000000000000000, PRECISION_18)', () => {
     if (decoded.eventName !== 'MarketOpenExecuted') throw new Error('wrong event');
-    expect(decoded.args.t.openPrice).toBe(BigInt(operational.proofTrade.openPrice));
+    expect(decoded.args.t.openPrice).toBe(BigInt(capture.proofTrade.openPrice));
     expect(decoded.args.t.openPrice).toBe(65001000000000000000000n);
   });
 
   it('reproduces the known collateral exactly (999000000, PRECISION_6)', () => {
     if (decoded.eventName !== 'MarketOpenExecuted') throw new Error('wrong event');
-    expect(decoded.args.t.collateral).toBe(BigInt(operational.proofTrade.collateral));
+    expect(decoded.args.t.collateral).toBe(BigInt(capture.proofTrade.collateral));
     expect(decoded.args.t.collateral).toBe(999000000n);
   });
 
   it('reproduces leverage, buy side, pairIndex and trader from the same trade', () => {
     if (decoded.eventName !== 'MarketOpenExecuted') throw new Error('wrong event');
-    expect(decoded.args.t.leverage).toBe(operational.proofTrade.leverage);
-    expect(decoded.args.t.buy).toBe(operational.proofTrade.buy);
-    expect(decoded.args.t.pairIndex).toBe(operational.proofTrade.pairIndex);
-    expect(decoded.args.t.trader.toLowerCase()).toBe(operational.roles.trader.toLowerCase());
+    expect(decoded.args.t.leverage).toBe(capture.proofTrade.leverage);
+    expect(decoded.args.t.buy).toBe(capture.proofTrade.buy);
+    expect(decoded.args.t.pairIndex).toBe(capture.proofTrade.pairIndex);
+    expect(decoded.args.t.trader.toLowerCase()).toBe(capture.trader.toLowerCase());
   });
 
   it('the orderId matches the recorded openOrderId', () => {
     if (decoded.eventName !== 'MarketOpenExecuted') throw new Error('wrong event');
-    expect(decoded.args.orderId).toBe(BigInt(operational.proofTrade.openOrderId));
+    expect(decoded.args.orderId).toBe(BigInt(capture.proofTrade.openOrderId));
   });
 
   it('collateral/openPrice are bigints, never JS numbers (precision check)', () => {
@@ -98,7 +99,7 @@ describe('decodes MarketOpenExecuted from the real proof-trade open report tx', 
 describe('decodes MarketCloseExecutedV2 from the real proof-trade close report tx', () => {
   const raw = findLog(
     closeReportFixture.result.logs as RawLog[],
-    deployment.contracts.callbacks,
+    capture.contracts.callbacks,
     TOPIC0_MARKET_CLOSE_EXECUTED_V2,
   );
 
@@ -114,11 +115,11 @@ describe('decodes MarketCloseExecutedV2 from the real proof-trade close report t
 
   it('the close order id matches closeOrderId and the tradeId matches openOrderId', () => {
     if (decoded.eventName !== 'MarketCloseExecutedV2') throw new Error('wrong event');
-    expect(decoded.args.orderId).toBe(BigInt(operational.proofTrade.closeOrderId));
+    expect(decoded.args.orderId).toBe(BigInt(capture.proofTrade.closeOrderId));
     // tradeId is not a separate id anywhere in the contracts' event surface —
     // it equals the id of the order that opened the trade. See
     // src/lib/tradeId.ts for the full derivation of this convention.
-    expect(decoded.args.tradeId).toBe(BigInt(operational.proofTrade.openOrderId));
+    expect(decoded.args.tradeId).toBe(BigInt(capture.proofTrade.openOrderId));
   });
 
   it('usdcSentToTrader is close to (but not necessarily equal to) the recorded pre/post balances, as a bigint', () => {
@@ -127,7 +128,7 @@ describe('decodes MarketCloseExecutedV2 from the real proof-trade close report t
     // trader got back roughly their collateral minus a small loss/fees
     const sent = decoded.args.usdcSentToTrader;
     expect(sent).toBeGreaterThan(0n);
-    expect(sent).toBeLessThan(BigInt(operational.proofTrade.collateral));
+    expect(sent).toBeLessThan(BigInt(capture.proofTrade.collateral));
   });
 
   it('percentageClosed reflects a full close (10000 = 100%)', () => {
@@ -137,7 +138,7 @@ describe('decodes MarketCloseExecutedV2 from the real proof-trade close report t
 });
 
 describe('decodes PriceReceived for the open report (index price stream)', () => {
-  const raw = findLog(openReportFixture.result.logs as RawLog[], deployment.contracts.priceUpKeep, TOPIC0_PRICE_RECEIVED);
+  const raw = findLog(openReportFixture.result.logs as RawLog[], capture.contracts.priceUpKeep, TOPIC0_PRICE_RECEIVED);
 
   const decoded = decodeEventLog({
     abi: priceUpKeepAbi,
@@ -150,9 +151,9 @@ describe('decodes PriceReceived for the open report (index price stream)', () =>
     expect(typeof decoded.args.price).toBe('bigint');
     // report price should be within a few dollars of the executed open price
     const diff =
-      decoded.args.price > BigInt(operational.proofTrade.openPrice)
-        ? decoded.args.price - BigInt(operational.proofTrade.openPrice)
-        : BigInt(operational.proofTrade.openPrice) - decoded.args.price;
+      decoded.args.price > BigInt(capture.proofTrade.openPrice)
+        ? decoded.args.price - BigInt(capture.proofTrade.openPrice)
+        : BigInt(capture.proofTrade.openPrice) - decoded.args.price;
     expect(diff).toBeLessThan(10n * 10n ** 18n); // within $10
   });
 });
@@ -160,12 +161,12 @@ describe('decodes PriceReceived for the open report (index price stream)', () =>
 describe('decodes MarketOpenOrderInitiated and PriceRequestedV2 (phase 1, request tx)', () => {
   const orderLog = findLog(
     openRequestFixture.result.logs as RawLog[],
-    deployment.contracts.trading,
+    capture.contracts.trading,
     TOPIC0_MARKET_OPEN_ORDER_INITIATED,
   );
   const priceReqLog = findLog(
     openRequestFixture.result.logs as RawLog[],
-    deployment.contracts.priceUpKeep,
+    capture.contracts.priceUpKeep,
     TOPIC0_PRICE_REQUESTED_V2,
   );
 
@@ -176,9 +177,9 @@ describe('decodes MarketOpenOrderInitiated and PriceRequestedV2 (phase 1, reques
       topics: orderLog.topics as [`0x${string}`, ...`0x${string}`[]],
     });
     if (decoded.eventName !== 'MarketOpenOrderInitiated') throw new Error('wrong event');
-    expect(decoded.args.orderId).toBe(BigInt(operational.proofTrade.openOrderId));
-    expect(decoded.args.trader.toLowerCase()).toBe(operational.roles.trader.toLowerCase());
-    expect(decoded.args.pairIndex).toBe(operational.proofTrade.pairIndex);
+    expect(decoded.args.orderId).toBe(BigInt(capture.proofTrade.openOrderId));
+    expect(decoded.args.trader.toLowerCase()).toBe(capture.trader.toLowerCase());
+    expect(decoded.args.pairIndex).toBe(capture.proofTrade.pairIndex);
   });
 
   it('PriceRequestedV2 fires in the same tx for the same orderId, feed "BTC/USD"', () => {
@@ -188,7 +189,7 @@ describe('decodes MarketOpenOrderInitiated and PriceRequestedV2 (phase 1, reques
       topics: priceReqLog.topics as [`0x${string}`, ...`0x${string}`[]],
     });
     if (decoded.eventName !== 'PriceRequestedV2') throw new Error('wrong event');
-    expect(decoded.args.orderId).toBe(BigInt(operational.proofTrade.openOrderId));
+    expect(decoded.args.orderId).toBe(BigInt(capture.proofTrade.openOrderId));
     // bytes32("BTC/USD"), right-padded with zero bytes
     expect(decoded.args.feed).toBe(
       '0x4254432f55534400000000000000000000000000000000000000000000000000'.slice(0, 66),
@@ -209,18 +210,18 @@ describe('decodes PairAdded and MaxOpenInterestUpdated market-config logs', () =
   // inline the two raw logs captured on 2026-09-08 rather than adding a
   // third fixture file for two rows.
   const pairAddedLog: RawLog = {
-    address: deployment.contracts.pairsStorage,
+    address: capture.contracts.pairsStorage,
     topics: [TOPIC0_PAIR_ADDED],
     data:
       '0x000000000000000000000000000000000000000000000000000000000000000042544300000000000000000000000000000000000000000000000000000000005553440000000000000000000000000000000000000000000000000000000000',
   };
   const maxOiLog: RawLog = {
-    address: deployment.contracts.tradingStorage,
+    address: capture.contracts.tradingStorage,
     topics: [TOPIC0_MAX_OI_UPDATED, '0x0000000000000000000000000000000000000000000000000000000000000000'],
     data: '0x000000000000000000000000000000000000000000000000000000e8d4a51000',
   };
 
-  it('PairAdded decodes from="BTC" to="USD", matching deployments/1874-operational.json', () => {
+  it('PairAdded decodes from="BTC" to="USD", matching the capture', () => {
     const decoded = decodeEventLog({
       abi: pairsStorageAbi,
       data: pairAddedLog.data as `0x${string}`,
@@ -229,7 +230,7 @@ describe('decodes PairAdded and MaxOpenInterestUpdated market-config logs', () =
     if (decoded.eventName !== 'PairAdded') throw new Error('wrong event');
     expect(decoded.args.from).toMatch(/^0x4254430+$/); // "BTC" in hex, right-padded
     expect(decoded.args.to).toMatch(/^0x5553440+$/); // "USD" in hex, right-padded
-    expect(decoded.args.index).toBe(operational.markets[0].pairIndex);
+    expect(decoded.args.index).toBe(capture.market0.pairIndex);
   });
 
   it('MaxOpenInterestUpdated decodes to exactly 1_000_000_000_000 (PRECISION_6), matching the config file', () => {
@@ -239,7 +240,7 @@ describe('decodes PairAdded and MaxOpenInterestUpdated market-config logs', () =
       topics: maxOiLog.topics as [`0x${string}`, ...`0x${string}`[]],
     });
     if (decoded.eventName !== 'MaxOpenInterestUpdated') throw new Error('wrong event');
-    expect(decoded.args.value).toBe(BigInt(operational.markets[0].maxOpenInterest));
+    expect(decoded.args.value).toBe(BigInt(capture.market0.maxOpenInterest));
     expect(decoded.args.value).toBe(1_000_000_000_000n);
   });
 });

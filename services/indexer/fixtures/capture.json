@@ -1,0 +1,24 @@
+{
+  "note": "Frozen at capture time (2026-09-08). The fixtures are receipts from the first 1874 deployment; these are the addresses and values they were produced by. Never re-point this at deployments/*.json \u2014 a redeploy changes those and would break the decoder test for reasons unrelated to decoding.",
+  "contracts": {
+    "trading": "0x9f7F9be7731E805B0b9174465257f0C1Ab589f27",
+    "callbacks": "0x4084cd63dB84c88c98418e33b88449b3b006da9c",
+    "pairsStorage": "0xc5B68AfA8f64288f6d06DEfC5c07555Ef5323397",
+    "tradingStorage": "0xb51217a43BF812B354E18977a4781909C4d33341",
+    "priceUpKeep": "0x3Ce549F5Aa65141D10f25BE793d63572bC3908Be"
+  },
+  "trader": "0x2b8ba090DEdF879f8045c0dDA5a78762cED90D19",
+  "proofTrade": {
+    "pairIndex": 0,
+    "buy": true,
+    "leverage": 1000,
+    "collateral": "999000000",
+    "openPrice": "65001000000000000000000",
+    "openOrderId": "2",
+    "closeOrderId": "3"
+  },
+  "market0": {
+    "pairIndex": 0,
+    "maxOpenInterest": "1000000000000"
+  }
+}
