@@ -1,6 +1,40 @@
 import type { Page } from '@playwright/test';
 import { asciiToBytes32Hex } from '@whitespace/shared/markets';
-import { MOCK_PAIR_INDEX, type TestState } from './testState';
+import { SCALE, toDecimalString } from '@whitespace/shared/decimal';
+import { MOCK_PAIR_INDEX, type MockOrder, type MockPosition, type TestState } from './testState';
+
+// TestState holds raw on-chain base units, as the chain and the indexer do. The real API
+// (services/api/src/format.ts) formats every money field into a decimal string on the way
+// out, so this mock must do the same — serving raw wei here is how the mock once drifted
+// and rendered a 65,001 price as 65,001,000,000,000,000,000,000.
+const fmtPrice = (raw: string) => toDecimalString(raw, SCALE.PRICE);
+const fmtCollateral = (raw: string) => toDecimalString(raw, SCALE.COLLATERAL);
+const fmtLeverage = (raw: string) => toDecimalString(raw, SCALE.LEVERAGE);
+
+function formatPosition(p: MockPosition) {
+  return {
+    ...p,
+    collateral: fmtCollateral(p.collateral),
+    leverage: fmtLeverage(p.leverage),
+    openPrice: fmtPrice(p.openPrice),
+    tp: fmtPrice(p.tp),
+    sl: fmtPrice(p.sl),
+  };
+}
+
+function formatOrder(o: MockOrder) {
+  return { ...o, collateral: fmtCollateral(o.collateral), leverage: fmtLeverage(o.leverage) };
+}
+
+const MOCK_MARKET = {
+  pairIndex: MOCK_PAIR_INDEX,
+  from: 'BTC',
+  to: 'USD',
+  feedId: asciiToBytes32Hex('BTC/USD'),
+  maxLeverage: fmtLeverage('10000'),
+  maxOpenInterest: fmtCollateral('1000000000000'),
+  openInterest: { long: fmtCollateral('0'), short: fmtCollateral('0') },
+};
 
 /**
  * Registers page.route handlers standing in for services/api (D3's REST surface) against
@@ -20,44 +54,22 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
     }
 
     if (path === '/markets') {
-      return route.fulfill({
-        json: [
-          {
-            pairIndex: MOCK_PAIR_INDEX,
-            from: 'BTC',
-            to: 'USD',
-            feedId: asciiToBytes32Hex('BTC/USD'),
-            maxLeverage: '10000',
-            maxOpenInterest: '1000000000000',
-            openInterest: { long: '0', short: '0' },
-          },
-        ],
-      });
+      return route.fulfill({ json: [MOCK_MARKET] });
     }
 
     if (path === `/markets/${MOCK_PAIR_INDEX}`) {
-      return route.fulfill({
-        json: {
-          pairIndex: MOCK_PAIR_INDEX,
-          from: 'BTC',
-          to: 'USD',
-          feedId: asciiToBytes32Hex('BTC/USD'),
-          maxLeverage: '10000',
-          maxOpenInterest: '1000000000000',
-          openInterest: { long: '0', short: '0' },
-        },
-      });
+      return route.fulfill({ json: MOCK_MARKET });
     }
 
     if (path === `/markets/${MOCK_PAIR_INDEX}/candles`) {
       const now = Math.floor(Date.now() / 1000);
       const candles = Array.from({ length: 5 }, (_, i) => ({
         t: now - (5 - i) * 3600,
-        o: '65000000000000000000000',
-        h: '65100000000000000000000',
-        l: '64900000000000000000000',
-        c: state.markPrice,
-        v: '1000000000',
+        o: fmtPrice('65000000000000000000000'),
+        h: fmtPrice('65100000000000000000000'),
+        l: fmtPrice('64900000000000000000000'),
+        c: fmtPrice(state.markPrice),
+        v: fmtCollateral('1000000000'),
       }));
       return route.fulfill({ json: candles });
     }
@@ -65,8 +77,8 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
     if (path === `/price/${MOCK_PAIR_INDEX}`) {
       return route.fulfill({
         json: {
-          index: state.indexPrice,
-          mark: state.markPrice,
+          index: fmtPrice(state.indexPrice),
+          mark: fmtPrice(state.markPrice),
           updatedAt: Math.floor(Date.now() / 1000),
           healthyVenues: state.degraded ? 2 : 4,
           minHealthyVenues: 3,
@@ -77,7 +89,7 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
 
     const positionsMatch = path.match(/^\/positions\/(0x[a-fA-F0-9]+)$/);
     if (positionsMatch) {
-      return route.fulfill({ json: state.positions });
+      return route.fulfill({ json: state.positions.map(formatPosition) });
     }
 
     const historyMatch = path.match(/^\/positions\/(0x[a-fA-F0-9]+)\/history$/);
@@ -87,7 +99,7 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
 
     const ordersMatch = path.match(/^\/orders\/(0x[a-fA-F0-9]+)$/);
     if (ordersMatch) {
-      return route.fulfill({ json: state.orders });
+      return route.fulfill({ json: state.orders.map(formatOrder) });
     }
 
     return route.fulfill({ status: 404, json: { error: `mock backend: no route for ${path}` } });
