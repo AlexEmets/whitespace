@@ -6,14 +6,8 @@
  * reuses.
  */
 
-declare module '@whitespace/shared/decimal' {
-  export const PRICE_DECIMALS: bigint;
-  export const PRICE_SCALE: bigint;
-  export function parseDecimalTo18(input: string | number): bigint;
-  export function formatFixed18(value: bigint): string;
-  export function bpsOf(numerator: bigint, denominator: bigint): bigint | null;
-  export function deviationBps(value: bigint, reference: bigint): bigint | null;
-}
+// '@whitespace/shared/decimal' is not declared here: the package ships its own
+// src/decimal.d.ts (see its package.json "exports"), and an ambient block would shadow it.
 
 declare module '@whitespace/shared/markets' {
   export interface Market {
