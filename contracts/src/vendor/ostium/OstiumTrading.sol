@@ -306,11 +306,13 @@ contract OstiumTrading is IOstiumTrading, Delegatable, Initializable {
 
         uint256 orderId = _priceRouter().getPrice(pairIndex, IOstiumPriceUpKeep.OrderType.MARKET_CLOSE, block.timestamp);
 
-        // Always charge oracle fee for both partial and full closes to prevent griefing
-        uint256 oracleFee = pairsStorage.pairOracleFee(pairIndex);
-        storageT.transferUsdc(sender, address(storageT), oracleFee);
-        storageT.handleOracleFee(oracleFee);
-        emit OracleFeeCharged(orderId, sender, pairIndex, oracleFee);
+        // The oracle-fee bond is NOT taken here. Upstream pulled it from the trader's
+        // wallet at request time to make cancelled closes costly, which meant a trader who
+        // spent their balance on margin could not close what they opened — reverted tx
+        // 0x8a357f2b… on 1874. It is charged from the position instead, on the two paths
+        // where it has teeth: OstiumTradingCallbacks handles cancel and partial close.
+        // Request-spam is separately bounded by checkNoPendingTriggers above and by
+        // maxPendingMarketOrders in TradingLib.getCloseTradeRevert.
 
         storageT.storePendingMarketOrder(
             IOstiumTradingStorage.PendingMarketOrderV2(
@@ -733,11 +735,13 @@ contract OstiumTrading is IOstiumTrading, Delegatable, Initializable {
                 emit MarketCloseFailed(tradeId, sender, trade.pairIndex);
             }
         }
-        // Always refund oracle fee regardless of partial or full close
-        uint256 oracleFee = _pairsStorage().pairOracleFee(trade.pairIndex);
-        storageT.refundOracleFee(oracleFee);
-        storageT.transferUsdc(address(storageT), sender, oracleFee);
-        emit OracleFeeRefunded(tradeId, sender, trade.pairIndex, oracleFee);
+        // No bond refund here. Upstream took one oracle fee from the trader's WALLET in
+        // closeTradeMarket and paid it back on this path and on a successful full close; those
+        // two halves cancelled out. closeTradeMarket no longer takes it (the bond now comes out
+        // of the position, in OstiumTradingCallbacks), so refunding it here would pay the trader
+        // USDW out of the escrow that backs every other trader's collateral — and would revert
+        // RefundOracleFeeFailed the moment devFees fell below one bond, welding shut the only
+        // escape from an undelivered close.
 
         emit MarketCloseTimeoutExecutedV2(
             _order,
