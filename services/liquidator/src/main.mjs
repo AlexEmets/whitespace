@@ -24,6 +24,7 @@ import { createLiquidatorMetrics } from './metrics.mjs';
 import { createHealthServerApp } from './healthServer.mjs';
 import { createDeadLetterQueue } from './deadLetter.mjs';
 import { createTxSender } from './txSender.mjs';
+import { LimitOrder } from './abi.mjs';
 import { watchOpenEvents, watchLiveness } from './watcher.mjs';
 import { createSweepLoop } from './sweepLoop.mjs';
 
@@ -75,7 +76,10 @@ async function main() {
       if (!txSender) {
         return { ok: false, reason: 'tradesUpKeep_not_configured' };
       }
-      return txSender.submitLiquidation(candidate, Math.floor(Date.now() / 1000));
+      return txSender.sendPerformUpkeep({
+        trades: [{ ...candidate, limitOrder: LimitOrder.LIQ }],
+        timestamp: Math.floor(Date.now() / 1000),
+      });
     },
     metrics,
   });
