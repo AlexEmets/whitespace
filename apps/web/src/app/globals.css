@@ -1482,3 +1482,22 @@ table.data-table[data-testid='positions-table'] td:last-child {
 .ok-text {
   color: var(--long);
 }
+
+.pnl-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0.6rem 0;
+}
+
+.pnl-summary dt {
+  font-size: 0.65rem;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pnl-summary dd {
+  margin: 0.2rem 0 0;
+  font-size: 1rem;
+}
