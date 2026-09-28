@@ -1,0 +1,31 @@
+/* Extends FaucetPanel.module.css for the native-WBT (gas) faucet — only the parts that
+   differ from the USDW panel: the address this one sends to, and the link to the funding
+   transaction it produces. Everything else (panel shell, head, facts, foot, action) is
+   the USDW panel's styles, imported alongside these, so the two read as one pair. */
+
+.target {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--fg);
+}
+
+.link {
+  color: var(--long);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 140ms ease;
+}
+
+.link:hover,
+.link:focus-visible {
+  border-bottom-color: currentColor;
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link {
+    transition: none;
+  }
+}

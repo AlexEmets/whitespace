@@ -12,6 +12,7 @@ import type {
   PnlSummary,
   PositionSummary,
   PriceResponse,
+  WbtFaucetResult,
 } from './types';
 
 async function getJson<T>(path: string): Promise<T> {
@@ -19,6 +20,22 @@ async function getJson<T>(path: string): Promise<T> {
   if (!res.ok) {
     throw new Error(`GET ${path} -> ${res.status} ${res.statusText}`);
   }
+  return (await res.json()) as T;
+}
+
+/**
+ * Unlike getJson, this does NOT throw on a non-2xx status. The WBT faucet answers a
+ * declined claim (cooldown 429, out-of-funds 503, bad address 400) with a JSON body the
+ * UI needs to read and show — the body's own `ok` flag is the success signal, not the
+ * HTTP status. A network-level failure (the API unreachable, or a non-JSON 5xx) rejects,
+ * which the caller reports differently from a structured decline.
+ */
+async function postJson<T>(path: string, payload: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
   return (await res.json()) as T;
 }
 
@@ -36,4 +53,7 @@ export const api = {
   orderHistory: (address: string, limit = 100) => getJson<OrderHistoryEntry[]>(`/orders/${address}/history?limit=${limit}`),
   fees: (address: string, limit = 200) => getJson<FeeCharge[]>(`/fees/${address}?limit=${limit}`),
   pnl: (address: string) => getJson<PnlSummary>(`/pnl/${address}`),
+  /** Ask the server-side faucet to send native WBT (gas) to `address`. The result carries
+   * its own `ok` flag; see postJson on why a decline is not an exception here. */
+  requestWbt: (address: string) => postJson<WbtFaucetResult>('/faucet/wbt', { address }),
 };

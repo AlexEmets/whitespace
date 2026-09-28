@@ -72,17 +72,29 @@ describe('<FaucetPage>', () => {
 
   /**
    * A wallet with no WBT cannot send the claim transaction on this very page, so the page
-   * owes the visitor the fact that gas is a different token from a different faucet —
-   * and the terms, because the 0.5/24h drip is the thing people hit and misread as a bug.
+   * carries its own WBT faucet that sends gas straight to the wallet — no GitHub account
+   * or captcha — right where the visitor discovers they need it.
    */
-  it('says gas is a separate token this faucet cannot mint, with the real drip terms', () => {
+  it('carries an in-app WBT faucet that dispenses gas to the connected wallet', () => {
     render(<FaucetPage />);
     const gas = screen.getByTestId('faucet-gas');
 
     expect(gas).toHaveTextContent(/WBT/);
-    expect(gas).toHaveTextContent(/this faucet cannot mint it/i);
-    expect(gas).toHaveTextContent(/0\.5 WBT, once per rolling 24 hours/i);
-    expect(gas).toHaveTextContent(/GitHub account at least 30 days old/i);
+    expect(screen.getByTestId('wbt-faucet-panel')).toBeInTheDocument();
+    expect(gas).toHaveTextContent(/straight to your wallet/i);
+  });
+
+  /**
+   * The external faucet stays as a fallback for when ours is dry or gives too little — and
+   * its terms belong here, because the 0.5/day drip behind GitHub+captcha is the thing
+   * people hit and misread as a bug.
+   */
+  it('keeps the external faucet as a fallback, with its real drip terms', () => {
+    render(<FaucetPage />);
+    const gas = screen.getByTestId('faucet-gas');
+
+    expect(gas).toHaveTextContent(/0\.5 WBT per day/i);
+    expect(gas).toHaveTextContent(/30-day-old GitHub account/i);
   });
 
   /**

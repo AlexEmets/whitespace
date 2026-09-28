@@ -19,6 +19,21 @@ export interface HealthResponse {
   lagSeconds: number;
 }
 
+/**
+ * The native-WBT faucet's response (services/api POST /faucet/wbt). `ok` is the success
+ * signal — a declined claim (cooldown, out-of-funds, bad address) still returns a body
+ * with `ok: false` and a human-readable `error`, and a cooldown adds `retryAfterSeconds`.
+ * `amountWei` is the raw 18-decimal wei string, never a JSON number.
+ */
+export interface WbtFaucetResult {
+  ok: boolean;
+  txHash?: string;
+  amountWei?: string;
+  from?: string;
+  error?: string;
+  retryAfterSeconds?: number;
+}
+
 export interface MarketSummary {
   pairIndex: number;
   from: string;
