@@ -158,3 +158,67 @@ trader wallet funded from the faucet page.
 | 12 | every history tab | matches `/fees`, `/orders/:a/history`, `/pnl` |
 
 Record the tx hashes and results in `deployments/1874-acceptance.json`.
+
+## 6. Scripted acceptance run (`tools/stack/acceptance.mjs`)
+
+The table in step 5, automated. It trades from a fresh random wallet (key in memory only)
+funded by `ACCEPT_FUNDER_KEY`, and every item reads its result back from the chain and from
+the API; a mined transaction is never counted. Items: `vault`, `market` (close from a wallet
+holding 0 USDW), `partial`, `tpsl`, `collateral`, `limit`, `stop`, `timeout`, `degraded`,
+`liquidation`, `slippage`, `history`. It prints a PASS/FAIL/SKIP table and exits 1 on any
+FAIL. Row 11's terminal quote is a web check and is not covered; `slippage` checks that
+every fill landed inside the wanted price ± max slippage.
+
+### Against a local anvil
+
+```bash
+NODE=~/.nvm/versions/node/v22.18.0/bin/node tools/stack/acceptance-anvil.sh run
+```
+
+Boots anvil (`--chain-id 1874 --block-time 1 --hardfork shanghai`, port 8547), runs
+`deployTestnet()` with anvil keys for every role except the oracle signers (the real
+`~/.whitespace-keys/signer*.json` addresses, so the real publisher signs), writes the manifest
+to `$WORK/1874.json` (never `deployments/1874.json`), and starts publisher (real venues),
+keeper, indexer (fresh `DATABASE_SCHEMA`), api and two automation bots on ports 8797, 9475,
+42169, 4100, 9476/9477. The indexer has no address override, so it runs from a copy of
+`services/indexer` beside a copy of the manifest. Logs and results (`acceptance.json`) stay
+in `$WORK` (default `/tmp/whitespace-acceptance`). `up` / `down` boot or stop without
+running.
+
+Local-only mechanics, all in the script's hooks:
+- `timeout` stops the keeper, requests an open and a close, waits 11 blocks, reclaims both.
+- `degraded` restarts the publisher with only `binance,bybit` (BTC/ETH/SOL fall below 3
+  healthy venues): the publisher answers 409 for opens and 200 for closes, an open request
+  goes unfilled and is reclaimed, a close fills.
+- `liquidation` opens SOL at max leverage and waits `ACCEPT_LIQ_WAIT_S` (120 s) for a real
+  move; if none comes it swaps in `tools/stack/shifted-publisher.mjs`, the real publisher
+  with SOL's venue ticks shifted -1.5%, and swaps the real one back afterwards. The bots
+  liquidate on their own either way.
+- `vault` settles with gov `forceSettlement()` instead of waiting the hour.
+
+Ponder caches RPC data in the database-wide `ponder_sync` schema by chain id, not by
+`DATABASE_SCHEMA`, so every local run is "1874" again. The script therefore first jumps the
+anvil chain past the highest block a previous local run left in that cache (below 1,000,000;
+real 1874 data is above 7,000,000). A dedicated `DATABASE_URL` for local runs avoids this
+entirely.
+
+### Against 1874
+
+```bash
+ACCEPT_RPC_URL=https://rpc.testnet.whitechain.io ACCEPT_API_URL=http://127.0.0.1:4000 \
+ACCEPT_PUBLISHER_URL=http://127.0.0.1:8787 ACCEPT_FUNDER_KEY=~/.whitespace-keys/owner.json \
+ACCEPT_GAS_AMOUNT=0.05 ACCEPT_OUT=deployments/1874-acceptance.json \
+  node tools/stack/acceptance.mjs
+```
+
+Run it on the server (the publisher is loopback-only). Without `ACCEPT_GOV_KEY` the vault
+item waits for the hourly `tryNewSettlement()`; pass `ACCEPT_GOV_KEY=~/.whitespace-keys/gov.json`
+to force it. Without `ACCEPT_HOOKS` the `timeout` and `degraded` items SKIP, and
+`liquidation` SKIPs unless SOL moves ~0.75% within `ACCEPT_LIQ_WAIT_S` (raise it, or pick
+`ACCEPT_LIQ_PAIR`). A hooks script for the server maps `keeper-stop`/`keeper-start` to
+`systemctl stop|start whitespace-keeper` and `degrade`/`restore` to a publisher restart with
+a reduced `PUBLISHER_VENUES`; never provide `shift` there.
+
+A deposit is refused (becomes RECLAIMABLE) whenever the settlement sees traders in net open
+profit (`OstiumVault._maxMint` returns 0 while `effectiveAccPnlPerTokenUsed() > 0`); the
+`vault` item then reclaims it and says so. That is why it runs first, before any trade.
