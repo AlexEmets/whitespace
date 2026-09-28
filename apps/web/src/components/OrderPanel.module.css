@@ -326,7 +326,7 @@
 }
 
 .risk_liq {
-  color: var(--accent);
+  color: var(--warning);
 }
 
 .risk_sl {
@@ -369,7 +369,7 @@
 }
 
 .liq {
-  color: var(--accent);
+  color: var(--warning);
 }
 
 .long {

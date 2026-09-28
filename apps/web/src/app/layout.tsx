@@ -3,6 +3,7 @@ import { Azeret_Mono, Geologica } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { NavHeader } from '@/components/NavHeader';
 import { Providers } from '@/components/Providers';
+import { DEFAULT_THEME, THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
 /**
@@ -56,7 +57,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${geologica.variable} ${azeretMono.variable}`}>
+    // suppressHydrationWarning: the pre-paint script below may swap `data-theme` to the
+    // visitor's stored choice before React hydrates, which is the whole point of it.
+    <html lang="en" className={`${geologica.variable} ${azeretMono.variable}`} data-theme={DEFAULT_THEME} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         <Providers>
           <NavHeader />

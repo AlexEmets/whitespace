@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useHealth } from '@/hooks/useHealth';
 import { ChainGuard } from './ChainGuard';
+import { ThemeToggle } from './ThemeToggle';
 import { WalletConnect } from './WalletConnect';
 
 const NAV_LINKS: Array<{ href: string; label: string; testId: string }> = [
@@ -75,6 +76,7 @@ export function NavHeader() {
             </span>
             <span className="latency">· {latencyMs ?? '—'} ms</span>
           </span>
+          <ThemeToggle />
           <WalletConnect />
           <button
             type="button"

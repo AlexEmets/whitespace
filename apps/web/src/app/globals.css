@@ -31,14 +31,16 @@
   --short: #ff7a6b;
   --short-dim: rgba(255, 122, 107, 0.1);
   --accent: #ffc37a;
-  --accent-dim: rgba(255, 195, 122, 0.1);
-  --accent-ring: rgba(255, 195, 122, 0.24);
+  --accent-rgb: 255, 195, 122;
+  --accent-dim: rgba(var(--accent-rgb), 0.1);
+  --accent-ring: rgba(var(--accent-rgb), 0.24);
   --warning: #ffc37a;
   /* Text set on a long/short/accent fill. One dark ink for all three keeps the filled
      controls reading as a family. */
   --on-color: #06100e;
 
   --corona: rgba(255, 214, 160, 0.75);
+  --corona-rim: rgba(255, 214, 160, 0.95);
   --corona-glow: rgba(255, 195, 122, 0.4);
   --corona-halo: rgba(255, 150, 80, 0.12);
 
@@ -60,6 +62,34 @@
   --eclipse-size: clamp(300px, 30vw, 640px);
   /* Horizontal page margin for the content pages. */
   --page-pad: clamp(16px, 3.2vw, 72px);
+}
+
+/*
+ * Lunar: the cold theme. Only the accent, the corona and a faint blue cast on the surfaces
+ * change. Long/short keep their teal and coral, and `--warning` stays amber — a
+ * liquidation price must read as a warning in either theme.
+ */
+:root[data-theme='lunar'] {
+  --bg: #020309;
+  --bg-raised: #0b0d15;
+  --bg-panel: #080a11;
+  --panel: rgba(200, 220, 255, 0.02);
+  --panel-strong: rgba(200, 220, 255, 0.04);
+  --border: rgba(200, 220, 255, 0.075);
+  --border-strong: rgba(200, 220, 255, 0.14);
+
+  --fg: #eaeef7;
+  --fg-muted: #8a91a8;
+  --fg-dim: #565d73;
+
+  --accent: #8ec5ff;
+  --accent-rgb: 142, 197, 255;
+  --on-color: #04101c;
+
+  --corona: rgba(190, 220, 255, 0.75);
+  --corona-rim: rgba(200, 228, 255, 0.95);
+  --corona-glow: rgba(142, 197, 255, 0.38);
+  --corona-halo: rgba(80, 140, 255, 0.14);
 }
 
 * {
@@ -248,8 +278,8 @@ a {
   border-radius: 50%;
   background: var(--bg);
   box-shadow:
-    0 0 0 1.5px rgba(255, 214, 160, 0.95),
-    0 0 0.77rem 2px rgba(255, 195, 122, 0.45);
+    0 0 0 1.5px var(--corona-rim),
+    0 0 0.77rem 2px var(--corona-glow);
 }
 
 .nav-links {
@@ -602,7 +632,7 @@ a {
 .landing-hero .brand-render .ring-inner {
   width: 440px;
   height: 440px;
-  border-color: rgba(255, 195, 122, 0.1);
+  border-color: rgba(var(--accent-rgb), 0.1);
 }
 
 .landing-hero .brand-render .sphere {
@@ -1993,6 +2023,36 @@ table.data-table[data-testid='positions-table'] td:last-child {
   .vault-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ---------- Theme toggle (header) ---------- */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.62rem;
+  height: 2.62rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent-ring);
+}
+
+.theme-toggle:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ---------- Header menu button (phones) ---------- */
