@@ -8,6 +8,7 @@ import {
   parseShareId,
   roeBps,
   shareId,
+  shareImagePath,
   sharePath,
   shareText,
   xIntentUrl,
@@ -166,6 +167,18 @@ describe('sharePath', () => {
   it('carries the Lunar theme so the card matches what the sharer saw', () => {
     expect(sharePath(address, { kind: 'open', tradeId: '9' }, 'lunar')).toBe(
       '/share/0xabcdef0000000000000000000000000000000001/o9?t=lunar',
+    );
+  });
+});
+
+describe('shareImagePath', () => {
+  const address = '0xAbCdEf0000000000000000000000000000000001';
+
+  it('points at the card PNG under the share page, carrying the theme', () => {
+    const ref = { kind: 'closed' as const, closeOrderId: '41' };
+    expect(shareImagePath(address, ref)).toBe('/share/0xabcdef0000000000000000000000000000000001/c41/card.png');
+    expect(shareImagePath(address, ref, 'lunar')).toBe(
+      '/share/0xabcdef0000000000000000000000000000000001/c41/card.png?t=lunar',
     );
   });
 });

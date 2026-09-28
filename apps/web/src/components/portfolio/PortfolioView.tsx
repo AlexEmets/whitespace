@@ -481,7 +481,7 @@ export function PortfolioView() {
             is 0.00 USDW because zero trades have settled — not because the data is missing.
           </AccountState>
         ) : (
-          <TradeHistoryTable trades={stats.trades} markets={markets} />
+          <TradeHistoryTable trades={stats.trades} markets={markets} address={address} />
         )}
       </Section>
     </div>

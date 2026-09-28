@@ -2,10 +2,12 @@
 
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { formatLeverage, formatMoney } from '@/lib/money';
+import { closedShareRef, closedTradeShareCard } from '@/lib/shareCard';
 import type { MarketSummary } from '@/lib/types';
 import { explainCloseReason, type ClosedTrade } from '@/hooks/useTradeStats';
 import { Dash, accountStyles as styles } from './AccountPage';
 import { formatDuration, formatUtcMinute } from './formatTime';
+import { ShareTradeButton } from '../share/ShareTradeButton';
 
 /** Re-exported so the existing importers here keep working; the implementation moved to
  * lib/markets.ts when the `-PERP` convention from terminal_design.pdf was adopted. The
@@ -27,7 +29,16 @@ export { marketLabelByIndex as marketLabel } from '@/lib/markets';
  * `closed_position` row for a *partial* close (docs/decisions/phase-4-indexer-api.md §6),
  * so this table is complete for fully-closed trades only.
  */
-export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; markets: MarketSummary[] }) {
+export function TradeHistoryTable({
+  trades,
+  markets,
+  address,
+}: {
+  trades: ClosedTrade[];
+  markets: MarketSummary[];
+  /** The trader whose history this is; without it the rows carry no share button. */
+  address?: string;
+}) {
   const ordered = [...trades].sort((a, b) => (b.closedAt ?? b.openedAt) - (a.closedAt ?? a.openedAt));
 
   return (
@@ -45,11 +56,15 @@ export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; 
             <th>Closed</th>
             <th>Held</th>
             <th>Reason</th>
+            {address ? <th aria-label="Share" /> : null}
           </tr>
         </thead>
         <tbody>
           {ordered.map((trade) => {
             const pnl = trade.realisedPnlRaw;
+            const from = markets.find((m) => m.pairIndex === trade.pairIndex)?.from;
+            const card = address && from ? closedTradeShareCard(trade, from) : null;
+            const shareRef = closedShareRef(trade);
             return (
               <tr key={trade.rowKey} data-testid={`history-row-${trade.rowKey}`}>
                 <td>
@@ -88,6 +103,13 @@ export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; 
                   {trade.isPartial ? `Partial ${trade.percentageClosed ?? ''}% · ` : ''}
                   {explainCloseReason(trade.closeReason) ?? <Dash reason="no close reason on this record" />}
                 </td>
+                {address ? (
+                  <td style={{ textAlign: 'right' }}>
+                    {card && shareRef ? (
+                      <ShareTradeButton address={address} shareRef={shareRef} card={card} testId={`history-share-${trade.rowKey}`} />
+                    ) : null}
+                  </td>
+                ) : null}
               </tr>
             );
           })}

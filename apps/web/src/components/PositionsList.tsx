@@ -19,7 +19,9 @@ import { updateSlError, updateTpError } from '@/lib/orderRules';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import { marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
+import { openPositionShareCard } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
+import { ShareTradeButton } from './share/ShareTradeButton';
 
 /** Fixed partial-close sizes behind the chevron: the contract takes any percentage, and a
  * fixed set removes the typo class a free input invites on a control that exits leverage. */
@@ -316,6 +318,14 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
               TP/SL · Margin
             </button>
           </div>
+          {address && market && price ? (
+            <ShareTradeButton
+              address={address}
+              shareRef={{ kind: 'open', tradeId: position.tradeId }}
+              card={openPositionShareCard(position, market.from, price.mark, Math.floor(Date.now() / 1000))}
+              testId={`position-share-${position.pairIndex}-${position.index}`}
+            />
+          ) : null}
           {partialOpen ? (
             <div className="close-partial" data-testid="close-partial-row">
               {PARTIAL_PERCENTS.map((pct) => (

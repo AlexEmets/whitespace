@@ -85,4 +85,16 @@ describe('<FillsList>', () => {
     expect(screen.getByTestId('fill-row-50')).toBeInTheDocument();
     expect(screen.getByTestId('fill-row-51')).toBeInTheDocument();
   });
+
+  it('offers a share button on a close it can make a card for', () => {
+    historyState = [row({ closeOrderId: '41' })];
+    render(<FillsList />);
+    expect(screen.getByTestId('fill-share-41')).toHaveAttribute('aria-label', 'Share this BTC-PERP trade');
+  });
+
+  it('offers no share button on a close missing its PnL', () => {
+    historyState = [row({ closeOrderId: '44', realizedPnl: undefined, usdcSentToTrader: undefined })];
+    render(<FillsList />);
+    expect(screen.queryByTestId('fill-share-44')).not.toBeInTheDocument();
+  });
 });

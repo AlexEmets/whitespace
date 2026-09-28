@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
-import { shareText } from '@/lib/shareCard';
+import { parseShareId, shareImagePath, shareText } from '@/lib/shareCard';
+import type { Theme } from '@/lib/theme';
 import { apiFetchJson, loadShareCard } from '@/lib/shareData';
 
 /**
@@ -24,8 +25,9 @@ function themeParam(t: string | string[] | undefined): string | undefined {
   return Array.isArray(t) ? t[0] : t;
 }
 
-function imagePath(address: string, id: string, theme: string): string {
-  return `/share/${address.toLowerCase()}/${id}/card.png${theme === 'lunar' ? '?t=lunar' : ''}`;
+function imagePath(address: string, id: string, theme: Theme): string {
+  const ref = parseShareId(id);
+  return ref ? shareImagePath(address, ref, theme) : '';
 }
 
 const DESCRIPTION =

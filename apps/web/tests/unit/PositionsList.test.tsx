@@ -281,4 +281,9 @@ describe('<PositionsList>', () => {
     await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
     expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 2500 });
   });
+
+  it('offers a share button on an open position once it has a mark', () => {
+    render(<PositionsList />);
+    expect(screen.getByTestId('position-share-0-0')).toHaveAttribute('aria-label', 'Share this BTC-PERP trade');
+  });
 });

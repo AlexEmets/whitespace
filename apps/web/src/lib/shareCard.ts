@@ -161,6 +161,12 @@ export function sharePath(address: string, ref: ShareRef, theme?: Theme): string
   return theme === 'lunar' ? `${path}?t=lunar` : path;
 }
 
+/** The card PNG that a share page previews (app/share/[address]/[id]/card.png). */
+export function shareImagePath(address: string, ref: ShareRef, theme?: Theme): string {
+  const path = `/share/${address.toLowerCase()}/${shareId(ref)}/card.png`;
+  return theme === 'lunar' ? `${path}?t=lunar` : path;
+}
+
 export function shareText(card: ShareCard): string {
   return card.status === 'closed'
     ? `Closed a ${card.leverage} ${card.side} on ${card.market} at ${card.roe} on Whitespace testnet`

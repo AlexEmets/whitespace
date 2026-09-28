@@ -7,6 +7,8 @@ import { toClosedTrade } from '@/hooks/useTradeStats';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
 import { formatLeverage, formatMoney } from '@/lib/money';
+import { closedShareRef, closedTradeShareCard } from '@/lib/shareCard';
+import { ShareTradeButton } from './share/ShareTradeButton';
 
 /**
  * Closed positions ("Trade history" tab), from GET /positions/:address/history.
@@ -38,11 +40,14 @@ export function FillsList() {
           <th>Entry</th>
           <th>Close</th>
           <th>Realised PnL</th>
+          <th aria-label="Share" />
         </tr>
       </thead>
       <tbody>
         {trades.map((t) => {
           const market = markets.find((m) => m.pairIndex === t.pairIndex);
+          const card = market ? closedTradeShareCard(t, market.from) : null;
+          const shareRef = closedShareRef(t);
           return (
             <tr key={t.rowKey} data-testid={`fill-row-${t.rowKey}`}>
               <td>{market ? marketLabel(market) : `#${t.pairIndex}`}</td>
@@ -55,6 +60,11 @@ export function FillsList() {
                 className={t.realisedPnlRaw === null ? 'dash' : t.realisedPnlRaw >= 0n ? 'pos' : 'neg'}
               >
                 {t.realisedPnlRaw === null ? '—' : formatMoney(t.realisedPnlRaw, COLLATERAL_DECIMALS, { signDisplay: true })}
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                {card && shareRef ? (
+                  <ShareTradeButton address={address} shareRef={shareRef} card={card} testId={`fill-share-${t.rowKey}`} />
+                ) : null}
               </td>
             </tr>
           );
