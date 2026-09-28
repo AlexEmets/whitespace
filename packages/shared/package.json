@@ -17,6 +17,10 @@
       "default": "./src/candles.mjs"
     },
     "./markets": "./src/markets.mjs",
+    "./points": {
+      "types": "./src/points.d.ts",
+      "default": "./src/points.mjs"
+    },
     "./venues": "./src/venues.mjs",
     "./keys": "./src/keys.mjs",
     "./orderTypes": "./src/orderTypes.mjs"
