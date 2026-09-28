@@ -78,7 +78,12 @@ async function main() {
 
   const sampleTimer = setInterval(() => {
     for (const feed of config.markets) {
-      const { aggregate, mark } = engine.sampleMark(feed);
+      const { aggregate, mark, stale, markAgeMs, reseeded } = engine.sampleMark(feed);
+      if (reseeded) {
+        console.warn(`[price-publisher] ${feed} mark reseeded from index=${aggregate.index} after a stale gap`);
+      } else if (stale && mark !== null) {
+        console.warn(`[price-publisher] ${feed} MARK STALE: no index for ${markAgeMs}ms, signing refused (mark_stale)`);
+      }
       if (aggregate.degraded) {
         // The threshold is logged, not just the count: with per-market bounds, "healthy=2"
         // is a degradation for BTC and normal for WBT, and a log line that omits which rule

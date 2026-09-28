@@ -111,8 +111,13 @@ export function createServerApp(engine, opts = {}) {
       for (const feed of engine.markets) {
         const snap = engine.snapshot(feed);
         const aggregate = engine.currentAggregate(feed);
+        const markStatus = engine.markStatus(feed);
         feeds[feed] = {
           mark: snap.mark,
+          // How long since a real index last moved the mark, and whether that is past the
+          // staleness bound. A stale mark is not signed; consumers should not show it as live.
+          markAgeMs: markStatus.markAgeMs,
+          markStale: markStatus.stale,
           healthyCount: aggregate.healthyCount,
           healthyVenues: aggregate.healthyVenues,
           // The threshold `degraded` was judged against. Without it a consumer reading this
