@@ -156,16 +156,17 @@ a {
 }
 
 /* The eclipse: a disc of page-black with a lit rim, mostly above the viewport so only its
-   lower arc and glow show behind the header. Pure CSS — no asset, nothing to re-export
-   when the palette moves. */
+   lower arc shows — a sunrise across the transparent header. Sized so the whole arc
+   (about 270px wide, 50px deep) sits inside the header strip and ends above the panels;
+   only the soft glow reaches them. Pure CSS — no asset, nothing to re-export. */
 .eclipse-backdrop {
   position: absolute;
   z-index: 0;
-  top: -268px;
+  top: -370px;
   left: 50%;
-  width: 330px;
-  height: 330px;
-  margin-left: -165px;
+  width: 420px;
+  height: 420px;
+  margin-left: -210px;
   border-radius: 50%;
   background: var(--bg);
   box-shadow:
@@ -194,18 +195,18 @@ a {
 
 /* ---------- Nav header (shared across all pages) ---------- */
 
+/* Transparent and in the flow, not sticky: the eclipse arc is drawn behind it and has to
+   stay visible, and a translucent sticky bar would veil all but a sliver of it. The
+   terminal does not scroll, so nothing is lost there; content pages scroll the header
+   away with the page. */
 .nav-header {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 20;
   display: flex;
   align-items: center;
   gap: 2rem;
   height: var(--header-h);
   padding: 0 18px;
-  background: rgba(3, 3, 5, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
 
 .nav-header .wordmark {

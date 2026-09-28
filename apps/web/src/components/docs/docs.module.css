@@ -58,10 +58,10 @@
   }
 }
 
-/* Offsets by the sticky nav header's height so an anchored heading is not hidden under it. */
+/* The header is not sticky, so the table of contents only needs to clear the viewport edge. */
 .toc {
   position: sticky;
-  top: calc(var(--header-h) + 10px);
+  top: 12px;
   padding: 1.3rem 1.2rem;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -116,7 +116,7 @@
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  scroll-margin-top: calc(var(--header-h) + 12px);
+  scroll-margin-top: 12px;
 }
 
 .sectionNumber {
