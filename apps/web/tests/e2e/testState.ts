@@ -97,4 +97,30 @@ export class TestState {
   sentTrading: SentCall[] = [];
   /** Per-block funding rate, PRECISION_18, positive when longs pay. */
   fundingRatePerBlock = 0n;
+  /** GET /points/:address payload (address is filled in by the mock backend); undefined
+   * serves a genuine zero. Points figures are decimal strings, like the real API. */
+  points?: {
+    missions: string;
+    time: string;
+    streak: string;
+    lp: string;
+    total: string;
+    rank: number | null;
+    streakDays: number;
+    streakLongest: number;
+    completedMissions: string[];
+    updatedAt: number | null;
+    lpBalance: string;
+    lpSince: number | null;
+  };
+  /** GET /points/leaderboard payload. */
+  leaderboard?: Array<{
+    rank: number;
+    address: string;
+    missions: string;
+    time: string;
+    streak: string;
+    lp: string;
+    total: string;
+  }>;
 }

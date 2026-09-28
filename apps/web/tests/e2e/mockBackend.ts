@@ -47,6 +47,24 @@ const MOCK_MARKET = {
   openInterest: { long: fmtCollateral('0'), short: fmtCollateral('0') },
 };
 
+function emptyPoints(address: string) {
+  return {
+    address,
+    missions: '0.000000',
+    time: '0.000000',
+    streak: '0.000000',
+    lp: '0.000000',
+    total: '0.000000',
+    rank: null,
+    streakDays: 0,
+    streakLongest: 0,
+    completedMissions: [] as string[],
+    updatedAt: null,
+    lpBalance: '0.000000',
+    lpSince: null,
+  };
+}
+
 /**
  * Registers page.route handlers standing in for services/api (D3's REST surface) against
  * the shared TestState. This is the "read via API" half of the architecture — the mock
@@ -161,6 +179,15 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
     const ordersMatch = path.match(/^\/orders\/(0x[a-fA-F0-9]+)$/);
     if (ordersMatch) {
       return route.fulfill({ json: state.orders.map(formatOrder) });
+    }
+
+    if (path === '/points/leaderboard') {
+      return route.fulfill({ json: state.leaderboard ?? [] });
+    }
+    const pointsMatch = path.match(/^\/points\/(0x[a-fA-F0-9]+)$/);
+    if (pointsMatch) {
+      const addr = (pointsMatch[1] ?? '').toLowerCase();
+      return route.fulfill({ json: state.points ? { ...state.points, address: addr } : emptyPoints(addr) });
     }
 
     return route.fulfill({ status: 404, json: { error: `mock backend: no route for ${path}` } });
