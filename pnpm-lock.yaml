@@ -167,6 +167,9 @@ importers:
 
   services/price-publisher:
     dependencies:
+      '@whitespace/metrics':
+        specifier: workspace:*
+        version: link:../../packages/metrics
       '@whitespace/reporter':
         specifier: workspace:*
         version: link:../../packages/reporter

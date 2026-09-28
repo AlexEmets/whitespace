@@ -6,6 +6,7 @@
  *                                                     -> 503 { ok: false, ... } when none does,
  *                                                        i.e. nothing can be signed
  *   GET  /status                                     -> 200 { feeds: { <feed>: snapshot } }
+ *   GET  /metrics                                    -> 200 Prometheus text (./metrics.mjs)
  *   GET  /v2/report?feed=&timestamp=&orderType=       -> 200 { signedReport, signers, mark, ... }
  *                                                     -> 400 { error, detail } when the
  *                                                        timestamp is outside the signing
@@ -26,6 +27,7 @@
 
 import { createServer } from 'node:http';
 import { CONTRACT_REPORT_MAX_AGE_S } from '@whitespace/shared/bounds';
+import { createPublisherMetrics } from './metrics.mjs';
 
 export const DEFAULT_MAX_CLOCK_SKEW_S = 2;
 
@@ -60,6 +62,7 @@ function sendJson(res, status, body) {
  * @param {number} [opts.maxReportAgeS] oldest timestamp signed, seconds before now
  * @param {number} [opts.maxClockSkewS] newest timestamp signed, seconds after now
  * @param {() => number} [opts.now] defaults to the engine's clock
+ * @param {ReturnType<typeof createPublisherMetrics>} [opts.metrics]
  */
 export function createServerApp(engine, opts = {}) {
   const window = {
@@ -67,6 +70,7 @@ export function createServerApp(engine, opts = {}) {
     maxClockSkewS: opts.maxClockSkewS ?? DEFAULT_MAX_CLOCK_SKEW_S,
   };
   const now = opts.now ?? engine.now ?? (() => Date.now());
+  const metrics = opts.metrics ?? createPublisherMetrics(engine);
 
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -104,6 +108,12 @@ export function createServerApp(engine, opts = {}) {
       // any feed" is a failed health check.
       const ok = engine.markets.length > 0 && feedsWithVenues > 0;
       return sendJson(res, ok ? 200 : 503, { ok, feedsWithVenues, totalFeeds: engine.markets.length, feeds });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/metrics') {
+      res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' });
+      res.end(metrics.render());
+      return;
     }
 
     if (req.method === 'GET' && url.pathname === '/status') {
@@ -157,12 +167,15 @@ export function createServerApp(engine, opts = {}) {
       }
       const outside = checkReportTimestamp(timestamp, now(), window);
       if (outside) {
+        metrics.reportRefused(feed, outside.error);
         return sendJson(res, 400, outside);
       }
       const result = await engine.signReportFor(feed, timestamp, orderType);
       if (!result.ok) {
+        metrics.reportRefused(feed, result.reason);
         return sendJson(res, 409, { error: result.reason });
       }
+      metrics.reportSigned(feed, orderType);
       return sendJson(res, 200, {
         signedReport: result.signedReport,
         signers: result.signers,
