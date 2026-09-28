@@ -14,6 +14,7 @@ import { createHttpReportSource } from './reportSource.mjs';
 import { createTxSender } from './txSender.mjs';
 import { createDeadLetterStore } from '@whitespace/txsender';
 import { createKeeperEngine } from './keeperEngine.mjs';
+import { createCursorStore } from './cursorStore.mjs';
 
 async function main() {
   const config = loadConfig();
@@ -45,6 +46,12 @@ async function main() {
     onDeadLetter: (entry) => console.error('[keeper] DEAD LETTER:', entry),
   });
 
+  const cursorStore = createCursorStore(config.cursorPath, {
+    onCorrupt: (err) => console.error(`[keeper] cursor file unreadable, starting at the head: ${err.message}`),
+  });
+  const startBlock = cursorStore.load();
+  console.log(`[keeper] cursor=${config.cursorPath ?? '(not persisted)'} resume=${startBlock ?? 'head'}`);
+
   const unwatch = watchPriceRequested(
     publicClient,
     config.priceUpKeepAddress,
@@ -61,6 +68,11 @@ async function main() {
       }
     },
     (err) => console.error('[keeper] watcher error:', err.message),
+    {
+      startBlock,
+      maxLookbackBlocks: config.maxLookbackBlocks,
+      onCursor: (next) => cursorStore.save(next),
+    },
   );
 
   const shutdown = () => {

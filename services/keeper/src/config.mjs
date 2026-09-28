@@ -18,6 +18,10 @@ function readDeployment() {
   }
 }
 
+/** How far behind the head a resumed cursor may start. Orders older than the report
+ * maxAge (10 s) cannot be filled anyway; 300 blocks is minutes of headroom on 1874. */
+export const DEFAULT_MAX_LOOKBACK_BLOCKS = 300;
+
 /**
  * @returns {{
  *   chainId: number,
@@ -27,7 +31,9 @@ function readDeployment() {
  *   forwarderKeyPath: string,
  *   pollingIntervalMs: number,
  *   maxRetries: number,
- *   deadLetterFilePath: string,
+ *   deadLetterFilePath: string|null,
+ *   cursorPath: string|null,
+ *   maxLookbackBlocks: number,
  * }}
  */
 export function loadConfig(env = process.env) {
@@ -51,8 +57,21 @@ export function loadConfig(env = process.env) {
   const pollingIntervalMs = Number(env.KEEPER_POLLING_INTERVAL_MS ?? 2_000);
   const maxRetries = Number(env.KEEPER_MAX_RETRIES ?? 3);
   const deadLetterFilePath = env.KEEPER_DEAD_LETTER_PATH ?? null;
+  const cursorPath = env.KEEPER_CURSOR_PATH ?? null;
+  const maxLookbackBlocks = Number(env.KEEPER_MAX_LOOKBACK_BLOCKS ?? DEFAULT_MAX_LOOKBACK_BLOCKS);
 
-  return { chainId, priceUpKeepAddress, rpcUrls, publisherBaseUrl, forwarderKeyPath, pollingIntervalMs, maxRetries, deadLetterFilePath };
+  return {
+    chainId,
+    priceUpKeepAddress,
+    rpcUrls,
+    publisherBaseUrl,
+    forwarderKeyPath,
+    pollingIntervalMs,
+    maxRetries,
+    deadLetterFilePath,
+    cursorPath,
+    maxLookbackBlocks,
+  };
 }
 
 /** @param {string} path */

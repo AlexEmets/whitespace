@@ -84,14 +84,29 @@ async function forEachBounded(items, limit, fn) {
  *   awaited: the watcher does not read the next window until every order in this one
  *   has been handled (or has failed, which goes to `onError`)
  * @param {(err: Error) => void} [onError]
- * @param {{ pollIntervalMs?: number, maxBlockRange?: number, maxChunksPerTick?: number, concurrency?: number }} [opts]
- * @returns {() => void} unwatch
+ * @param {object} [opts]
+ * @param {number} [opts.pollIntervalMs]
+ * @param {number} [opts.maxBlockRange]
+ * @param {number} [opts.maxChunksPerTick]
+ * @param {number} [opts.concurrency]
+ * @param {bigint|null} [opts.startBlock] persisted cursor to resume from (next block to scan)
+ * @param {number} [opts.maxLookbackBlocks] a resumed cursor never starts further back than
+ *   this many blocks behind the head. An order older than the report maxAge (10 s) cannot
+ *   be filled any more, so rescanning further than that only burns RPC calls.
+ * @param {(nextBlock: bigint) => void} [opts.onCursor] called each time the cursor advances,
+ *   after the window before it has been fully handled — the place to persist it
+ * @param {() => number} [opts.now]
+ * @returns {(() => void) & { state: () => { cursor: bigint|null, head: bigint|null, lastSuccessAt: number|null } }} unwatch
  */
 export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, onError = () => {}, opts = {}) {
   const pollIntervalMs = opts.pollIntervalMs ?? 1_500;
   const maxRange = BigInt(opts.maxBlockRange ?? MAX_BLOCK_RANGE);
   const maxChunksPerTick = opts.maxChunksPerTick ?? 20;
   const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+  const startBlock = opts.startBlock ?? null;
+  const maxLookback = opts.maxLookbackBlocks === undefined ? null : BigInt(opts.maxLookbackBlocks);
+  const onCursor = opts.onCursor ?? (() => {});
+  const now = opts.now ?? (() => Date.now());
   if (!Number.isInteger(concurrency) || concurrency < 1) {
     throw new Error(`watchPriceRequested: concurrency must be a positive integer, got ${concurrency}`);
   }
@@ -100,15 +115,38 @@ export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, o
   /** Next block to scan. Null until the first tick establishes the head. */
   let cursor = null;
   let running = false;
+  let lastHead = null;
+  let lastSuccessAt = null;
+
+  /** Where the first tick starts: the saved cursor, clamped to [head - lookback + 1, head + 1]. */
+  function initialCursor(head) {
+    // No saved cursor: start at the head. Nothing older is known to be unhandled.
+    if (startBlock === null) return head + 1n;
+    let from = startBlock;
+    if (maxLookback !== null) {
+      const floor = head + 1n - maxLookback;
+      if (from < floor) from = floor;
+    }
+    if (from > head + 1n) from = head + 1n;
+    return from < 0n ? 0n : from;
+  }
+
+  function advance(next) {
+    cursor = next;
+    try {
+      onCursor(next);
+    } catch (err) {
+      onError(err);
+    }
+  }
 
   async function tick() {
     if (stopped || running) return;
     running = true;
     try {
       const head = await publicClient.getBlockNumber();
-      // First tick: start at the head. Only orders placed from now on are this process's
-      // to fill; anything older belongs to whichever keeper was watching at the time.
-      if (cursor === null) cursor = head + 1n;
+      lastHead = head;
+      if (cursor === null) cursor = initialCursor(head);
 
       let chunks = 0;
       while (!stopped && cursor <= head && chunks < maxChunksPerTick) {
@@ -128,9 +166,10 @@ export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, o
         });
         // Advance only after the window has been read AND every order in it handled, so
         // a failure re-reads the same window instead of skipping orders.
-        cursor = to + 1n;
+        advance(to + 1n);
         chunks += 1;
       }
+      lastSuccessAt = now();
     } catch (err) {
       // Cursor deliberately untouched: the next tick retries the same bounded window.
       onError(err);
@@ -142,8 +181,10 @@ export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, o
   void tick();
   const timer = setInterval(() => void tick(), pollIntervalMs);
 
-  return function unwatch() {
+  function unwatch() {
     stopped = true;
     clearInterval(timer);
-  };
+  }
+  unwatch.state = () => ({ cursor, head: lastHead, lastSuccessAt });
+  return unwatch;
 }
