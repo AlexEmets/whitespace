@@ -1,6 +1,6 @@
 import { order, position, closedPosition, market, liquidation } from '../../ponder.schema.js';
 import { updateIfExists, findOrWarn } from './db.js';
-import { limitOrderLabel } from './enums.js';
+import { limitOrderLabel, cancelReasonLabel } from './enums.js';
 import { recordTick, quoteNotional } from './candleTick.js';
 
 // Handler logic for everything that changes or ends an open position, kept here (not in
@@ -253,6 +253,27 @@ export async function onRemoveCollateralExecuted(
     { tradeId },
     (row: { collateral: bigint }) => ({ collateral: row.collateral - removeAmount, leverage, tp, sl }),
     'RemoveCollateralExecuted->position',
+  );
+}
+
+/** RemoveCollateralRejected (from the callbacks, reason = CancelReason). The position is
+ * untouched: the contract rejects before updateTrade. */
+export async function onRemoveCollateralRejected(
+  db: Db,
+  args: { orderId: bigint; reason: number },
+  r: Resolution,
+): Promise<void> {
+  await updateIfExists(
+    db,
+    order,
+    { orderId: args.orderId },
+    {
+      status: 'cancelled',
+      cancelReason: cancelReasonLabel(args.reason),
+      resolvedAt: r.at,
+      resolvedTxHash: r.txHash,
+    },
+    'RemoveCollateralRejected',
   );
 }
 

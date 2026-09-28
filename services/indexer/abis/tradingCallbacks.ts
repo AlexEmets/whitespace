@@ -98,6 +98,20 @@ export const tradingCallbacksAbi = [
       { name: 'cancelReason', type: 'uint8', indexed: false },
     ],
   },
+  // Emitted here, by handleRemoveCollateral, with a CancelReason enum — NOT by Trading,
+  // whose interface declares a same-named event (string reason) that is never emitted.
+  {
+    type: 'event',
+    name: 'RemoveCollateralRejected',
+    inputs: [
+      { name: 'orderId', type: 'uint256', indexed: true },
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: false },
+      { name: 'removeAmount', type: 'uint256', indexed: false },
+      { name: 'reason', type: 'uint8', indexed: false },
+    ],
+  },
   {
     type: 'event',
     name: 'RemoveCollateralExecuted',

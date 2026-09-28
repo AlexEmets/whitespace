@@ -13,6 +13,7 @@ import {
   onRemoveCollateralExecuted,
   onBondChargedToPosition,
   onVaultLiqFeeCharged,
+  onRemoveCollateralRejected,
   type Resolution,
 } from '../lib/positions.js';
 import { onTradeFee, onFeesChargedV2, onOracleFeeBondCharged } from '../lib/fees.js';
@@ -183,6 +184,10 @@ ponder.on('TradingCallbacks:AutomationCloseOrderCanceled', async ({ event, conte
 
 ponder.on('TradingCallbacks:RemoveCollateralExecuted', async ({ event, context }) => {
   await onRemoveCollateralExecuted(context.db, event.args, resolution(event));
+});
+
+ponder.on('TradingCallbacks:RemoveCollateralRejected', async ({ event, context }) => {
+  await onRemoveCollateralRejected(context.db, event.args, resolution(event));
 });
 
 // --- Oracle-fee bond charged out of a position's own collateral (see

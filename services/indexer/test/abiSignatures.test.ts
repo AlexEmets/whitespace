@@ -21,6 +21,10 @@ const CANONICAL: Record<string, string> = {
   VaultLiqFeeCharged: 'VaultLiqFeeCharged(uint256,uint256,address,uint256)',
   FeesChargedV2: 'FeesChargedV2(uint256,uint256,address,int256,int256)',
   OracleFeeBondCharged: 'OracleFeeBondCharged(uint256,address,uint256,uint32,uint192,uint192)',
+  // Emitted by the CALLBACKS (handleRemoveCollateral) with a CancelReason enum. IOstiumTrading
+  // declares a same-named event with (tradeId, orderId, ..., string reason) that Trading never
+  // emits, so subscribing to that one resolves nothing.
+  RemoveCollateralRejected: 'RemoveCollateralRejected(uint256,uint256,address,uint16,uint256,uint8)',
 };
 
 function eventOf(abi: readonly unknown[], name: string): AbiEvent {

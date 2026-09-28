@@ -132,18 +132,6 @@ export const tradingAbi = [
   },
   {
     type: 'event',
-    name: 'RemoveCollateralRejected',
-    inputs: [
-      { name: 'tradeId', type: 'uint256', indexed: true },
-      { name: 'orderId', type: 'uint256', indexed: true },
-      { name: 'trader', type: 'address', indexed: true },
-      { name: 'pairIndex', type: 'uint16', indexed: false },
-      { name: 'removeAmount', type: 'uint256', indexed: false },
-      { name: 'reason', type: 'string', indexed: false },
-    ],
-  },
-  {
-    type: 'event',
     name: 'MarketOpenTimeoutExecutedV2',
     inputs: [
       { name: 'orderId', type: 'uint256', indexed: true },

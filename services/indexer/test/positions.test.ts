@@ -10,6 +10,7 @@ import {
   onRemoveCollateralExecuted,
   onBondChargedToPosition,
   onVaultLiqFeeCharged,
+  onRemoveCollateralRejected,
 } from '../src/lib/positions.js';
 
 const trader = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19';
@@ -138,6 +139,17 @@ describe('position lifecycle', () => {
     );
     expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ collateral: 80_000_000n, leverage: 1250, tp: 69_000n * E18, sl: 0n });
     expect(ctx.get(order, { orderId: 3n })!.status).toBe('executed');
+  });
+
+  it('RemoveCollateralRejected cancels the order with the reason and leaves the position alone', async () => {
+    await onRemoveCollateralRejected(ctx.db, { orderId: 3n, reason: 7 }, R);
+    expect(ctx.get(order, { orderId: 3n })).toMatchObject({
+      status: 'cancelled',
+      cancelReason: 'price_impact',
+      resolvedAt: 2_000,
+      resolvedTxHash: '0xcc',
+    });
+    expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ collateral: 100_000_000n });
   });
 
   it('OracleFeeBondCharged overwrites with the absolute post-charge state', async () => {

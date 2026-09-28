@@ -190,18 +190,3 @@ ponder.on('Trading:RemoveCollateralInitiated', async ({ event, context }) => {
     })
     .onConflictDoUpdate({});
 });
-
-ponder.on('Trading:RemoveCollateralRejected', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    order,
-    { orderId: event.args.orderId },
-    {
-      status: 'cancelled',
-      cancelReason: event.args.reason, // free-text from the contract, not an enum
-      resolvedAt: Number(event.block.timestamp),
-      resolvedTxHash: event.transaction.hash,
-    },
-    'RemoveCollateralRejected',
-  );
-});
