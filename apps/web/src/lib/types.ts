@@ -207,6 +207,33 @@ export interface PnlSummary {
   trades: number;
 }
 
+/** GET /points/:address — a wallet's season-one points. Every points figure is a raw
+ * 6-decimal string, parsed with src/lib/money.ts like every other money field. */
+export interface PointsSummary {
+  address: string;
+  missions: string;
+  time: string;
+  streak: string;
+  lp: string;
+  total: string;
+  rank: number | null;
+  streakDays: number;
+  streakLongest: number;
+  completedMissions: string[];
+  updatedAt: number | null;
+}
+
+/** GET /points/leaderboard — one ranked wallet. */
+export interface LeaderboardEntry {
+  rank: number;
+  address: string;
+  missions: string;
+  time: string;
+  streak: string;
+  lp: string;
+  total: string;
+}
+
 export type WsMessage =
   | { channel: `price:${string}`; type: 'price'; data: PriceResponse }
   | { channel: `positions:${string}`; type: 'positions'; data: PositionSummary[] }
