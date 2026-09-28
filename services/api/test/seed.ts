@@ -7,7 +7,9 @@ import { getPool } from '../src/db.js';
 // column type lowercases addresses) and what the API's route handlers do
 // when reading a path param.
 export const TRADER = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19';
-export const OTHER_TRADER = '0x000000000000000000000000000000000000aa';
+// A well-formed 20-byte address (it was 19 bytes, which the address-validating routes
+// now reject with 400 rather than answer with an empty list).
+export const OTHER_TRADER = '0x00000000000000000000000000000000000000aa';
 export const OPEN_PRICE = '65001000000000000000000';
 export const COLLATERAL = '999000000';
 
@@ -15,7 +17,7 @@ export async function truncateAll(): Promise<void> {
   const pool = getPool();
   await pool.query(
     `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status,
-       limit_order, order_event, fee_charge, liquidation, vault_settlement`,
+       limit_order, order_event, fee_charge, liquidation, vault_settlement, partial_close`,
   );
   // Not in the list above: that TRUNCATE names Ponder's tables, and this one is the
   // API's own (src/indexSeries.ts). Guarded because a test file may run before any
@@ -157,5 +159,17 @@ export async function seedFee(
     `INSERT INTO fee_charge (id, trader, trade_id, pair_index, kind, amount, at, block_number, tx_hash)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 7285600, $8)`,
     [id, over.trader ?? TRADER, over.tradeId === undefined ? 2 : over.tradeId, over.pairIndex === undefined ? 0 : over.pairIndex, kind, amount, over.at ?? 1000, TX_A],
+  );
+}
+
+/** A partial close of the proof trade (tradeId 2): 25 % of 999 USDW closed, 260 sent back
+ * -> +10.25 realised. */
+export async function seedPartialClose(
+  over: { orderId?: number; closedAt?: number; tradeId?: number; sent?: string; reason?: string } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO partial_close (order_id, trade_id, trader, pair_index, index, buy, collateral, leverage, open_price, close_price, close_reason, percent_profit, usdc_sent_to_trader, percentage_closed, opened_at, closed_at, close_tx_hash)
+     VALUES ($1, $2, $3, 0, 0, true, 249750000, 1000, $4, '65700000000000000000000', $5, 41041041, $6, 2500, 1788881876, $7, $8)`,
+    [over.orderId ?? 5, over.tradeId ?? 2, TRADER, OPEN_PRICE, over.reason ?? 'close', over.sent ?? '260000000', over.closedAt ?? 1788881878, TX_B],
   );
 }

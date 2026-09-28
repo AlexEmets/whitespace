@@ -207,22 +207,33 @@ describe('WS polling is bounded', () => {
 
   it('one socket cannot subscribe to more than MAX_SUBSCRIPTIONS_PER_SOCKET channels', async () => {
     const ws = await connect(server.wsUrl);
+    // The 30 ms poll interleaves `update` pushes for the channels already held, so read
+    // only the replies to our own subscribe/unsubscribe messages.
+    const replies: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type !== 'update') replies.push(msg);
+    });
+    const nextReply = async () => {
+      await waitForCondition(() => replies.length > 0);
+      return replies.shift()!;
+    };
     for (let i = 0; i < MAX_SUBSCRIPTIONS_PER_SOCKET; i++) {
       ws.send(JSON.stringify({ type: 'subscribe', channel: `price:${i}` }));
-      expect((await onceMessage(ws)).type).toBe('subscribed');
+      expect((await nextReply()).type).toBe('subscribed');
     }
     ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:999' }));
-    const refused = await onceMessage(ws);
+    const refused = await nextReply();
     expect(refused).toMatchObject({ type: 'error', channel: 'price:999' });
     expect(server.app.wsManager.channelSubscriberCount('price:999')).toBe(0);
     // Re-subscribing to a channel it already holds is not a new subscription.
     ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:0' }));
-    expect((await onceMessage(ws)).type).toBe('subscribed');
+    expect((await nextReply()).type).toBe('subscribed');
     // Freeing one makes room again.
     ws.send(JSON.stringify({ type: 'unsubscribe', channel: 'price:1' }));
-    await onceMessage(ws);
+    await nextReply();
     ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:999' }));
-    expect((await onceMessage(ws)).type).toBe('subscribed');
+    expect((await nextReply()).type).toBe('subscribed');
     ws.close();
   });
 

@@ -75,12 +75,36 @@ export type FeeCharge = {
   txHash: string;
 };
 
-/** GET /pnl/:address — totals over the trader's closed positions. */
+/** GET /pnl/:address — totals over every full and partial close. */
 export type PnlSummary = {
-  realizedPnl: string; // 6 dp, signed: Σ (usdcSentToTrader − collateral)
+  realizedPnl: string; // 6 dp, signed: Σ (usdcSentToTrader − collateral closed)
   fees: string; // 6 dp: Σ oracle + dev + vault_opening + bond + rollover charged to those trades
   funding: string; // 6 dp, signed: Σ funding on those trades (negative = received)
-  trades: number; // closed positions counted
+  trades: number; // distinct trades that realised anything
+};
+
+/** GET /positions/:address/history — one realised close (full or partial), newest first. */
+export type PositionHistoryEntry = {
+  pairIndex: number;
+  index: number;
+  buy: boolean;
+  collateral: string; // 6 dp; for a partial close, the part closed
+  leverage: string; // 2 dp
+  openPrice: string; // 18 dp
+  closePrice: string; // 18 dp
+  tp: string | null; // 18 dp; null on partial rows
+  sl: string | null; // 18 dp; null on partial rows
+  tradeId: string; // repeated across a trade's partial closes and its final close
+  openedAt: number;
+  closedAt: number;
+  closeReason: string; // 'close' | 'tp' | 'sl' | 'liq' | …
+  percentProfit: string; // percent, 6 dp, signed ("-0.030768" = −0.030768 %)
+  usdcSentToTrader: string; // 6 dp
+  realizedPnl: string; // 6 dp, signed: usdcSentToTrader − collateral
+  closeOrderId: string; // unique per row
+  closeTxHash: string;
+  percentageClosed: string; // 2 dp percent, "100.00" for a full close
+  isPartial: boolean;
 };
 
 /** GET /vault/settlements — one settlement, newest first. Columns a settlement's second

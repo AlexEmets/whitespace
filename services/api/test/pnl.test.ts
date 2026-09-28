@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
-import { truncateAll, seedClosedPosition, seedOpenPosition, seedFee, TRADER } from './seed.js';
+import { truncateAll, seedClosedPosition, seedOpenPosition, seedFee, seedPartialClose, TRADER } from './seed.js';
 import { getPool } from '../src/db.js';
 
 describe('GET /pnl/:address', () => {
@@ -57,6 +57,33 @@ describe('GET /pnl/:address', () => {
       fees: '1.250040', // 1 + 0.25 - 0.00001 + 0.00002 + 0.00003
       funding: '-0.300000',
       trades: 2,
+    });
+  });
+
+  it('includes the PnL and fees of partial closes, counting each trade once', async () => {
+    // Trade 2 was partially closed (+10.25) and later fully closed (-0.307372).
+    await seedPartialClose();
+    await seedClosedPosition();
+    // Trade 9 is still open but has realised a liquidated partial (0 back on 249.75).
+    await seedPartialClose({ orderId: 6, tradeId: 9, sent: '0', reason: 'liq' });
+    await seedFee('0x1-0-funding', 'funding', '100', { tradeId: 2 });
+    await seedFee('0x2-0-funding', 'funding', '-300', { tradeId: 9 });
+    await seedFee('0x2-1', 'bond', '250000', { tradeId: 9 });
+    expect((await get(`/pnl/${TRADER}`)).body).toEqual({
+      realizedPnl: '-239.807372', // 10.25 - 0.307372 - 249.75
+      fees: '0.250000',
+      funding: '-0.000200',
+      trades: 2,
+    });
+  });
+
+  it('a trader with only a partial close has realised PnL', async () => {
+    await seedPartialClose();
+    expect((await get(`/pnl/${TRADER}`)).body).toEqual({
+      realizedPnl: '10.250000',
+      fees: '0.000000',
+      funding: '0.000000',
+      trades: 1,
     });
   });
 

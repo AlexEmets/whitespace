@@ -525,3 +525,22 @@ distinct polled channels. Now: positions come from `resolvePositions` (shared wi
 500 rows), every wallet channel (`positions`, `orders`, `limitOrders`, `fees`) requires a
 well-formed address, and one socket may hold at most 64 subscriptions (the 65th gets
 `{type: "error"}`).
+
+### 11.4 Partial closes, percentProfit, address validation
+
+- **Partial closes.** The indexer's `partial_close` table (key: close `orderId`) records each
+  partial market close: the collateral closed (`collateral × percentageClosed / 10000`, what
+  `TradingStorage.unregisterTrade` removes), close price, `usdcSentToTrader` (0 and
+  `closeReason: 'liq'` when `VaultLiqFeeCharged` marked it) and `percentageClosed`. This
+  supersedes the partial-close scope note earlier in this document.
+  `GET /positions/:address/history` returns `PositionHistoryEntry[]`: full closes and partial
+  closes merged, newest first. Each row gains `closeOrderId` (the unique key; `tradeId` repeats
+  across a trade's partial and final closes), `closeTxHash`, `percentageClosed` ("25.00",
+  "100.00") and `isPartial`. On partial rows `collateral` is the part closed and `tp`/`sl` are null.
+  `GET /pnl/:address` sums both; `trades` is now the number of distinct trades that realised
+  anything, and fees/funding cover all of those trades.
+- **percentProfit** is a signed percent with 6 decimals (`getTradeValuePure` applies it as
+  `collateral × p / 1e6 / 100`). It was formatted at 18 dp, i.e. 1e12 too small; the proof
+  trade's raw −30768 now reads "-0.030768" (−0.030768 %, which is −0.307372 USDW on 999).
+- `/orders/:address`, `/positions/:address` and `/positions/:address/history` answer
+  `400 {"error": "invalid address"}` for anything that is not a 20-byte hex address.

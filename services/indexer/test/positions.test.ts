@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { makeFakeDb, type FakeDb } from './fakeDb.js';
-import { order, position, closedPosition, market } from '../ponder.schema.js';
+import { order, position, closedPosition, market, partialClose } from '../ponder.schema.js';
 import {
   onMarketCloseExecuted,
   onLimitCloseExecuted,
@@ -95,6 +95,46 @@ describe('position lifecycle', () => {
       await onVaultLiqFeeCharged(ctx.db, { orderId: 8n, tradeId: 2n, trader, amount: 4_000_000n }, R);
       await onMarketCloseExecuted(ctx.db, marketClose(), R);
       expect(ctx.get(closedPosition, { tradeId: 2n })).toMatchObject({ closeReason: 'close', usdcSentToTrader: 116_000_000n });
+    });
+
+    it('a partial close records the realised part in partial_close', async () => {
+      await onMarketCloseExecuted(
+        ctx.db,
+        marketClose({ percentageClosed: 2500n, usdcSentToTrader: 29_000_000n, percentProfit: 16_000_000n }),
+        R,
+      );
+      expect(ctx.rows(partialClose)).toEqual([
+        {
+          orderId: 3n,
+          tradeId: 2n,
+          trader,
+          pairIndex: 0,
+          index: 0,
+          buy: true,
+          collateral: 25_000_000n, // 25 % of 100 USDW
+          leverage: 1000,
+          openPrice: 60_000n * E18,
+          closePrice: 61_000n * E18,
+          closeReason: 'close',
+          percentProfit: 16_000_000n,
+          usdcSentToTrader: 29_000_000n,
+          percentageClosed: 2500,
+          openedAt: 1_000,
+          closedAt: 2_000,
+          closeTxHash: '0xcc',
+        },
+      ]);
+    });
+
+    it('a partial close that liquidated is recorded as liq with nothing sent', async () => {
+      await onVaultLiqFeeCharged(ctx.db, { orderId: 3n, tradeId: 2n, trader, amount: 1_000_000n }, R);
+      await onMarketCloseExecuted(ctx.db, marketClose({ percentageClosed: 5000n, usdcSentToTrader: 1_000_000n }), R);
+      expect(ctx.get(partialClose, { orderId: 3n })).toMatchObject({ closeReason: 'liq', usdcSentToTrader: 0n, collateral: 50_000_000n });
+    });
+
+    it('a full close writes no partial_close row', async () => {
+      await onMarketCloseExecuted(ctx.db, marketClose(), R);
+      expect(ctx.rows(partialClose)).toEqual([]);
     });
 
     it('an unknown trade resolves the order and touches nothing else', async () => {
