@@ -38,12 +38,11 @@ export function getPool(): pg.Pool {
       throw new Error('DATABASE_URL is required');
     }
     const schema = indexerSchemaFromEnv();
-    pool = new Pool({ connectionString });
-    if (schema !== 'public') {
-      pool.on('connect', (client) => {
-        client.query(`SET search_path TO ${schema}, public`).catch(() => undefined);
-      });
-    }
+    // A startup parameter, not a `SET` on connect: it is in force before the first query of
+    // every connection, with no extra round trip racing the caller's own query.
+    pool = new Pool(
+      schema === 'public' ? { connectionString } : { connectionString, options: `-c search_path=${schema},public` },
+    );
   }
   return pool;
 }
