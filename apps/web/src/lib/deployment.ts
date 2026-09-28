@@ -33,3 +33,4 @@ export const COLLATERAL_ADDRESS = DEPLOYMENT_1874.contracts.collateral;
 export const TRADING_STORAGE_ADDRESS = DEPLOYMENT_1874.contracts.tradingStorage;
 export const PAIR_INFOS_ADDRESS = DEPLOYMENT_1874.contracts.pairInfos;
 export const PAIRS_STORAGE_ADDRESS = DEPLOYMENT_1874.contracts.pairsStorage;
+export const CALLBACKS_ADDRESS = DEPLOYMENT_1874.contracts.callbacks;

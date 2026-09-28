@@ -98,6 +98,21 @@ export const PAIR_INFOS_ABI = parseAbi([
   'function pairOpeningFees(uint16 pairIndex) view returns (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilizationThresholdP, uint16 makerMaxLeverage, uint8 vaultFeePercent)',
   'function getTradeLiquidationPrice(address trader, uint16 pairIndex, uint8 index, uint256 openPrice, bool long, uint256 collateral, uint32 leverage, uint32 maxLeverage) view returns (uint256)',
   'function getTradeLiquidationPricePure(uint256 openPrice, bool long, uint256 collateral, uint32 leverage, int256 rolloverFee, int256 fundingFee, uint32 maxLeverage) view returns (uint256)',
+  // Accrued holding costs of an open trade, PRECISION_6 USDW, signed: positive is owed by the
+  // trader. getTradeFundingFee also returns the pair's OI delta (OstiumPairInfos.sol:747).
+  'function getTradeFundingFee(address trader, uint16 pairIndex, uint8 index, bool long, uint256 collateral, uint32 leverage) view returns (int256 fundingFee, int256 oiDelta)',
+  'function getTradeRolloverFee(address trader, uint16 pairIndex, uint8 index, bool long, uint256 collateral, uint32 leverage) view returns (int256)',
+  // The pair's current funding rate is the third member: int64 PRECISION_18 per block, positive
+  // when longs pay shorts (OstiumPairInfos.sol:607).
+  'function getPendingAccFundingFees(uint16 pairIndex) view returns (int256 accPerOiLong, int256 accPerOiShort, int64 fundingRatePerBlock, int256 oiDelta)',
+]);
+
+// source: IOstiumTradingCallbacks.maxSl_P — the widest stop loss, as a percent loss of margin.
+export const CALLBACKS_ABI = parseAbi(['function maxSl_P() view returns (uint8)']);
+
+// source: IOstiumTradingStorage.openTradesInfo (TradeInfo struct) — initialLeverage bounds updateTp.
+export const TRADING_STORAGE_ABI = parseAbi([
+  'function openTradesInfo(address trader, uint16 pairIndex, uint8 index) view returns (uint256 tradeId, uint256 oiNotional, uint32 initialLeverage, uint32 tpLastUpdated, uint32 slLastUpdated, uint32 createdAt, bool deprecatedBeingMarketClosed)',
 ]);
 
 export const PAIRS_STORAGE_ABI = parseAbi(['function pairOracleFee(uint16 pairIndex) view returns (uint64)']);
