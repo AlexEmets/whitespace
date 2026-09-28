@@ -1,0 +1,209 @@
+/* Order-entry panel, laid out after Variational Omni's: leverage and margin mode on top,
+   order-kind tabs, then the two side buttons carrying the vault's quote. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.topRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.leverageButton,
+.marginMode {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--fg);
+  padding: 0.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.leverageButton {
+  cursor: pointer;
+}
+
+.leverageButton:hover {
+  border-color: var(--accent);
+}
+
+.marginMode {
+  color: var(--fg-muted);
+}
+
+.leverageEditor {
+  margin-bottom: 0;
+}
+
+.kindTabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  padding: 2px;
+}
+
+.kindTabs button {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  padding: 0.45rem 0;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.kindTabs .kindActive {
+  background: var(--bg-panel);
+  color: var(--fg);
+}
+
+.sideButtons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.45rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.sidePrice {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.buyActive {
+  background: var(--long-dim);
+  border-color: var(--long);
+  color: var(--long);
+}
+
+.sellActive {
+  background: var(--short-dim);
+  border-color: var(--short);
+  color: var(--short);
+}
+
+.facts,
+.summary {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+}
+
+.facts > div,
+.summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.facts dt,
+.summary dt {
+  color: var(--fg-muted);
+}
+
+.facts dd,
+.summary dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+}
+
+.long {
+  color: var(--long);
+}
+
+.short {
+  color: var(--short);
+}
+
+.unitToggle {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
+.unitToggle:hover {
+  color: var(--fg);
+}
+
+.percentRow input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.percentMarks {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.3rem;
+}
+
+.percentMarks button {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  border-radius: 3px;
+  padding: 0.25rem 0;
+  cursor: pointer;
+  font-size: 0.68rem;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.tpSl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.linkButton {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.slippageInput {
+  width: 4.5rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font: inherit;
+  text-align: right;
+}

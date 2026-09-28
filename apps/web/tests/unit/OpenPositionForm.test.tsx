@@ -53,6 +53,8 @@ const BTC_USD: MarketSummary = {
  * the helper under test, so the test fails if the helper changes.
  */
 const SIZE_0_01_BTC = '0.01';
+const MARK_RAW = 65_001n * 10n ** 18n;
+const E18 = 10n ** 18n;
 const COLLATERAL_FOR_0_01_BTC = 65_001_000n;
 
 /** Raw PRECISION_18 estimated liquidation price the mocked contract read returns. The
@@ -101,6 +103,40 @@ vi.mock('@/hooks/useOpenTrade', () => ({
   useOpenTrade: () => ({ openTrade: openTradeMock, isPending: false }),
 }));
 
+/**
+ * The quote is computed by the real lib/quote.ts over controllable oracle inputs, so the form
+ * is tested against the contract's own fill formula rather than a hand-written stub.
+ */
+let quoteInputs: {
+  netVolThreshold: bigint;
+  decayRate: bigint;
+  priceImpactK: bigint;
+  buyVolume: bigint;
+  sellVolume: bigint;
+  lastUpdateTimestamp: bigint;
+  blockTimestamp: bigint;
+  price: bigint;
+  askPrice: bigint;
+  bidPrice: bigint;
+} | null = null;
+
+vi.mock('@/hooks/useQuote', async () => {
+  const { quoteForNotional } = await import('@/lib/quote');
+  return {
+    useQuote: (_pair: number | null, notionalRaw: bigint) => ({
+      inputs: quoteInputs,
+      quote: quoteInputs ? quoteForNotional(quoteInputs, notionalRaw) : null,
+      unavailable: quoteInputs ? [] : [{ kind: 'no-quote', detail: 'the publisher has no two-sided aggregate right now' }],
+      loading: false,
+    }),
+  };
+});
+
+let positionsState: { pairIndex: number; index: number; buy: boolean; collateral: string; leverage: string; openPrice: string }[] = [];
+vi.mock('@/hooks/usePositions', () => ({
+  usePositions: () => ({ positions: positionsState, error: null, loading: false, refetch: vi.fn() }),
+}));
+
 vi.mock('@/hooks/useOrders', () => ({
   useOrders: () => ({ orders: [], error: null, loading: false, refetch: vi.fn() }),
 }));
@@ -120,46 +156,24 @@ beforeEach(() => {
   };
   allowanceState = 10_000_000_000n;
   balanceState = 10_000_000_000n;
+  positionsState = [];
+  // A zero-width quote at the mark with no size impact: fills land exactly on 65,001.00, so the
+  // collateral arithmetic below is the plain size x price / leverage.
+  quoteInputs = {
+    netVolThreshold: 0n,
+    decayRate: 0n,
+    priceImpactK: 0n,
+    buyVolume: 0n,
+    sellVolume: 0n,
+    lastUpdateTimestamp: 0n,
+    blockTimestamp: 0n,
+    price: MARK_RAW,
+    askPrice: MARK_RAW,
+    bidPrice: MARK_RAW,
+  };
 });
 
 describe('<OpenPositionForm>', () => {
-  it('shows the reference price with its USDW unit', () => {
-    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    expect(screen.getByTestId('reference-price')).toHaveValue('65,001.00');
-  });
-
-  /**
-   * The MAX SLIPPAGE slider was deleted to match terminal_design.pdf, which has exactly
-   * one slider (LEVERAGE). Slippage is a transaction PARAMETER, not decoration — in this
-   * two-phase design it is the trader's only defence against an unfavourable execution
-   * price — so deleting the control had to pin the value, not drop it. This is the test
-   * that says the deletion did not quietly loosen everyone's tolerance.
-   */
-  it('has no slippage control, and still submits the protocol default tolerance', async () => {
-    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    expect(screen.queryByTestId('slippage-input')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('slippage-value')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
-    fireEvent.click(screen.getByTestId('submit-open-button'));
-
-    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
-    expect(openTradeMock.mock.calls[0]?.[0]).toMatchObject({ slippageBps: 50n });
-  });
-
-  /** Reference order is LIMIT MARKET STOP TWAP. MARKET must stay the ACTIVE one: every
-   * submission is hardcoded to OPEN_ORDER_TYPE_MARKET in useOpenTrade, so an active LIMIT
-   * tab would name one order type on screen and sign another on chain. */
-  it('orders the tabs as the reference does while keeping MARKET the active one', () => {
-    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    const tabs = Array.from(document.querySelectorAll('.order-type-tabs button'));
-
-    expect(tabs.map((t) => t.textContent)).toEqual(['Limit', 'Market', 'Stop', 'TWAP']);
-    expect(tabs.find((t) => t.textContent === 'Market')).toHaveClass('active');
-    expect(tabs.find((t) => t.textContent === 'Limit')).toBeDisabled();
-    expect(tabs.find((t) => t.textContent === 'Limit')).not.toHaveClass('active');
-  });
-
   it('denominates the size field in the market’s base asset', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
     expect(screen.getByTestId('open-position-form')).toHaveTextContent('BTC');
@@ -184,6 +198,8 @@ describe('<OpenPositionForm>', () => {
   it('states the selected leverage as a figure, not only as a slider position', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
     expect(screen.getByTestId('leverage-value')).toHaveTextContent('10×');
+    expect(screen.queryByTestId('leverage-slider')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('leverage-button'));
 
     fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '25' } });
     expect(screen.getByTestId('leverage-value')).toHaveTextContent('25×');
@@ -379,6 +395,9 @@ describe('<OpenPositionForm>', () => {
       leverageRaw: 1000n, // default 10x at PRECISION_2
       wantedPriceRaw: 65001000000000000000000n,
       slippageBps: 50n,
+      tp: 0n,
+      sl: 0n,
+      kind: 'MARKET',
     });
 
     // Two-phase honesty: after the tx confirms, the UI must not claim the position is
@@ -440,5 +459,235 @@ describe('<OpenPositionForm>', () => {
     const submitted = openTradeMock.mock.calls[0]?.[0].collateralRaw ?? 0n;
     expect(submitted).toBeGreaterThan(0n);
     expect(submitted).toBeLessThanOrEqual(1_000_000_000n);
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // The quote (Variational-style, no order book)
+  // ---------------------------------------------------------------------------------------
+
+  it('carries the vault quote on the side buttons, with the spread', () => {
+    quoteInputs = { ...quoteInputs!, askPrice: MARK_RAW + 13n * E18, bidPrice: MARK_RAW - 13n * E18 };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('quote-buy')).toHaveTextContent('65,014.00');
+    expect(screen.getByTestId('quote-sell')).toHaveTextContent('64,988.00');
+    // (65,014 - 64,988) / 65,001 = 0.039999…% → 0.0400%
+    expect(screen.getByTestId('quote-spread')).toHaveTextContent('0.0400%');
+  });
+
+  it('submits a long at the quoted ask and a short at the quoted bid, not at the mark', async () => {
+    quoteInputs = { ...quoteInputs!, askPrice: MARK_RAW + 13n * E18, bidPrice: MARK_RAW - 13n * E18 };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0].wantedPriceRaw).toBe(MARK_RAW + 13n * E18);
+
+    fireEvent.click(screen.getByTestId('direction-short'));
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(2));
+    expect(openTradeMock.mock.calls[1]![0].wantedPriceRaw).toBe(MARK_RAW - 13n * E18);
+  });
+
+  it('shows the quoted price and the estimated slippage for the chosen side', () => {
+    quoteInputs = { ...quoteInputs!, askPrice: MARK_RAW + 65n * E18 / 10n, bidPrice: MARK_RAW - 65n * E18 / 10n };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('quoted-price')).toHaveTextContent('65,007.50');
+    expect(screen.getByTestId('slippage')).toHaveTextContent('Est: 0.0100%');
+  });
+
+  it('raises the max slippage to cover a quote that is wider than the default', async () => {
+    // 1% above the mark — the 0.50% default would cancel the very fill the panel showed.
+    quoteInputs = { ...quoteInputs!, askPrice: (MARK_RAW * 101n) / 100n };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('max-slippage')).toHaveTextContent('Max: 1.01%');
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0].slippageBps).toBe(101n);
+  });
+
+  it('lets the trader set the max slippage, within the allowed ceiling', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('max-slippage'));
+    const input = screen.getByTestId('max-slippage-input');
+    fireEvent.change(input, { target: { value: '1.25' } });
+    fireEvent.blur(input);
+    expect(screen.getByTestId('max-slippage')).toHaveTextContent('Max: 1.25%');
+
+    fireEvent.click(screen.getByTestId('max-slippage'));
+    fireEvent.change(screen.getByTestId('max-slippage-input'), { target: { value: '50' } });
+    fireEvent.blur(screen.getByTestId('max-slippage-input'));
+    expect(screen.getByTestId('max-slippage')).toHaveTextContent('Max: 1.25%'); // 50% refused
+
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0].slippageBps).toBe(125n);
+  });
+
+  it('refuses a market order when there is no quote, and says why', () => {
+    quoteInputs = null;
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('quote-unavailable')).toHaveTextContent(/two-sided/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // Size units and percent of balance
+  // ---------------------------------------------------------------------------------------
+
+  it('toggles the size between the base asset and USD without changing the order', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('size-unit-toggle')).toHaveTextContent('BTC');
+
+    fireEvent.click(screen.getByTestId('size-unit-toggle'));
+    expect(screen.getByTestId('size-unit-toggle')).toHaveTextContent('USD');
+    expect(screen.getByTestId('size-input')).toHaveValue('650.01');
+    expect(screen.getByTestId('margin-required')).toHaveTextContent('65.00 USDW');
+
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0].collateralRaw).toBe(COLLATERAL_FOR_0_01_BTC);
+  });
+
+  it('shows the order value and quantity for what is typed', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('order-value')).toHaveTextContent('650.01 USDW');
+    expect(screen.getByTestId('order-quantity')).toHaveTextContent('0.010000 BTC');
+  });
+
+  it('prices the fee at the taker rate plus the oracle fee', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    // takerFeeRaw is 0 in this suite's mock, so the fee is the $1 oracle fee alone.
+    expect(screen.getByTestId('fee')).toHaveTextContent('1.00 USDW');
+  });
+
+  it('flags text that is not a number instead of submitting it', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: 'abc' } });
+    expect(screen.getByTestId('open-position-form')).toHaveTextContent('Not a number.');
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // Current position
+  // ---------------------------------------------------------------------------------------
+
+  it('sums this wallet’s positions on the market into a signed current position', () => {
+    positionsState = [
+      { pairIndex: 0, index: 0, buy: true, collateral: '650.01', leverage: '10.00', openPrice: '65001' }, // +0.1
+      { pairIndex: 0, index: 1, buy: false, collateral: '65.001', leverage: '10.00', openPrice: '65001' }, // -0.01
+      { pairIndex: 1, index: 0, buy: true, collateral: '100', leverage: '10.00', openPrice: '2500' }, // other market
+    ];
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('current-position')).toHaveTextContent('+0.0900 BTC');
+  });
+
+  it('shows a dash when there is no position on the market', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('current-position')).toHaveTextContent('—');
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // Limit and stop entries
+  // ---------------------------------------------------------------------------------------
+
+  it('offers Market, Limit and Stop, with Market selected', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('order-kind-market')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('order-kind-limit')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('order-kind-stop')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByTestId('trigger-price-input')).not.toBeInTheDocument();
+  });
+
+  it('a limit buy must rest below the market', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('order-kind-limit'));
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('trigger-price-input'), { target: { value: '66000' } });
+    expect(screen.getByTestId('trigger-error')).toHaveTextContent(/below/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  it('places a limit buy at the trigger price, sized at that price, and says it is resting', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.click(screen.getByTestId('order-kind-limit'));
+    fireEvent.change(screen.getByTestId('trigger-price-input'), { target: { value: '60000' } });
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('submit-open-button')).toHaveTextContent('Place Limit Buy BTC');
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0]).toMatchObject({
+      kind: 'LIMIT',
+      buy: true,
+      wantedPriceRaw: 60_000n * E18,
+      collateralRaw: 60_000_000n, // 0.01 x 60,000 / 10
+    });
+    expect(await screen.findByTestId('order-placed')).toHaveTextContent(/rests on chain/);
+  });
+
+  it('a stop sell must rest below the market, and places once it does', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('order-kind-stop'));
+    fireEvent.click(screen.getByTestId('direction-short'));
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('trigger-price-input'), { target: { value: '70000' } });
+    expect(screen.getByTestId('trigger-error')).toHaveTextContent(/below/);
+
+    fireEvent.change(screen.getByTestId('trigger-price-input'), { target: { value: '60000' } });
+    expect(screen.queryByTestId('trigger-error')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0]).toMatchObject({ kind: 'STOP', buy: false, wantedPriceRaw: 60_000n * E18 });
+  });
+
+  it('fills the trigger with the mark on request', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('order-kind-limit'));
+    fireEvent.click(screen.getByText('Mark'));
+    expect(screen.getByTestId('trigger-price-input')).toHaveValue('65001.00');
+  });
+
+  // ---------------------------------------------------------------------------------------
+  // TP / SL
+  // ---------------------------------------------------------------------------------------
+
+  it('refuses a take profit below a long entry and a stop loss above it', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '60000' } });
+    fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '70000' } });
+    expect(screen.getByTestId('tp-error')).toHaveTextContent(/above/);
+    expect(screen.getByTestId('sl-error')).toHaveTextContent(/below/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  it('submits a valid take profit and stop loss with the order', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '70000' } });
+    fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '60000' } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0]).toMatchObject({ tp: 70_000n * E18, sl: 60_000n * E18 });
+  });
+
+  it('sends no TP/SL once the section is switched off again', async () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '70000' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(1));
+    expect(openTradeMock.mock.calls[0]![0]).toMatchObject({ tp: 0n, sl: 0n });
   });
 });
