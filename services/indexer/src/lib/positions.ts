@@ -1,4 +1,4 @@
-import { order, position, closedPosition, market, liquidation } from '../../ponder.schema.js';
+import { order, position, closedPosition, market, liquidation, partialClose } from '../../ponder.schema.js';
 import { updateIfExists, findOrWarn } from './db.js';
 import { limitOrderLabel, cancelReasonLabel } from './enums.js';
 import { recordTick, quoteNotional } from './candleTick.js';
@@ -99,9 +99,8 @@ async function writeClosed(
 
 // MarketCloseExecutedV2 supports partial closes (percentageClosed < 10000): the position
 // stays open with reduced collateral and is NOT written to closedPosition (that table
-// models "this trade is over", which a partial close isn't) — see
-// docs/decisions/phase-4-indexer-api.md for the scope note on partial-close realized-PnL
-// history.
+// models "this trade is over", which a partial close isn't); its realised part goes to
+// partial_close instead.
 export async function onMarketCloseExecuted(
   db: Db,
   args: {
@@ -125,21 +124,24 @@ export async function onMarketCloseExecuted(
   await adjustOpenInterest(db, pos.pairIndex, pos.buy, -closedNotional, 'MarketCloseExecutedV2->market.OI');
   await recordTick(db, pos.pairIndex, r.at, price, closedNotional);
 
+  // A market close can liquidate; the event does not say so, VaultLiqFeeCharged (earlier
+  // in the same callback) does. The trader is then sent nothing — the event's
+  // usdcSentToTrader is the value the vault kept. (A liquidation whose value was exactly
+  // 0 emits no fee event and stays 'close'; usdcSentToTrader is 0 either way.)
+  const liquidated = (await db.find(liquidation, { orderId })) != null;
+  const closeReason = liquidated ? 'liq' : 'close';
+  const sent = liquidated ? 0n : usdcSentToTrader;
+
   if (percentageClosed >= FULL_CLOSE_PCT) {
-    // A market close can liquidate; the event does not say so, VaultLiqFeeCharged (earlier
-    // in the same callback) does. The trader is then sent nothing — the event's
-    // usdcSentToTrader is the value the vault kept. (A liquidation whose value was exactly
-    // 0 emits no fee event and stays 'close'; usdcSentToTrader is 0 either way.)
-    const liquidated = (await db.find(liquidation, { orderId })) != null;
     await writeClosed(
       db,
       tradeId,
       pos,
       {
         closePrice: price,
-        closeReason: liquidated ? 'liq' : 'close',
+        closeReason,
         percentProfit,
-        usdcSentToTrader: liquidated ? 0n : usdcSentToTrader,
+        usdcSentToTrader: sent,
         percentageClosed: Number(percentageClosed),
         closeOrderId: orderId,
       },
@@ -150,6 +152,29 @@ export async function onMarketCloseExecuted(
     // collateralToClose = collateral * closePercentage / 100e2; leverage is unchanged.
     const removedCollateral = (pos.collateral * percentageClosed) / FULL_CLOSE_PCT;
     await db.update(position, { tradeId }).set({ collateral: pos.collateral - removedCollateral });
+    // The trade is not over, but this part of it is: record what it realised.
+    await db
+      .insert(partialClose)
+      .values({
+        orderId,
+        tradeId,
+        trader: pos.trader,
+        pairIndex: pos.pairIndex,
+        index: pos.index,
+        buy: pos.buy,
+        collateral: removedCollateral,
+        leverage: pos.leverage,
+        openPrice: pos.openPrice,
+        closePrice: price,
+        closeReason,
+        percentProfit,
+        usdcSentToTrader: sent,
+        percentageClosed: Number(percentageClosed),
+        openedAt: pos.openedAt,
+        closedAt: r.at,
+        closeTxHash: r.txHash,
+      })
+      .onConflictDoNothing();
   }
 }
 

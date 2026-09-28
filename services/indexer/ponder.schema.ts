@@ -261,6 +261,38 @@ export const feeCharge = onchainTable(
   }),
 );
 
+/** Partial market closes (percentageClosed < 10000), keyed by the close orderId. The
+ * position stays open, so these never reach closed_position, but each one realises PnL on
+ * the part it closed. `collateral` is that part (collateral * percentageClosed / 10000,
+ * exactly what TradingStorage.unregisterTrade removes), so realised PnL is
+ * usdcSentToTrader − collateral, the same formula as closed_position. A partial close that
+ * liquidated (VaultLiqFeeCharged) is 'liq' with nothing sent, as for full closes. */
+export const partialClose = onchainTable(
+  'partial_close',
+  (t) => ({
+    orderId: t.bigint().primaryKey(),
+    tradeId: t.bigint().notNull(),
+    trader: t.hex().notNull(),
+    pairIndex: t.integer().notNull(),
+    index: t.integer().notNull(),
+    buy: t.boolean().notNull(),
+    collateral: t.bigint().notNull(), // PRECISION_6, the closed part
+    leverage: t.integer().notNull(), // PRECISION_2
+    openPrice: t.bigint().notNull(), // PRECISION_18
+    closePrice: t.bigint().notNull(), // PRECISION_18
+    closeReason: t.text().notNull(), // 'close' | 'liq'
+    percentProfit: t.bigint().notNull(), // percent, 6 dp, signed
+    usdcSentToTrader: t.bigint().notNull(), // PRECISION_6
+    percentageClosed: t.integer().notNull(), // PRECISION_2, < 10000
+    openedAt: t.integer().notNull(),
+    closedAt: t.integer().notNull(),
+    closeTxHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderIdx: index().on(table.trader),
+  }),
+);
+
 /** LP vault activity: deposit/withdraw requests and claims (the vault is an
  * async, settlement-based model — see abis/vault.ts). */
 export const lpActivity = onchainTable(
