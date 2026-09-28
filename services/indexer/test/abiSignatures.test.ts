@@ -14,6 +14,13 @@ const CANONICAL: Record<string, string> = {
   OpenLimitPlacedV2: `OpenLimitPlacedV2(address,uint16,uint8,${TRADE},uint8,(address,uint32))`,
   OpenLimitUpdated: 'OpenLimitUpdated(address,uint16,uint8,uint192,uint192,uint192)',
   OpenLimitCanceled: 'OpenLimitCanceled(address,uint16,uint8)',
+  OracleFeeChargedLimitCancelled: 'OracleFeeChargedLimitCancelled(address,uint16,uint256)',
+  DevFeeCharged: 'DevFeeCharged(uint256,address,uint256)',
+  OracleFeeCharged: 'OracleFeeCharged(uint256,address,uint256)',
+  VaultOpeningFeeCharged: 'VaultOpeningFeeCharged(uint256,address,uint256)',
+  VaultLiqFeeCharged: 'VaultLiqFeeCharged(uint256,uint256,address,uint256)',
+  FeesChargedV2: 'FeesChargedV2(uint256,uint256,address,int256,int256)',
+  OracleFeeBondCharged: 'OracleFeeBondCharged(uint256,address,uint256,uint32,uint192,uint192)',
 };
 
 function eventOf(abi: readonly unknown[], name: string): AbiEvent {

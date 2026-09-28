@@ -6,21 +6,9 @@ import {
   onOpenLimitUpdated,
   onOpenLimitCanceled,
   automationOpenOrderDetails,
-  type EventMeta,
 } from '../lib/limitOrders.js';
-
-function meta(event: {
-  transaction: { hash: `0x${string}` };
-  log: { logIndex: number };
-  block: { number: bigint; timestamp: bigint };
-}): EventMeta {
-  return {
-    txHash: event.transaction.hash,
-    logIndex: event.log.logIndex,
-    blockNumber: event.block.number,
-    timestamp: Number(event.block.timestamp),
-  };
-}
+import { toMeta as meta } from '../lib/event.js';
+import { onOracleFeeChargedLimitCancelled } from '../lib/fees.js';
 
 // --- Limit / stop entries (see src/lib/limitOrders.ts for which event fires when) ----
 
@@ -30,6 +18,10 @@ ponder.on('Trading:OpenLimitPlacedV2', async ({ event, context }) => {
 
 ponder.on('Trading:OpenLimitUpdated', async ({ event, context }) => {
   await onOpenLimitUpdated(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OracleFeeChargedLimitCancelled', async ({ event, context }) => {
+  await onOracleFeeChargedLimitCancelled(context.db, event.args, meta(event));
 });
 
 ponder.on('Trading:OpenLimitCanceled', async ({ event, context }) => {

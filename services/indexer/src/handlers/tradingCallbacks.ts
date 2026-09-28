@@ -5,6 +5,8 @@ import { tradeIdFromOpenOrderId } from '../lib/tradeId.js';
 import { limitOrderLabel, cancelReasonLabel } from '../lib/enums.js';
 import { recordTick, quoteNotional } from '../lib/candleTick.js';
 import { onLimitOpenExecuted } from '../lib/limitOrders.js';
+import { toMeta } from '../lib/event.js';
+import { onTradeFee, onFeesChargedV2, onOracleFeeBondCharged } from '../lib/fees.js';
 
 const FULL_CLOSE_PCT = 10000n; // PRECISION_2, 10000 = 100%
 
@@ -107,12 +109,7 @@ ponder.on('TradingCallbacks:LimitOpenExecuted', async ({ event, context }) => {
 
   // The resting order is gone from storage (unregisterOpenLimitOrder), so it must be gone
   // from limit_order too — the automation bot reads that table as its trigger set.
-  await onLimitOpenExecuted(context.db, event.args, tradeId, {
-    txHash: event.transaction.hash,
-    logIndex: event.log.logIndex,
-    blockNumber: event.block.number,
-    timestamp: openedAt,
-  });
+  await onLimitOpenExecuted(context.db, event.args, tradeId, toMeta(event));
 
   const notional = quoteNotional(t.collateral, t.leverage);
   await adjustOpenInterest(context.db, t.pairIndex, t.buy, notional, 'LimitOpenExecuted->market.OI');
@@ -355,6 +352,9 @@ ponder.on('TradingCallbacks:RemoveCollateralExecuted', async ({ event, context }
 ponder.on('TradingCallbacks:OracleFeeBondCharged', async ({ event, context }) => {
   const { tradeId, collateral, leverage, tp, sl } = event.args;
 
+  // Before the position update: the fee's fallback amount is the collateral it removed.
+  await onOracleFeeBondCharged(context.db, event.args, toMeta(event));
+
   await updateIfExists(
     context.db,
     position,
@@ -362,4 +362,26 @@ ponder.on('TradingCallbacks:OracleFeeBondCharged', async ({ event, context }) =>
     { collateral, leverage, tp, sl },
     'OracleFeeBondCharged->position',
   );
+});
+
+// --- Fees (fee_charge; see src/lib/fees.ts for the event -> kind mapping) --------------
+
+ponder.on('TradingCallbacks:OracleFeeCharged', async ({ event, context }) => {
+  await onTradeFee(context.db, 'oracle', event.args, toMeta(event));
+});
+
+ponder.on('TradingCallbacks:DevFeeCharged', async ({ event, context }) => {
+  await onTradeFee(context.db, 'dev', event.args, toMeta(event));
+});
+
+ponder.on('TradingCallbacks:VaultOpeningFeeCharged', async ({ event, context }) => {
+  await onTradeFee(context.db, 'vault_opening', event.args, toMeta(event));
+});
+
+ponder.on('TradingCallbacks:VaultLiqFeeCharged', async ({ event, context }) => {
+  await onTradeFee(context.db, 'vault_liq', event.args, toMeta(event));
+});
+
+ponder.on('TradingCallbacks:FeesChargedV2', async ({ event, context }) => {
+  await onFeesChargedV2(context.db, event.args, toMeta(event));
 });

@@ -1,5 +1,8 @@
 import { limitOrder, orderEvent } from '../../ponder.schema.js';
 import { openOrderTypeLabel } from './enums.js';
+import { logId, type EventMeta } from './event.js';
+
+export type { EventMeta };
 
 // Handler logic for resting LIMIT/STOP entries. Kept out of src/handlers (which import
 // the `ponder:registry` virtual module and so cannot load under vitest) so it can be
@@ -23,13 +26,6 @@ import { openOrderTypeLabel } from './enums.js';
 // See the comment on `type Db = any` in src/lib/db.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
-
-export type EventMeta = {
-  txHash: `0x${string}`;
-  logIndex: number;
-  blockNumber: bigint;
-  timestamp: number;
-};
 
 type TradeArg = {
   collateral: bigint;
@@ -60,10 +56,6 @@ export function limitOrderId(trader: string, pairIndex: number, index: number): 
   return `${trader.toLowerCase()}-${pairIndex}-${index}`;
 }
 
-function eventId(meta: EventMeta): string {
-  return `${meta.txHash}-${meta.logIndex}`;
-}
-
 async function recordEvent(
   db: Db,
   meta: EventMeta,
@@ -75,7 +67,7 @@ async function recordEvent(
   await db
     .insert(orderEvent)
     .values({
-      id: eventId(meta),
+      id: logId(meta),
       trader: slot.trader.toLowerCase(),
       pairIndex: slot.pairIndex,
       index: slot.index,

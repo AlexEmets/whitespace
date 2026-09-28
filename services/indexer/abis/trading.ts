@@ -56,6 +56,16 @@ export const tradingAbi = [
       { name: 'index', type: 'uint8', indexed: false },
     ],
   },
+  // cancelOpenLimitOrder keeps one oracle fee out of the refunded collateral.
+  {
+    type: 'event',
+    name: 'OracleFeeChargedLimitCancelled',
+    inputs: [
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: false },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
   {
     type: 'event',
     name: 'MarketOpenOrderInitiated',

@@ -224,6 +224,28 @@ export const orderEvent = onchainTable(
   }),
 );
 
+/** Every fee the protocol charged a trader (spec §9.1), one row per charge. See
+ * src/lib/fees.ts for the event → kind mapping and the two places a log does not map to
+ * exactly one row (FeesChargedV2 → rollover + funding; the bond's OracleFeeCharged is
+ * folded into its OracleFeeBondCharged row so the bond is not counted twice). */
+export const feeCharge = onchainTable(
+  'fee_charge',
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`, plus `-rollover`/`-funding` for FeesChargedV2
+    trader: t.hex().notNull(),
+    tradeId: t.bigint(), // null for OracleFeeChargedLimitCancelled (no trade exists)
+    pairIndex: t.integer(), // null when neither the event nor an indexed row carries it
+    kind: t.text().notNull(), // 'oracle'|'dev'|'vault_opening'|'vault_liq'|'rollover'|'funding'|'bond'
+    amount: t.bigint().notNull(), // PRECISION_6; signed for rollover/funding (negative = received)
+    at: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderAtIdx: index().on(table.trader, table.at),
+  }),
+);
+
 /** LP vault activity: deposit/withdraw requests and claims (the vault is an
  * async, settlement-based model — see abis/vault.ts). */
 export const lpActivity = onchainTable(
