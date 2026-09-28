@@ -1,45 +1,25 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useBlock, useReadContracts } from 'wagmi';
 import { PAIR_INFOS_IMPACT_ABI } from '@/lib/abiPairInfos';
 import { PAIR_INFOS_ADDRESS } from '@/lib/deployment';
-import { collateralToRaw, priceToRaw } from '@/lib/money';
-import { buildImpactLadder, type LadderInputs, type LadderRow } from '@/lib/priceImpact';
+import { priceToRaw } from '@/lib/money';
+import type { LadderInputs } from '@/lib/priceImpact';
+import { quoteForNotional, type Quote } from '@/lib/quote';
 import { usePrice } from './usePrice';
 
-/**
- * The size levels the ladder quotes, as USDW *notional* (collateral x leverage — only the
- * product enters the contract's formula).
- *
- * Chosen against this market's real numbers, not picked to look pretty:
- * `GET /markets` reports open interest of 5,135 long / 117 short USDW against a
- * `maxOpenInterest` of 1,000,000 USDW. So the levels span from "smaller than what is
- * already open" (1k) through "several times current OI" (25k, 100k) to "the entire cap"
- * (1M). A pair whose `netVolThreshold` sits anywhere inside that range therefore has the
- * threshold crossing visible on-screen — rows below it price flat at the oracle, rows
- * above it visibly walk away — which is the whole point of the panel. Six levels per side
- * keeps the panel at the mockup's ~8-rows-a-side density without scrolling.
- */
-export const LADDER_LEVELS_USDW: readonly bigint[] = [
-  collateralToRaw('1000'),
-  collateralToRaw('5000'),
-  collateralToRaw('25000'),
-  collateralToRaw('100000'),
-  collateralToRaw('250000'),
-  collateralToRaw('1000000'),
-];
-
-/** Every distinct reason the ladder can refuse to render. The panel prints them verbatim
+/** Every distinct reason the quote can be unavailable. The panel prints them verbatim
  * — a trader (or the next developer) should be able to tell which input is missing
  * without opening a console. */
-export type LadderUnavailableReason =
+export type QuoteUnavailableReason =
   | { kind: 'no-price'; detail: string }
   | { kind: 'no-quote'; detail: string }
   | { kind: 'read-failed'; detail: string }
   | { kind: 'inconsistent-read'; detail: string };
 
 /** Raw on-chain inputs, surfaced so the panel can show what it actually read. */
-export interface LadderChainState {
+export interface QuoteChainState {
   priceImpactK: bigint;
   netVolThreshold: bigint;
   decayRate: bigint;
@@ -49,17 +29,17 @@ export interface LadderChainState {
   blockTimestamp: bigint;
 }
 
-export interface PriceImpactLadderResult {
+export interface QuoteInputsResult {
   loading: boolean;
-  /** Null when `unavailable` is non-empty — never a partial or invented ladder. */
-  rows: { long: LadderRow[]; short: LadderRow[] } | null;
-  /** Empty means the ladder is real. Non-empty means nothing is rendered but the reasons. */
-  unavailable: LadderUnavailableReason[];
+  /** Null when `unavailable` is non-empty — never a partial or invented input set. */
+  inputs: LadderInputs | null;
+  /** Empty means the quote is real. Non-empty means nothing is rendered but the reasons. */
+  unavailable: QuoteUnavailableReason[];
   /**
-   * 1e18 mark price the ladder is centred on, or null. This is the contract's `price`
+   * 1e18 mark price the quote is measured against, or null. This is the contract's `price`
    * argument, not a display choice: services/price-publisher/src/engine.mjs signs
    * `price: mark` (the EMA) into the report, with `bid`/`ask` set from the aggregate's
-   * indexBid/indexAsk. Centring on `index` instead would put the ladder next to a number
+   * indexBid/indexAsk. Centring on `index` instead would measure the quote against a number
    * the contract never sees.
    */
   markRaw: bigint | null;
@@ -70,8 +50,7 @@ export interface PriceImpactLadderResult {
   degraded: boolean;
   /** Which source answered `/price/:pairIndex`; `chain` means a frozen settled report. */
   source: 'publisher' | 'chain' | null;
-  chain: LadderChainState | null;
-  levels: readonly bigint[];
+  chain: QuoteChainState | null;
   /**
    * Whether the oracle published a two-sided quote. The contract's fill price is built
    * from `ask`/`bid` on BOTH code paths — the spread term of the dynamic formula, and the
@@ -86,13 +65,13 @@ export interface PriceImpactLadderResult {
   /**
    * True when `priceImpactK == 0`, i.e. every row came from the contract's static spread
    * path and is therefore identical at every size. Not an error — it is what this pair
-   * really does — but the panel must say so, or a flat ladder reads as a bug.
+   * really does — but the panel must say so, or a size-independent quote reads as a bug.
    */
   staticOnly: boolean;
 }
 
 /**
- * Live price-impact ladder for a pair: the on-chain dynamic-spread parameters from
+ * Live inputs to the vault's fill formula for a pair: the on-chain dynamic-spread parameters from
  * `IOstiumPairInfos`, evaluated against the live mark by src/lib/priceImpact.ts.
  *
  * Recomputes whenever the mark moves (`usePrice` polls every 3s and takes WS pushes), and
@@ -103,10 +82,10 @@ export interface PriceImpactLadderResult {
  * Returns NOTHING rather than something plausible when an input is missing. That is the
  * point of the `unavailable` list: the previous version of this panel was left empty on
  * purpose because a wrong price-impact number is the exact bug class this app's
- * bigint/decimal rules exist to prevent, and shipping a guessed ladder would have been
+ * bigint/decimal rules exist to prevent, and shipping a guessed quote would have been
  * strictly worse than the empty state it replaced.
  */
-export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadderResult {
+export function useQuoteInputs(pairIndex: number | null): QuoteInputsResult {
   const price = usePrice(pairIndex);
 
   const enabled = pairIndex !== null;
@@ -151,7 +130,7 @@ export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadde
   const block = useBlock({ query: { ...readQuery, enabled: enabled && decayMatters } });
 
   const loading = price.loading || reads.isLoading || (decayMatters && block.isLoading);
-  const unavailable: LadderUnavailableReason[] = [];
+  const unavailable: QuoteUnavailableReason[] = [];
 
   const markString = price.data?.mark ?? null;
   const markRaw = markString === null ? null : priceToRaw(markString);
@@ -208,7 +187,7 @@ export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadde
           ? stateRead.error
           : null);
 
-  let chain: LadderChainState | null = null;
+  let chain: QuoteChainState | null = null;
   if (readError) {
     unavailable.push({
       kind: 'read-failed',
@@ -253,7 +232,7 @@ export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadde
     // priceImpactK == 0 is deliberately NOT an unavailable reason. The contract still has a
     // definite answer in that case — `getDynamicTradePriceImpact` falls through to
     // `_getTradePriceImpact` and fills at the oracle ask/bid — so the honest rendering is a
-    // working, flat ladder plus a note, not an empty panel. See `staticOnly`.
+    // working, size-independent quote plus a note, not an empty panel. See `staticOnly`.
   }
 
   if (!loading && !chain && unavailable.length === 0) {
@@ -272,17 +251,16 @@ export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadde
     degraded: price.data?.degraded ?? false,
     source,
     chain,
-    levels: LADDER_LEVELS_USDW,
     spreadAvailable: askRaw !== null && bidRaw !== null,
     staticOnly: chain?.priceImpactK === 0n,
   };
 
   if (loading || !chain) {
-    return { ...common, loading, rows: null, unavailable: loading ? [] : unavailable };
+    return { ...common, loading, inputs: null, unavailable: loading ? [] : unavailable };
   }
 
   if (unavailable.length > 0 || markRaw === null || askRaw === null || bidRaw === null) {
-    return { ...common, loading: false, rows: null, unavailable };
+    return { ...common, loading: false, inputs: null, unavailable };
   }
 
   // The real two-sided quote — never the mark stood in for a missing side (`spreadAvailable`
@@ -301,10 +279,24 @@ export function usePriceImpactLadder(pairIndex: number | null): PriceImpactLadde
     bidPrice: bidRaw,
   };
 
-  return {
-    ...common,
-    loading: false,
-    rows: buildImpactLadder(inputs, LADDER_LEVELS_USDW),
-    unavailable: [],
-  };
+  return { ...common, loading: false, inputs, unavailable: [] };
+}
+
+export interface QuoteResult extends QuoteInputsResult {
+  /** Null exactly when `inputs` is null. */
+  quote: Quote | null;
+}
+
+/**
+ * The vault's live two-sided quote for `notionalRaw` (1e6 USDW, collateral x leverage) on
+ * `pairIndex`: Buy and Sell prices for that size, the spread and the slippage from the mark.
+ * An empty order (`notionalRaw` 0) is quoted at one USDW — the pure half-spread.
+ */
+export function useQuote(pairIndex: number | null, notionalRaw: bigint): QuoteResult {
+  const result = useQuoteInputs(pairIndex);
+  const quote = useMemo(
+    () => (result.inputs ? quoteForNotional(result.inputs, notionalRaw) : null),
+    [result.inputs, notionalRaw],
+  );
+  return { ...result, quote };
 }

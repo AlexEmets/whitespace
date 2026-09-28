@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { MarketsRail } from '@/components/terminal/MarketsRail';
 import { MarketHeaderBar } from '@/components/terminal/MarketHeaderBar';
-import { DepthPanel } from '@/components/terminal/DepthPanel';
 import { TerminalTabs } from '@/components/terminal/TerminalTabs';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import { PriceChart } from '@/components/PriceChart';
@@ -11,9 +10,10 @@ import { TickerStrip } from '@/components/TickerStrip';
 import { useMarkets } from '@/hooks/useMarkets';
 import { leverageToRaw } from '@/lib/money';
 
-/** The trading terminal — layout follows terminal_design.pdf: markets rail, centre
- * chart + tabbed positions/orders/fills/funding table, an honest depth panel (see
- * DepthPanel.tsx for why it isn't a fake order book), and the order-entry panel. */
+/** The trading terminal: markets rail, centre chart + tabbed account tables, and the
+ * order-entry panel. There is no order book — like Variational's RFQ terminal, the order
+ * panel shows the vault's two-sided quote for the size being entered (see lib/quote.ts and
+ * the testnet-perfect spec §3), because a vault has no resting depth to draw. */
 export default function TradePage() {
   const { markets } = useMarkets();
   const [pairIndex, setPairIndex] = useState<number | null>(null);
@@ -42,10 +42,6 @@ export default function TradePage() {
           <PriceChart pairIndex={pairIndex} />
           <TerminalTabs />
         </div>
-
-        {/* The ladder quotes fill prices for the market the trader is actually looking at,
-            so it follows the rail's selection rather than defaulting to the first market. */}
-        <DepthPanel pairIndex={pairIndex ?? undefined} />
 
         <div className="terminal-right">
           <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} market={market} />

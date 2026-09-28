@@ -485,16 +485,13 @@ table.markets-table td {
    the moment the strip mounts. */
 .terminal-grid {
   display: grid;
-  grid-template-columns: 220px 1fr 260px 320px;
+  grid-template-columns: 220px 1fr 340px;
   min-height: calc(100vh - 90px - 33px);
 }
 
 @media (max-width: 1200px) {
   .terminal-grid {
     grid-template-columns: 180px 1fr;
-  }
-  .depth-panel {
-    display: none;
   }
 }
 

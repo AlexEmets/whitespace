@@ -13,12 +13,8 @@ import { MOCK_TRADER_ADDRESS, TestState } from './testState';
  * mipd discovery path actually runs. The unit tests cover the derivation rules; this
  * covers the wiring — announcement to connector to click to connected identity.
  *
- * Driven from the landing page rather than /trade: the picker lives in NavHeader, which
- * layout.tsx mounts on every route, and /trade additionally renders DepthPanel, whose
- * price-impact ladder calls `getPairPriceImpactK` — a selector tests/e2e/mockChain.ts has
- * never known (the ladder landed in c8b0516, the mock's PairInfos branch dates to
- * 498eed6). That gap already fails trade-flow.spec.ts on a clean checkout and is not this
- * suite's business.
+ * Driven from the landing page: the picker lives in NavHeader, which layout.tsx mounts on
+ * every route, so no terminal state is needed to exercise it.
  */
 
 const METAMASK = { uuid: '11111111-1111-4111-8111-111111111111', name: 'MetaMask', rdns: 'io.metamask' };
