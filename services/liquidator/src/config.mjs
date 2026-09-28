@@ -76,7 +76,7 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     maxRetries: positiveInt(env, 'LIQUIDATOR_MAX_RETRIES', 3),
     maxBatchSize: positiveInt(env, 'LIQUIDATOR_MAX_BATCH_SIZE', DEFAULT_MAX_BATCH_SIZE),
     triggerCooldownMs: positiveInt(env, 'LIQUIDATOR_TRIGGER_COOLDOWN_MS', DEFAULT_COOLDOWN_MS),
-    liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', false),
+    liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', true),
     deadLetterFilePath: env.LIQUIDATOR_DEAD_LETTER_PATH || null,
     metricsPort: positiveInt(env, 'LIQUIDATOR_METRICS_PORT', 9464),
     metricsHost: env.LIQUIDATOR_METRICS_HOST || '127.0.0.1',

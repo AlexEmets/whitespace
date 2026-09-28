@@ -603,3 +603,11 @@ Run under a supervisor with
   nonce after a mined revert, and it retries a deterministic revert with a gas bump.
   `packages/txsender` (being built in parallel) replaces it behind `sendPerformUpkeep`.
 - The degraded-mode liquidation contradiction in §11.3 needs a decision.
+
+## 12. Decision 2026-09-28: liquidate in degraded mode
+
+The user chose to liquidate while a market is degraded (fewer than its minimum healthy
+venues). `LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED` now defaults to `true`, superseding §4's
+suppression. Reasoning: an under-margined position that is left open while a venue is down
+keeps losing the vault's money; the price used is still a k-of-N signed report bounded by the
+upkeep's 5% deviation rail. Opens (and LIMIT/STOP entries) stay blocked in degraded mode.

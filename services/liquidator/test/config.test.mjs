@@ -22,7 +22,7 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.equal(c.instanceName, 'automation-bot');
   assert.equal(c.maxBatchSize, 20);
   assert.equal(c.triggerCooldownMs, 30_000);
-  assert.equal(c.liquidateWhenDegraded, false);
+  assert.equal(c.liquidateWhenDegraded, true);
   assert.equal(c.metricsHost, '127.0.0.1');
   assert.deepEqual(c.rpcUrls, ['https://rpc.testnet.whitechain.io']);
 });
