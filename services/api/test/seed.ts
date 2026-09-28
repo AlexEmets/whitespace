@@ -7,7 +7,9 @@ import { getPool } from '../src/db.js';
 // column type lowercases addresses) and what the API's route handlers do
 // when reading a path param.
 export const TRADER = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19';
-export const OTHER_TRADER = '0x000000000000000000000000000000000000aa';
+// A well-formed 20-byte address (it was 19 bytes, which the address-validating routes
+// now reject with 400 rather than answer with an empty list).
+export const OTHER_TRADER = '0x00000000000000000000000000000000000000aa';
 export const OPEN_PRICE = '65001000000000000000000';
 export const COLLATERAL = '999000000';
 

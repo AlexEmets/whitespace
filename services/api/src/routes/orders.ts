@@ -80,7 +80,9 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
 }
 
 export const handleOrders: Handler = async (_req, params): Promise<RouteResult> => {
-  return { code: 200, body: await resolveOrders(params.address) };
+  const trader = parseAddress(params.address);
+  if (!trader) return badRequest('invalid address');
+  return { code: 200, body: await resolveOrders(trader) };
 };
 
 type HistoryRow = {

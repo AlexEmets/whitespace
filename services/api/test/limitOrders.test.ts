@@ -56,7 +56,7 @@ describe('GET /limit-orders/:address', () => {
     expect(await (await fetch(`${server.baseUrl}/limit-orders/${other}`)).json()).toEqual([]);
   });
 
-  it.each(['nope', '0x1234', `${TRADER}00`, OTHER_TRADER])('400 on a malformed address %s', async (addr) => {
+  it.each(['nope', '0x1234', `${TRADER}00`, OTHER_TRADER.slice(0, -2)])('400 on a malformed address %s', async (addr) => {
     const res = await fetch(`${server.baseUrl}/limit-orders/${addr}`);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: 'invalid address' });

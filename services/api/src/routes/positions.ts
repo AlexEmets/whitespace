@@ -1,6 +1,7 @@
 import { query } from '../db.js';
 import { price, collateral, leverage as fmtLeverage, id as fmtId, percent6 } from '../format.js';
 import type { RouteResult, Handler } from '../router.js';
+import { parseAddress, badRequest } from '../validate.js';
 
 type PositionRow = {
   pair_index: number;
@@ -42,7 +43,9 @@ export async function resolvePositions(address: string): Promise<unknown[]> {
 }
 
 export const handlePositions: Handler = async (_req, params): Promise<RouteResult> => {
-  return { code: 200, body: await resolvePositions(params.address) };
+  const trader = parseAddress(params.address);
+  if (!trader) return badRequest('invalid address');
+  return { code: 200, body: await resolvePositions(trader) };
 };
 
 type ClosedPositionRow = {
@@ -64,7 +67,8 @@ type ClosedPositionRow = {
 };
 
 export const handlePositionsHistory: Handler = async (_req, params): Promise<RouteResult> => {
-  const trader = params.address.toLowerCase();
+  const trader = parseAddress(params.address);
+  if (!trader) return badRequest('invalid address');
   const rows = await query<ClosedPositionRow>(
     'SELECT * FROM closed_position WHERE trader = $1 ORDER BY closed_at DESC',
     [trader],

@@ -112,3 +112,29 @@ describe('GET /positions/:address/history', () => {
     expect(theirs).toHaveLength(0);
   });
 });
+
+describe('address validation on the pre-existing wallet routes', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startTestServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const BAD = ['nope', '0x1234', `${TRADER}00`, '0xZZ8ba090dedf879f8045c0dda5a78762ced90d19'];
+  const ROUTES = ['/positions/%s', '/positions/%s/history', '/orders/%s'];
+
+  for (const route of ROUTES) {
+    it.each(BAD)(`${route} answers 400 for %s`, async (addr) => {
+      const res = await fetch(`${server.baseUrl}${route.replace('%s', addr)}`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid address' });
+    });
+
+    it(`${route} still answers 200 for a well-formed address`, async () => {
+      const res = await fetch(`${server.baseUrl}${route.replace('%s', OTHER_TRADER)}`);
+      expect(res.status).toBe(200);
+    });
+  }
+});
