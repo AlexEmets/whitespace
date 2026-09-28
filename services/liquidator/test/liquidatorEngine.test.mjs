@@ -288,6 +288,28 @@ test('evaluateAll sweeps every candidate independently and updates position-coun
   assert.equal(metrics.positionsBelowMaintenance.value(), 2);
 });
 
+test('evaluateAll: one candidate whose reader throws does not abort the sweep for the others', async () => {
+  const submitted = [];
+  const engine = createLiquidatorEngine(
+    baseDeps({
+      readTrade: async (_trader, _pairIndex, index) => {
+        if (index === 1) throw new Error('execution reverted');
+        return { ...OPEN_TRADE };
+      },
+      submitLiquidation: async (c) => {
+        submitted.push(c.index);
+        return { ok: true, hash: '0x1' };
+      },
+    }),
+  );
+
+  const results = await engine.evaluateAll([0, 1, 2].map((index) => ({ trader: TRADER, pairIndex: 0, index })));
+
+  assert.deepEqual(submitted, [0, 2]);
+  assert.equal(results[1].action, 'error');
+  assert.equal(results[1].reason, 'execution reverted');
+});
+
 // The callback resolves max leverage with the trade's own isDayTrade flag
 // (OstiumTradingCallbacks.sol:525 -> TradingCallbacksLib.getEffectiveMaxLeverage). A day
 // trade on a pair with an overnight cap uses pairMaxLeverage, which moves liqMarginValue.

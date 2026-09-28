@@ -135,7 +135,13 @@ export function createLiquidatorEngine({
     metrics.positionsTracked?.set(candidates.length);
     const results = [];
     for (const candidate of candidates) {
-      results.push(await evaluateOne(candidate));
+      // One bad read (a reverting view, a publisher hiccup for one feed) must cost that
+      // candidate this sweep, not every candidate after it.
+      try {
+        results.push(await evaluateOne(candidate));
+      } catch (err) {
+        results.push({ candidate, action: 'error', reason: err?.message ?? String(err) });
+      }
     }
     const belowMaintenance = results.filter((r) => r.action === 'submitted' || r.action === 'failed').length;
     metrics.positionsBelowMaintenance?.set(belowMaintenance);
