@@ -1,6 +1,40 @@
 import { ponder } from 'ponder:registry';
 import { order, position } from '../../ponder.schema.js';
 import { updateIfExists } from '../lib/db.js';
+import {
+  onOpenLimitPlaced,
+  onOpenLimitUpdated,
+  onOpenLimitCanceled,
+  automationOpenOrderDetails,
+  type EventMeta,
+} from '../lib/limitOrders.js';
+
+function meta(event: {
+  transaction: { hash: `0x${string}` };
+  log: { logIndex: number };
+  block: { number: bigint; timestamp: bigint };
+}): EventMeta {
+  return {
+    txHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    blockNumber: event.block.number,
+    timestamp: Number(event.block.timestamp),
+  };
+}
+
+// --- Limit / stop entries (see src/lib/limitOrders.ts for which event fires when) ----
+
+ponder.on('Trading:OpenLimitPlacedV2', async ({ event, context }) => {
+  await onOpenLimitPlaced(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OpenLimitUpdated', async ({ event, context }) => {
+  await onOpenLimitUpdated(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OpenLimitCanceled', async ({ event, context }) => {
+  await onOpenLimitCanceled(context.db, event.args, meta(event));
+});
 
 // --- Order requests (phase 1 of the two-phase flow) ------------------------
 // Note: none of these "initiated" events carry collateral/leverage/buy — the
@@ -51,6 +85,12 @@ ponder.on('Trading:MarketCloseOrderInitiatedV2', async ({ event, context }) => {
 });
 
 ponder.on('Trading:AutomationOpenOrderInitiated', async ({ event, context }) => {
+  const details = await automationOpenOrderDetails(
+    context.db,
+    event.args.trader,
+    event.args.pairIndex,
+    event.args.index,
+  );
   await context.db
     .insert(order)
     .values({
@@ -60,9 +100,7 @@ ponder.on('Trading:AutomationOpenOrderInitiated', async ({ event, context }) => 
       kind: 'automation_open',
       tradeId: null,
       index: event.args.index,
-      buy: null,
-      collateral: null,
-      leverage: null,
+      ...details,
       status: 'pending',
       requestedAt: Number(event.block.timestamp),
       requestedAtBlock: event.block.number,

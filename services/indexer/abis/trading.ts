@@ -15,7 +15,47 @@ const PENDING_MARKET_ORDER_V2_COMPONENTS = [
   { name: 'percentage', type: 'uint16' },
 ] as const;
 
+const BUILDER_FEE_COMPONENTS = [
+  { name: 'builder', type: 'address' },
+  { name: 'builderFee', type: 'uint32' },
+] as const;
+
 export const tradingAbi = [
+  // --- Limit / stop entries. OpenLimitPlacedV2 is the only placement event
+  // OstiumTrading.openTrade emits (the V1 OpenLimitPlaced is declared but never emitted).
+  {
+    type: 'event',
+    name: 'OpenLimitPlacedV2',
+    inputs: [
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: true },
+      { name: 'index', type: 'uint8', indexed: false },
+      { name: 'trade', type: 'tuple', indexed: false, components: TRADE_COMPONENTS },
+      { name: 'orderType', type: 'uint8', indexed: false }, // IOstiumTradingStorage.OpenOrderType
+      { name: 'builderFee', type: 'tuple', indexed: false, components: BUILDER_FEE_COMPONENTS },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'OpenLimitUpdated',
+    inputs: [
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: true },
+      { name: 'index', type: 'uint8', indexed: false },
+      { name: 'newPrice', type: 'uint192', indexed: false },
+      { name: 'newTp', type: 'uint192', indexed: false },
+      { name: 'newSl', type: 'uint192', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'OpenLimitCanceled',
+    inputs: [
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: true },
+      { name: 'index', type: 'uint8', indexed: false },
+    ],
+  },
   {
     type: 'event',
     name: 'MarketOpenOrderInitiated',

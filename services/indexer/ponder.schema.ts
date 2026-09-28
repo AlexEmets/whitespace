@@ -164,6 +164,66 @@ export const closedPosition = onchainTable(
   }),
 );
 
+/** Resting LIMIT/STOP entries (spec 2026-09-28 §9.1), one row per occupied
+ * (trader, pairIndex, index) limit slot. Written by OpenLimitPlacedV2, patched by
+ * OpenLimitUpdated, deleted by OpenLimitCanceled and LimitOpenExecuted. The contract
+ * reuses a freed slot (firstEmptyOpenLimitIndex), so the id describes the slot, not
+ * one order's history — that lives in `order_event`. Read directly by the automation
+ * bot, so it must never hold a row the chain no longer has. */
+export const limitOrder = onchainTable(
+  'limit_order',
+  (t) => ({
+    id: t.text().primaryKey(), // `${trader}-${pairIndex}-${index}`, trader lowercase
+    trader: t.hex().notNull(),
+    pairIndex: t.integer().notNull(),
+    index: t.integer().notNull(),
+    orderType: t.text().notNull(), // 'LIMIT' | 'STOP'
+    buy: t.boolean().notNull(),
+    collateral: t.bigint().notNull(), // PRECISION_6
+    leverage: t.integer().notNull(), // PRECISION_2
+    triggerPrice: t.bigint().notNull(), // PRECISION_18, the order's openPrice/targetPrice
+    tp: t.bigint().notNull(), // PRECISION_18
+    sl: t.bigint().notNull(), // PRECISION_18
+    placedAt: t.integer().notNull(),
+    updatedAt: t.integer().notNull(),
+    placedTx: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderIdx: index().on(table.trader),
+  }),
+);
+
+/** Append-only history of limit-order actions, one row per log. Complements `order`
+ * (which holds everything that went through the two-phase oracle flow and therefore has
+ * an orderId): placing, updating and cancelling a limit order are synchronous and have
+ * no orderId, so without this table they would leave no trace once `limit_order` drops
+ * the row. */
+export const orderEvent = onchainTable(
+  'order_event',
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    trader: t.hex().notNull(),
+    pairIndex: t.integer().notNull(),
+    index: t.integer().notNull(),
+    kind: t.text().notNull(), // 'limit_placed' | 'limit_updated' | 'limit_cancelled' | 'limit_executed'
+    orderType: t.text(), // 'LIMIT' | 'STOP'; null only if the placement predates startBlock
+    buy: t.boolean(),
+    collateral: t.bigint(), // PRECISION_6
+    leverage: t.integer(), // PRECISION_2
+    triggerPrice: t.bigint(), // PRECISION_18
+    tp: t.bigint(), // PRECISION_18
+    sl: t.bigint(), // PRECISION_18
+    orderId: t.bigint(), // limit_executed only: the automation order that filled it
+    tradeId: t.bigint(), // limit_executed only
+    at: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderAtIdx: index().on(table.trader, table.at),
+  }),
+);
+
 /** LP vault activity: deposit/withdraw requests and claims (the vault is an
  * async, settlement-based model — see abis/vault.ts). */
 export const lpActivity = onchainTable(

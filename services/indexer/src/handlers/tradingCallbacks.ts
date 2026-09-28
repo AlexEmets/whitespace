@@ -4,6 +4,7 @@ import { updateIfExists, findOrWarn } from '../lib/db.js';
 import { tradeIdFromOpenOrderId } from '../lib/tradeId.js';
 import { limitOrderLabel, cancelReasonLabel } from '../lib/enums.js';
 import { recordTick, quoteNotional } from '../lib/candleTick.js';
+import { onLimitOpenExecuted } from '../lib/limitOrders.js';
 
 const FULL_CLOSE_PCT = 10000n; // PRECISION_2, 10000 = 100%
 
@@ -103,6 +104,15 @@ ponder.on('TradingCallbacks:LimitOpenExecuted', async ({ event, context }) => {
       openedAtBlock: event.block.number,
     })
     .onConflictDoUpdate({});
+
+  // The resting order is gone from storage (unregisterOpenLimitOrder), so it must be gone
+  // from limit_order too — the automation bot reads that table as its trigger set.
+  await onLimitOpenExecuted(context.db, event.args, tradeId, {
+    txHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    blockNumber: event.block.number,
+    timestamp: openedAt,
+  });
 
   const notional = quoteNotional(t.collateral, t.leverage);
   await adjustOpenInterest(context.db, t.pairIndex, t.buy, notional, 'LimitOpenExecuted->market.OI');
