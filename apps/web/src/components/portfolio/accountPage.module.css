@@ -272,12 +272,6 @@
 
 /* ---------- Funding (deposit / withdraw) ---------- */
 
-.funding {
-  display: grid;
-  gap: 1rem;
-  max-width: 46em;
-}
-
 /* Two equal actions, not a primary and a secondary: depositing and withdrawing are the
    same size of decision, and styling one as the default is a nudge this page has no
    business making. */

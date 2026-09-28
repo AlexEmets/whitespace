@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PortfolioView, sumAccountValue, totalUnrealisedPnl } from '@/components/portfolio/PortfolioView';
 import type { ClosedPositionSummary, PositionSummary, PriceResponse } from '@/lib/types';
@@ -142,35 +142,95 @@ describe('<PortfolioView> connected', () => {
     hasPrice.value = true;
     render(<PortfolioView />);
     // 1,000.00 wallet + 100.00 margin + 100.00 unrealised + 250.00 LP = 1,450.00
-    expect(screen.getByTestId('tile-account-value')).toHaveTextContent('1,450.00');
-    expect(screen.getByTestId('def-total')).toHaveTextContent('1,450.00 USDW');
+    expect(screen.getByTestId('account-value')).toHaveTextContent('1,450.00');
   });
 
-  it('breaks the total down into rows that reconcile against it', () => {
+  it('prints each part beside the bar, so the total reconciles against them', () => {
     hasPrice.value = true;
     render(<PortfolioView />);
-    expect(screen.getByTestId('def-wallet')).toHaveTextContent('1,000.00');
-    expect(screen.getByTestId('def-margin')).toHaveTextContent('100.00');
-    expect(screen.getByTestId('def-unrealised')).toHaveTextContent('+100.00');
-    expect(screen.getByTestId('def-lp')).toHaveTextContent('250.00');
+    expect(screen.getByTestId('part-wallet')).toHaveTextContent('1,000.00');
+    expect(screen.getByTestId('part-margin')).toHaveTextContent('100.00');
+    expect(screen.getByTestId('part-margin')).toHaveTextContent('1 open · 1,000.00 notional');
+    expect(screen.getByTestId('part-unrealised')).toHaveTextContent('+100.00');
+    expect(screen.getByTestId('part-lp')).toHaveTextContent('250.00');
   });
 
-  it('shows realised PnL from the closed-trade payout, signed', () => {
+  it('splits the bar by the same parts, in proportion', () => {
     hasPrice.value = true;
     render(<PortfolioView />);
-    expect(screen.getByTestId('tile-realised')).toHaveTextContent('-0.31');
-    expect(screen.getByTestId('history-pnl')).toHaveTextContent('-0.31');
+    const bar = screen.getByTestId('account-bar');
+    // 1,000 / 1,450 = 69.0%, 100 / 1,450 = 6.9%, 250 / 1,450 = 17.2%
+    expect(bar).toHaveAttribute(
+      'aria-label',
+      'Wallet 69.0%, Margin in positions 6.9%, Unrealised PnL 6.9%, LP vault 17.2%',
+    );
+    expect(bar.querySelectorAll('[data-part]')).toHaveLength(4);
   });
 
-  it('renders the open position with its live mark and unrealised PnL', () => {
+  it('shows how the closed trades went: realised PnL, win rate, volume and holding time', () => {
     hasPrice.value = true;
     render(<PortfolioView />);
+    expect(screen.getByTestId('perf-realised')).toHaveTextContent('-0.31');
+    expect(screen.getByTestId('perf-realised')).toHaveTextContent('1 close');
+    expect(screen.getByTestId('perf-winrate')).toHaveTextContent('0%');
+    expect(screen.getByTestId('perf-winrate')).toHaveTextContent('0 wins · 1 losses');
+    // 999 collateral x 10x
+    expect(screen.getByTestId('perf-volume')).toHaveTextContent('9,990.00');
+    expect(screen.getByTestId('perf-hold')).toHaveTextContent('10s');
+    expect(screen.getByTestId('perf-hold')).toHaveTextContent('best -0.31 · worst -0.31');
+    expect(screen.getByTestId('pnl-sparkline')).toHaveAttribute('aria-label', 'Realised PnL over 1 closes, ending at -0.31 USDW');
+  });
+
+  it('opens on the positions tab, with the live mark and unrealised PnL', () => {
+    hasPrice.value = true;
+    render(<PortfolioView />);
+    expect(screen.getByTestId('portfolio-tab-positions')).toHaveAttribute('aria-selected', 'true');
     const row = screen.getByTestId('portfolio-position-0-0');
     // `-PERP`, not `-USD`: terminal_design.pdf names markets by instrument, and
     // lib/markets.ts is now the single place that decides it.
     expect(row).toHaveTextContent('BTC-PERP');
     expect(row).toHaveTextContent('110.00');
     expect(screen.getByTestId('portfolio-position-pnl')).toHaveTextContent('+100.00');
+  });
+
+  it('counts each tab so there is a reason to open one', () => {
+    render(<PortfolioView />);
+    expect(screen.getByTestId('portfolio-tab-positions')).toHaveTextContent('Positions1');
+    expect(screen.getByTestId('portfolio-tab-orders')).toHaveTextContent('Orders0');
+    expect(screen.getByTestId('portfolio-tab-history')).toHaveTextContent('History1');
+  });
+
+  it('switches to the trade history', () => {
+    render(<PortfolioView />);
+    fireEvent.click(screen.getByTestId('portfolio-tab-history'));
+    expect(screen.getByTestId('portfolio-tab-history')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('portfolio-tab-positions')).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByTestId('history-pnl')).toHaveTextContent('-0.31');
+    expect(screen.queryByTestId('portfolio-position-0-0')).not.toBeInTheDocument();
+  });
+
+  it('says so when there are no orders in flight', () => {
+    render(<PortfolioView />);
+    fireEvent.click(screen.getByTestId('portfolio-tab-orders'));
+    expect(screen.getByTestId('account-state-empty')).toHaveTextContent('No orders in flight');
+  });
+
+  it('moves between tabs with the arrow keys, wrapping at the ends', () => {
+    render(<PortfolioView />);
+    const positions = screen.getByTestId('portfolio-tab-positions');
+    fireEvent.keyDown(positions, { key: 'ArrowRight' });
+    expect(screen.getByTestId('portfolio-tab-orders')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('portfolio-tab-orders')).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByTestId('portfolio-tab-orders'), { key: 'ArrowLeft' });
+    fireEvent.keyDown(screen.getByTestId('portfolio-tab-positions'), { key: 'ArrowLeft' });
+    expect(screen.getByTestId('portfolio-tab-vault')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('keeps the tab panel labelled by the tab that is showing', () => {
+    render(<PortfolioView />);
+    fireEvent.click(screen.getByTestId('portfolio-tab-history'));
+    expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', 'portfolio-tab-history');
   });
 
   it('keeps the liquidation price an explained dash rather than an approximation', () => {
@@ -184,14 +244,26 @@ describe('<PortfolioView> connected', () => {
   /**
    * Deposit and withdraw moved here from the header (owner decision 2026-09-21). The
    * portfolio is the page that already reports the two balances they move, so this is
-   * where they belong — and it is now the only place in the chrome that offers them.
+   * where they belong — now on the LP vault tab, one click from the vault figure.
    */
   it('offers deposit and withdraw beside the balances they move', () => {
     render(<PortfolioView />);
+    fireEvent.click(screen.getByTestId('portfolio-tab-vault'));
 
-    expect(screen.getByTestId('portfolio-funding')).toBeInTheDocument();
+    const funding = screen.getByTestId('portfolio-funding');
+    expect(funding).toBeInTheDocument();
+    expect(screen.getByTestId('funding-free')).toHaveTextContent('1,000.00 USDW');
+    expect(screen.getByTestId('funding-vault')).toHaveTextContent('250.00 USDW');
     expect(screen.getByTestId('portfolio-deposit-button')).toBeInTheDocument();
     expect(screen.getByTestId('portfolio-withdraw-button')).toBeInTheDocument();
+  });
+
+  it('opens the vault tab from the LP vault figure', () => {
+    render(<PortfolioView />);
+    expect(screen.queryByTestId('portfolio-funding')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('part-lp-manage'));
+    expect(screen.getByTestId('portfolio-tab-vault')).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('portfolio-funding')).toBeInTheDocument();
   });
 
   /** "Request deposit" was once read as "request USDW" and submitted from an empty
@@ -199,6 +271,7 @@ describe('<PortfolioView> connected', () => {
    * faucet for the direction neither of them covers. */
   it('names the direction of each control and sends minting to the faucet', () => {
     render(<PortfolioView />);
+    fireEvent.click(screen.getByTestId('portfolio-tab-vault'));
     const funding = screen.getByTestId('portfolio-funding');
 
     expect(funding).toHaveTextContent(/deposit.*from your wallet into the LP vault/i);
@@ -206,14 +279,19 @@ describe('<PortfolioView> connected', () => {
     expect(funding.querySelector('a[href="/faucet"]')).not.toBeNull();
   });
 
-  it('refuses to print an account total when a mark price is missing', () => {
+  it('refuses to print an account total or a split when a mark price is missing', () => {
     hasPrice.value = false;
     render(<PortfolioView />);
     // Not "1,350.00" — a sum that silently drops unrealised PnL is a different number
     // wearing the same label.
-    expect(screen.getByTestId('tile-account-value')).not.toHaveTextContent('1,3');
-    expect(screen.getByTestId('tile-account-value')).toHaveTextContent('—');
-    expect(screen.getByTestId('tile-unrealised')).toHaveTextContent('—');
+    expect(screen.getByTestId('account-value')).not.toHaveTextContent('1,3');
+    expect(screen.getByTestId('account-value')).toHaveTextContent('—');
+    expect(screen.getByTestId('part-unrealised')).toHaveTextContent('—');
+    expect(screen.getByTestId('account-bar')).toHaveAttribute(
+      'aria-label',
+      'Split unavailable: a part of the account could not be read',
+    );
+    expect(screen.getByTestId('account-bar').querySelectorAll('[data-part]')).toHaveLength(0);
     hasPrice.value = true;
   });
 });
