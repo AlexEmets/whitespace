@@ -1,5 +1,7 @@
 import { ponder } from 'ponder:registry';
 import { lpActivity } from '../../ponder.schema.js';
+import { toMeta } from '../lib/event.js';
+import { onSettlementExecuted, onAsyncDepositWithdrawExecuted } from '../lib/vaultSettlement.js';
 
 // See the comment on `type Db = any` in src/lib/db.ts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,4 +87,14 @@ ponder.on('Vault:WithdrawClaimedV2', async ({ event, context }) => {
     event.block.number,
     event.transaction.hash,
   );
+});
+
+// --- Settlements (vault_settlement; see src/lib/vaultSettlement.ts) -----------------
+
+ponder.on('Vault:SettlementExecuted', async ({ event, context }) => {
+  await onSettlementExecuted(context.db, event.args, toMeta(event));
+});
+
+ponder.on('Vault:AsyncDepositWithdrawExecuted', async ({ event, context }) => {
+  await onAsyncDepositWithdrawExecuted(context.db, event.args, toMeta(event));
 });

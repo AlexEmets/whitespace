@@ -280,6 +280,29 @@ export const lpActivity = onchainTable(
   }),
 );
 
+/** One row per vault settlement (spec §9.1), keyed by settlementId. Built from the two
+ * events a settlement emits in one transaction: AsyncDepositWithdrawExecuted (the
+ * deposit/withdraw batch, fires first) and SettlementExecuted (the accounting totals).
+ * Each handler fills its own columns, so either may arrive first. */
+export const vaultSettlement = onchainTable('vault_settlement', (t) => ({
+  id: t.integer().primaryKey(), // settlementId
+  settlementType: t.text(), // 'acct' | 'mm' (IOstiumVault.SettlementType)
+  settlementTs: t.integer(),
+  totalAssets: t.bigint(), // PRECISION_6, USDW in the vault after settlement
+  totalSupply: t.bigint(), // PRECISION_6, OLP shares outstanding after settlement
+  shareToAssetsPrice: t.bigint().notNull(), // PRECISION_18
+  settlementOpenPnl: t.bigint(), // PRECISION_18 USD, signed
+  totalClosedPnl: t.bigint(), // PRECISION_6, signed
+  accPnlPerTokenUsed: t.bigint(), // PRECISION_18, signed
+  bufferSize: t.bigint(), // PRECISION_6, signed
+  assetsDeposited: t.bigint(), // PRECISION_6, deposits executed in this settlement
+  sharesWithdrawn: t.bigint(), // PRECISION_6, withdrawals executed in this settlement
+  deltaShares: t.bigint(), // PRECISION_6, signed net mint (+) / burn (-)
+  at: t.integer().notNull(),
+  blockNumber: t.bigint().notNull(),
+  txHash: t.hex().notNull(),
+}));
+
 /** OHLCV candles, one row per (pairIndex, interval, bucketStart). Populated
  * from every price tick (price reports + executed trade prices). */
 export const candle = onchainTable(

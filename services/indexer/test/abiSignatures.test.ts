@@ -25,6 +25,9 @@ const CANONICAL: Record<string, string> = {
   // declares a same-named event with (tradeId, orderId, ..., string reason) that Trading never
   // emits, so subscribing to that one resolves nothing.
   RemoveCollateralRejected: 'RemoveCollateralRejected(uint256,uint256,address,uint16,uint256,uint8)',
+  SettlementExecuted:
+    'SettlementExecuted(uint32,uint32,int256,uint8,int256,uint256,uint256,int256,uint256,uint256,int256)',
+  AsyncDepositWithdrawExecuted: 'AsyncDepositWithdrawExecuted(uint32,int256,uint256,uint256,uint256)',
 };
 
 function eventOf(abi: readonly unknown[], name: string): AbiEvent {
