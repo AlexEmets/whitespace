@@ -34,7 +34,13 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
-  if (done) return <span data-testid={`order-reclaimed-${order.orderId}`}>Collateral returned.</span>;
+  if (done) {
+    return (
+      <span data-testid={`order-reclaimed-${order.orderId}`}>
+        {order.kind === 'close' ? 'Position released — you can close it again.' : 'Collateral returned.'}
+      </span>
+    );
+  }
 
   if (!reclaimable) {
     if (blocksRemaining === null) return <span className="dash">Waiting for a keeper report…</span>;
@@ -48,7 +54,7 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
   async function handleReclaim() {
     setError(null);
     try {
-      await reclaim(order.orderId);
+      await reclaim(order.orderId, order.kind);
       setDone(true);
     } catch (err) {
       setError(describeTxError(err));
@@ -59,7 +65,7 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
     <>
       <span>No keeper report arrived. </span>
       <button type="button" data-testid={`order-reclaim-${order.orderId}`} onClick={handleReclaim} disabled={isPending}>
-        {isPending ? 'Reclaiming…' : 'Reclaim collateral'}
+        {isPending ? 'Reclaiming…' : order.kind === 'close' ? 'Release position' : 'Reclaim collateral'}
       </button>
       {error ? (
         <span role="alert" className="error-text">

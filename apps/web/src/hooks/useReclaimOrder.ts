@@ -26,15 +26,28 @@ export function useReclaimOrder() {
   const publicClient = usePublicClient();
   const { writeContractAsync, isPending } = useWriteContract();
 
-  async function reclaim(orderId: string): Promise<`0x${string}`> {
+  /**
+   * An OPEN order returns its collateral (`openTradeMarketTimeout`); a CLOSE order releases the
+   * position back to the trader, still open, so it can be closed again
+   * (`closeTradeMarketTimeout(order, retry=false)`). Both are gated on the same block timeout.
+   */
+  async function reclaim(orderId: string, kind: string = 'open'): Promise<`0x${string}`> {
     if (!publicClient) throw new Error('useReclaimOrder: no public client');
-    const hash = await writeContractAsync({
-      address: TRADING_ADDRESS,
-      abi: TRADING_ABI,
-      functionName: 'openTradeMarketTimeout',
-      args: [BigInt(orderId)],
-    });
-    await confirmTx(publicClient, hash, 'reclaim the collateral');
+    const hash =
+      kind === 'close'
+        ? await writeContractAsync({
+            address: TRADING_ADDRESS,
+            abi: TRADING_ABI,
+            functionName: 'closeTradeMarketTimeout',
+            args: [BigInt(orderId), false],
+          })
+        : await writeContractAsync({
+            address: TRADING_ADDRESS,
+            abi: TRADING_ABI,
+            functionName: 'openTradeMarketTimeout',
+            args: [BigInt(orderId)],
+          });
+    await confirmTx(publicClient, hash, kind === 'close' ? 'release the timed-out close' : 'reclaim the collateral');
     return hash;
   }
 
@@ -57,7 +70,8 @@ export function useIsReclaimable(order: OrderSummary): { reclaimable: boolean; b
     functionName: 'marketOrdersTimeout',
   });
 
-  const eligible = order.status === 'pending' && order.kind === 'open' && order.requestedAtBlock !== null;
+  const eligible =
+    order.status === 'pending' && (order.kind === 'open' || order.kind === 'close') && order.requestedAtBlock !== null;
   if (!eligible || head === undefined || timeout === undefined) {
     return { reclaimable: false, blocksRemaining: null };
   }

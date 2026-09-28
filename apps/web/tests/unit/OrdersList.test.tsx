@@ -189,6 +189,59 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(screen.getByTestId('order-reclaim-wait-9')).toHaveTextContent('20 blocks');
   });
 
+  it('releases a timed-out CLOSE with closeTradeMarketTimeout, not the open refund', async () => {
+    headBlock = 7_438_551n;
+    reclaimMock.mockClear();
+    ordersState = [
+      {
+        orderId: '10',
+        pairIndex: 0,
+        kind: 'close',
+        buy: true,
+        collateral: '100.000000',
+        leverage: '10.00',
+        requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
+        status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: '5',
+      },
+    ];
+    render(<OrdersList />);
+    const button = screen.getByTestId('order-reclaim-10');
+    expect(button).toHaveTextContent('Release position');
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(reclaimMock).toHaveBeenCalledWith(
+        expect.objectContaining({ functionName: 'closeTradeMarketTimeout', args: [10n, false] }),
+      ),
+    );
+    expect(await screen.findByTestId('order-reclaimed-10')).toHaveTextContent(/close it again/);
+  });
+
+  it('never offers a reclaim for an automation order, which the trader cannot time out', () => {
+    headBlock = 7_438_551n;
+    ordersState = [
+      {
+        orderId: '11',
+        pairIndex: 0,
+        kind: 'automation_close',
+        buy: true,
+        collateral: '100.000000',
+        leverage: '10.00',
+        requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
+        status: 'pending',
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: '5',
+      },
+    ];
+    render(<OrdersList />);
+    expect(screen.queryByTestId('order-reclaim-11')).not.toBeInTheDocument();
+  });
+
   it('renders a no-orders message when there are none', () => {
     ordersState = [];
     render(<OrdersList />);
