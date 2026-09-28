@@ -11,6 +11,10 @@
   "dependencies": {
     "@whitespace/metrics": "workspace:*",
     "@whitespace/shared": "workspace:*",
+    "pg": "^8.13.0",
     "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.2.13"
   }
 }

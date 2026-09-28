@@ -149,9 +149,16 @@ importers:
       '@whitespace/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      pg:
+        specifier: ^8.13.0
+        version: 8.23.0
       viem:
         specifier: ^2.21.0
         version: 2.56.3(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.5.4)
+    devDependencies:
+      '@electric-sql/pglite':
+        specifier: 0.2.13
+        version: 0.2.13
 
   services/price-publisher:
     dependencies:
