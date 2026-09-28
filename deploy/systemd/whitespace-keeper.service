@@ -14,10 +14,8 @@ Environment=HOME=/home/whitespace
 ExecStart=/usr/bin/node src/main.mjs
 Restart=always
 RestartSec=5
-# Backstop for the unbounded dead-letter queue at src/deadLetter.mjs:17, which has no cap
-# and no TTL: a sustained publisher or RPC outage turns one failure per order into
-# permanent heap. Restart=always converts that leak from an OOM of the whole box into a
-# restart of one service.
+# Backstop only: the dead letter is bounded in memory and persisted as JSON Lines
+# (packages/txsender), so a restart loses nothing.
 MemoryMax=250M
 
 [Install]
