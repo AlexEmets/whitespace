@@ -100,65 +100,61 @@ export function FaucetPage() {
         </div>
       </header>
 
-      <section className={styles.band}>
+      {/* Both faucets sit here, side by side: USDW to trade with and WBT to pay the gas
+          that every action — including the USDW claim itself — costs. They used to be a
+          band apart, which buried the gas one below the fold exactly where a stuck, gasless
+          visitor could not see it. */}
+      <section className={`${styles.band} ${styles.claimBand}`}>
         <div className={styles.claimMain}>
           <div className={styles.sectionHead}>
             <h2 className={styles.sectionTitle}>Claim</h2>
             <p className={styles.sectionAside}>
-              One transaction, signed by your wallet. Nothing is queued or settled — this one is immediate.
+              Two testnet tokens — USDW to trade with, WBT for gas. Both are free, and each claim is immediate: nothing
+              is queued or settled.
             </p>
           </div>
 
           <div className={styles.claimCol}>
             {!isConnected ? (
               <AccountState kind="disconnected" title="No wallet connected">
-                The faucet mints to the address that calls it, so there is nothing to claim until you connect. Use{' '}
-                <strong>Connect</strong> in the header — the panel below then reads your balance straight from the
-                token.
+                Both faucets send to the address you connect, so there is nothing to claim until you do. Use{' '}
+                <strong>Connect</strong> in the header — the panels then read straight from your wallet.
               </AccountState>
             ) : null}
-            <FaucetPanel />
+            <div className={styles.claimPanels}>
+              <FaucetPanel />
+              <WbtFaucetPanel />
+            </div>
           </div>
         </div>
-
-        {/* The one thing a testnet token's page owes a visitor that a mainnet one does
-            not: why the number it just handed them is not worth anything. */}
-        <aside className={`${styles.rail} ${styles.claimRail}`}>
-          <div className={styles.eyebrow}>Uncapped mint</div>
-          <h2 className={styles.railHeading}>Free supply, and therefore no price.</h2>
-          <p className={styles.railBody}>
-            Anyone can mint as much as they want, so USDW cannot hold a market price. Treat balances here as a unit of
-            practice.
-          </p>
-        </aside>
       </section>
 
-      {/* Placed directly under the claim, not at the foot of the page: a wallet holding
-          no WBT cannot send the claim transaction either, so the visitor most likely to
-          need this is the one who just watched the button above fail. USDW and gas are
-          different tokens, and this panel dispenses the gas one straight to the wallet —
-          no GitHub account or captcha, unlike the external faucet on the right. */}
       <section className={styles.pair} data-testid="faucet-gas">
         <div className={styles.pairCol}>
           <div className={styles.sectionHead}>
-            <h2 className={styles.sectionTitle}>You also need gas</h2>
+            <h2 className={styles.sectionTitle}>No value, by design</h2>
           </div>
+          {/* The one thing a testnet token's page owes a visitor that a mainnet one does
+              not: why the numbers it just handed them are not worth anything. */}
           <p className={styles.pairNote}>
-            USDW is collateral. Gas on Whitechain {CHAIN_ID} is paid in WBT, the chain&rsquo;s native token, and the
-            USDW mint above cannot produce it — including the gas that mint itself costs. This sends a little WBT
-            straight to your wallet so the rest of the page works.
+            USDW is uncapped and permissionless to mint, so it cannot hold a market price — treat balances as a unit of
+            practice. WBT here is native gas: it pays transaction fees on Whitechain {CHAIN_ID} and nothing else.
+            Neither is redeemable.
           </p>
-          <WbtFaucetPanel />
+          <div className={styles.defs}>
+            <DefRow label="USDW" value="Collateral · uncapped mint · no price" />
+            <DefRow label="WBT" value="Native gas · pays fees only" />
+          </div>
         </div>
 
         <div className={styles.pairCol}>
           <div className={styles.sectionHead}>
-            <h2 className={styles.sectionTitle}>Or get it elsewhere</h2>
+            <h2 className={styles.sectionTitle}>More WBT, elsewhere</h2>
           </div>
           <p className={styles.pairNote}>
-            If this faucet is dry or you need more than it gives, the official faucet hands out 0.5 WBT per day (behind
-            a 30-day-old GitHub account and a captcha). The bridge answers &ldquo;that is not enough&rdquo; — it needs
-            WBT on Ethereum Sepolia first, and its size is capped by how much the destination side is holding.
+            If the gas faucet is dry or you need more than it gives, the official faucet hands out 0.5 WBT per day
+            (behind a 30-day-old GitHub account and a captcha). The bridge answers &ldquo;that is not enough&rdquo; — it
+            needs WBT on Ethereum Sepolia first, and its size is capped by how much the destination side is holding.
           </p>
           <div className={styles.cards}>
             <OutboundStep href="https://faucet.testnet.whitechain.io" kicker="Official faucet">

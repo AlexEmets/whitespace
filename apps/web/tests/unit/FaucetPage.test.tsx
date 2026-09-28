@@ -67,21 +67,18 @@ describe('<FaucetPage>', () => {
    * so here stops it being read as another thing that has to settle. */
   it('does not describe the mint as something that settles', () => {
     render(<FaucetPage />);
-    expect(screen.getByTestId('faucet-page')).toHaveTextContent(/this one is immediate/i);
+    expect(screen.getByTestId('faucet-page')).toHaveTextContent(/each claim is immediate/i);
   });
 
   /**
-   * A wallet with no WBT cannot send the claim transaction on this very page, so the page
-   * carries its own WBT faucet that sends gas straight to the wallet — no GitHub account
-   * or captcha — right where the visitor discovers they need it.
+   * A wallet with no WBT cannot send the claim transaction on this very page, so the two
+   * faucets sit together at the top — USDW and the in-app WBT gas faucet — rather than the
+   * gas one being buried below the fold where a stuck, gasless visitor cannot see it.
    */
-  it('carries an in-app WBT faucet that dispenses gas to the connected wallet', () => {
+  it('shows the USDW and WBT faucets side by side as two panels', () => {
     render(<FaucetPage />);
-    const gas = screen.getByTestId('faucet-gas');
-
-    expect(gas).toHaveTextContent(/WBT/);
-    expect(screen.getByTestId('wbt-faucet-panel')).toBeInTheDocument();
-    expect(gas).toHaveTextContent(/straight to your wallet/i);
+    expect(screen.getByTestId('faucet-panel')).toBeInTheDocument(); // USDW
+    expect(screen.getByTestId('wbt-faucet-panel')).toBeInTheDocument(); // WBT gas
   });
 
   /**

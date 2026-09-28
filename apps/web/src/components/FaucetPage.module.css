@@ -116,9 +116,32 @@
 
 /* ---------- Claim band ---------- */
 
+/* The claim band carries BOTH faucets and no editorial rail, so it drops the band's
+   default main+rail grid and runs its content full width. */
+.claimBand {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .claimMain {
   padding: 2.6rem var(--pad) 2.75rem;
   min-width: 0;
+}
+
+/* The two faucets, side by side — USDW collateral and WBT gas. Each is a self-titled
+   panel (its own header + badge), so together they read as a matched pair; on a narrow
+   viewport they stack rather than squeeze. `align-items: start` so the shorter panel does
+   not stretch to the taller one's height. */
+.claimPanels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .claimPanels {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .sectionHead {
@@ -156,42 +179,12 @@
   margin: 0;
 }
 
-/* The mockup leaves most of this band empty on purpose — the panel occupies roughly the
-   left half and the rest is the rail and air. Capping the width is what produces that;
-   without it the panel stretches and the composition collapses into one wide box.
- *
- * `margin-inline: auto` is a deliberate departure from the mockup, which butts the panel
- * against the left edge. Centred, the leftover air sits on both sides of the control
- * instead of piling up to its right. Do not "restore" this to the mockup without asking —
- * it was changed on request. It is a no-op below 1100px, where the cap is lifted. */
+/* Separates the disconnected notice from the two panels below it. The single-panel width
+   cap this used to carry is gone: the band now holds two panels side by side and fills the
+   column (see .claimPanels), which is what was asked for. */
 .claimCol {
   display: grid;
-  gap: 1.25rem;
-  max-width: 37rem;
-  margin-inline: auto;
-}
-
-/* Bottom-aligned so the pull-quote finishes level with the panel, as drawn. */
-.claimRail {
-  position: relative;
-  display: grid;
-  align-content: end;
-  gap: 1rem;
-}
-
-.railHeading {
-  font-size: 1.54rem;
-  font-weight: 400;
-  line-height: 1.4;
-  letter-spacing: -0.01em;
-  margin: 0.15rem 0 0;
-}
-
-.railBody {
-  color: var(--fg-muted);
-  font-size: 0.96rem;
-  line-height: 1.85;
-  margin: 0.35rem 0 0;
+  gap: 1.5rem;
 }
 
 /* ---------- Closing pair ---------- */
@@ -335,9 +328,9 @@
 }
 
 /* ---------- Narrow ----------
-   The rail is editorial, not load-bearing, so it goes under the column it annotates
-   rather than being squeezed; its rule turns from a vertical divide into a horizontal
-   one so the band still reads as two parts. */
+   The hero's rail is editorial, not load-bearing, so it goes under the column it annotates
+   rather than being squeezed; its rule turns from a vertical divide into a horizontal one
+   so the band still reads as two parts. */
 
 @media (max-width: 1100px) {
   .band {
@@ -348,21 +341,6 @@
     border-left: none;
     border-top: 1px solid var(--border);
     padding: 1.9rem var(--pad);
-  }
-
-  .claimRail {
-    align-content: start;
-  }
-
-  .claimCol {
-    max-width: none;
-  }
-
-  /* Full-bleed, the pull-quote's line runs the width of the viewport and stops being
-     readable as a quote. It keeps its own measure instead. */
-  .railHeading,
-  .railBody {
-    max-width: 34em;
   }
 }
 
