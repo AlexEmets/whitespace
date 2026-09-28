@@ -1,3 +1,4 @@
+import { BRAND_DISC, BRAND_FLARE, BRAND_GLOW, BRAND_STAR_PATH, BRAND_VIEWBOX } from '@/lib/brandMark';
 import type { ShareCard } from '@/lib/shareCard';
 import type { Theme } from '@/lib/theme';
 
@@ -13,13 +14,15 @@ import type { Theme } from '@/lib/theme';
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
-const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: string; rim: string }> = {
+const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: string; rim: string; markRim: string; flare: string }> = {
   solar: {
     bg: '#030305',
     accent: '#ffc37a',
     glow: 'rgba(255, 195, 122, 0.30)',
     halo: 'rgba(255, 150, 80, 0.10)',
     rim: 'rgba(255, 214, 160, 0.55)',
+    markRim: 'rgba(255, 214, 160, 0.95)',
+    flare: '#fff4e0',
   },
   lunar: {
     bg: '#020309',
@@ -27,6 +30,8 @@ const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: s
     glow: 'rgba(142, 197, 255, 0.30)',
     halo: 'rgba(80, 140, 255, 0.12)',
     rim: 'rgba(200, 228, 255, 0.55)',
+    markRim: 'rgba(200, 228, 255, 0.95)',
+    flare: '#eef7ff',
   },
 };
 
@@ -34,6 +39,33 @@ const FG = '#ededf2';
 const MUTED = '#8e8fa3';
 const LONG = '#5eead4';
 const SHORT = '#ff7a6b';
+
+/**
+ * The brand mark (lib/brandMark.ts) for Satori, which rasterises an inline SVG through
+ * resvg: plain presentation attributes rather than style objects, and fixed gradient ids,
+ * since the card draws the mark once.
+ */
+function CardBrandMark({ p }: { p: (typeof PALETTE)[Theme] }) {
+  return (
+    <svg width={44} height={44} viewBox={`0 0 ${BRAND_VIEWBOX} ${BRAND_VIEWBOX}`}>
+      <defs>
+        <radialGradient id="card-brand-glow">
+          <stop offset="0.55" stopColor={p.accent} stopOpacity={0} />
+          <stop offset="0.66" stopColor={p.accent} stopOpacity={0.55} />
+          <stop offset="1" stopColor={p.accent} stopOpacity={0} />
+        </radialGradient>
+        <radialGradient id="card-brand-flare">
+          <stop offset="0" stopColor={p.flare} />
+          <stop offset="1" stopColor={p.accent} stopOpacity={0} />
+        </radialGradient>
+      </defs>
+      <circle cx={BRAND_GLOW.cx} cy={BRAND_GLOW.cy} r={BRAND_GLOW.r} fill="url(#card-brand-glow)" />
+      <circle cx={BRAND_DISC.cx} cy={BRAND_DISC.cy} r={BRAND_DISC.r} fill={p.bg} stroke={p.markRim} strokeWidth={1.8} />
+      <circle cx={BRAND_FLARE.cx} cy={BRAND_FLARE.cy} r={BRAND_FLARE.r} fill="url(#card-brand-flare)" />
+      <path d={BRAND_STAR_PATH} fill={p.flare} />
+    </svg>
+  );
+}
 
 export function ShareCardImage({ card, theme }: { card: ShareCard; theme: Theme }) {
   const p = PALETTE[theme];
@@ -84,8 +116,8 @@ export function ShareCardImage({ card, theme }: { card: ShareCard; theme: Theme 
 
       <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', width: '100%', padding: '56px 64px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 9999, border: `2.5px solid ${p.accent}`, display: 'flex' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <CardBrandMark p={p} />
             <div style={{ fontSize: 30, fontWeight: 500, letterSpacing: 0.5 }}>whitespace</div>
           </div>
           <div

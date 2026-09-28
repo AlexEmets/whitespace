@@ -43,6 +43,13 @@ describe('<NavHeader>', () => {
     expect(screen.getByTestId('chain-health')).toHaveTextContent('9,004,269');
   });
 
+  it('leads the home link with the brand mark and names it by the wordmark alone', () => {
+    render(<NavHeader />);
+    const home = screen.getByTestId('wordmark');
+    expect(home).toHaveAccessibleName('whitespace');
+    expect(home.querySelector('svg.wordmark-mark[aria-hidden="true"]')).not.toBeNull();
+  });
+
   it('draws the header eclipse everywhere but the landing page', () => {
     const { rerender } = render(<NavHeader />);
     expect(screen.getByTestId('eclipse-backdrop')).toBeInTheDocument();

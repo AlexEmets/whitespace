@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useHealth } from '@/hooks/useHealth';
+import { BrandMark } from './BrandMark';
 import { ChainGuard } from './ChainGuard';
 import { ThemeToggle } from './ThemeToggle';
 import { WalletConnect } from './WalletConnect';
@@ -50,7 +51,7 @@ export function NavHeader() {
       {pathname !== '/' ? <div className="eclipse-backdrop" aria-hidden="true" data-testid="eclipse-backdrop" /> : null}
       <header className="nav-header">
         <Link href="/" className="wordmark" data-testid="wordmark">
-          <span className="wordmark-mark" aria-hidden="true" />
+          <BrandMark className="wordmark-mark" />
           whitespace
         </Link>
         <nav id="site-nav" className={`nav-links${menuOpen ? ' open' : ''}`} data-testid="site-nav">
