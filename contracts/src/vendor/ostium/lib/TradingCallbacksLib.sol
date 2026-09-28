@@ -252,17 +252,26 @@ library TradingCallbacksLib {
         return leverage <= getEffectiveMaxLeverage(pairIndex, isDayTrade, pairsStorage);
     }
 
+    /// @dev WHITESPACE: `fillPrice` added. OI is stored in units of `notional / fillPrice` but the
+    ///      cap is compared at `price`. A fill BELOW `price` (a short, after impact) makes those
+    ///      units worth `notional * price / fillPrice` at `price`, so the new trade is charged at
+    ///      that value — upstream charged the raw notional and let a short at the cap land above
+    ///      it (test/unit/Findings.t.sol). A fill at or above `price` keeps the raw notional,
+    ///      which already over-counts it, so longs are checked exactly as before.
     function withinExposureLimits(
         uint16 pairIndex,
         bool buy,
         uint256 collateral,
         uint32 leverage,
         uint256 price,
+        uint256 fillPrice,
         IOstiumPairsStorage pairsStorage,
         IOstiumTradingStorage tradingStorage
     ) public view returns (bool) {
-        return tradingStorage.openInterest(pairIndex, buy ? 0 : 1) * price / PRECISION_18 / 1e12 + collateral * leverage
-                    / 100 <= tradingStorage.openInterest(pairIndex, 2)
+        uint256 newNotional = collateral * leverage / 100;
+        if (fillPrice != 0 && fillPrice < price) newNotional = newNotional * price / fillPrice;
+        return tradingStorage.openInterest(pairIndex, buy ? 0 : 1) * price / PRECISION_18 / 1e12 + newNotional
+                    <= tradingStorage.openInterest(pairIndex, 2)
             && pairsStorage.groupCollateral(pairIndex, buy) + collateral <= pairsStorage.groupMaxCollateral(pairIndex);
     }
 
@@ -333,7 +342,14 @@ library TradingCallbacksLib {
 
         // Check exposure limits
         if (!withinExposureLimits(
-                trade.pairIndex, trade.buy, trade.collateral, trade.leverage, a_price, pairsStorage, tradingStorage
+                trade.pairIndex,
+                trade.buy,
+                trade.collateral,
+                trade.leverage,
+                a_price,
+                trade.openPrice, // the fill: set to priceAfterImpact before this check
+                pairsStorage,
+                tradingStorage
             )) {
             return IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
         }
@@ -379,7 +395,7 @@ library TradingCallbacksLib {
 
         // Check exposure limits
         if (!withinExposureLimits(
-                o.pairIndex, o.buy, o.collateral, o.leverage, uint192(a_price), pairsStorage, tradingStorage
+                o.pairIndex, o.buy, o.collateral, o.leverage, uint192(a_price), priceAfterImpact, pairsStorage, tradingStorage
             )) {
             return IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
         }
