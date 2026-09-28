@@ -301,3 +301,47 @@ reviewer's attention are §4.1 (`isMarketOpen` vs. degraded-mode policy) and the
 that the currently deployed verifier is the pre-hardening 1-of-N contract (§5.1) —
 both are design gaps the spec left for phase 3/2 to resolve jointly, not
 inconsistencies within the spec itself.
+
+---
+
+## 8. Update 2026-09-28 — correctness fixes from the testnet-perfect audit
+
+Supersedes the file layout in §1 where they differ (spec:
+`docs/superpowers/specs/2026-09-28-testnet-perfect-design.md` §6).
+
+**Keeper**
+
+- Transactions go through `packages/txsender` (shared with the automation bot). The
+  keeper's own `txSender.mjs` is now a thin performUpkeep encoder over it, and
+  `deadLetter.mjs` is gone. What changed: one serial queue per key, so concurrent orders
+  never share a nonce; a mined revert advances the nonce; receipts wait at most
+  `KEEPER_RECEIPT_TIMEOUT_MS`, then the same nonce is replaced at 1.2x gas up to
+  `KEEPER_MAX_GAS_BUMPS` times; `nonce too low` / `already known` resync from `pending`;
+  dead letters are JSON Lines at `KEEPER_DEAD_LETTER_PATH` with a 100-entry memory tail.
+  See `packages/txsender/README.md`.
+- The watcher awaits the handler, `KEEPER_CONCURRENCY` (default 4) orders at a time, and
+  advances the cursor only once a whole window has been handled.
+- The cursor is persisted to `KEEPER_CURSOR_PATH` after every window and resumed on start
+  at `max(saved, head - KEEPER_MAX_LOOKBACK_BLOCKS + 1)` (default 300 blocks). Without a
+  saved cursor it still starts at the head.
+- Report fetches are retried with 250 ms → 2 s backoff until the order's deadline
+  (timestamp + 10 s maxAge) on network errors, 409, 429 and 5xx; 400/404 give up at once.
+  An order already past its deadline is not fetched.
+- `KEEPER_POLLING_INTERVAL_MS` now reaches the watcher. `GET /health` (503 before the first
+  poll or once polls are older than max(30 s, 10 intervals)) and `GET /metrics` are served
+  on `KEEPER_METRICS_HOST:KEEPER_METRICS_PORT` (default `127.0.0.1:9465`).
+
+**Publisher**
+
+- Binds to `127.0.0.1` unless `PUBLISHER_HOST` says otherwise.
+- `/v2/report` signs only timestamps in `[now - PUBLISHER_MAX_REPORT_AGE_S, now +
+  PUBLISHER_MAX_CLOCK_SKEW_S]` (defaults 10 and 2); outside that it answers 400
+  `timestamp_too_old` / `timestamp_in_future`.
+- A null index no longer freezes the mark silently. The mark keeps its value, but its age
+  (time since a real index last moved it) is tracked; past 3 sample intervals it is
+  stale, `/status` shows `markAgeMs`/`markStale`, signing refuses with `mark_stale`, and
+  the next real index reseeds the EMA rather than blending into the pre-outage price.
+- `GET /metrics`: `publisher_healthy_venues`, `publisher_min_healthy_venues`,
+  `publisher_degraded`, `publisher_mark_age_seconds`, `publisher_mark_stale` (per feed),
+  `publisher_reports_signed_total{feed,order_type}`,
+  `publisher_reports_refused_total{feed,reason}`.
