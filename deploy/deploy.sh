@@ -51,6 +51,9 @@ main() {
   echo "==> restarting the stack"
   ws_ctl restart whitespace-publisher whitespace-keeper whitespace-api
   ws_ctl start whitespace-indexer whitespace-web
+  # The automation bots read candidates from the indexer's database, so they come up after
+  # it. Two instances, two forwarder keys (services/liquidator/.env.a, .env.b).
+  ws_ctl restart whitespace-bot@a whitespace-bot@b
 
   verify_running_build
 }
@@ -104,9 +107,17 @@ verify_running_build() {
   fi
   echo "    OK: the running server postdates the build"
 
-  for unit in whitespace-publisher whitespace-keeper whitespace-indexer whitespace-api whitespace-web; do
-    printf '    %-24s %s\n' "$unit" "$(systemctl is-active "$unit")"
+  local failed=0 state
+  for unit in whitespace-publisher whitespace-keeper whitespace-indexer whitespace-api whitespace-web \
+    whitespace-bot@a whitespace-bot@b whitespace-balances.timer whitespace-backup.timer; do
+    state=$(systemctl is-active "$unit" || true)
+    printf '    %-28s %s\n' "$unit" "$state"
+    [ "$state" = "active" ] || failed=1
   done
+  if [ "$failed" -ne 0 ]; then
+    echo "    FAIL: a unit above is not active" >&2
+    return 1
+  fi
 }
 
 main "$@"
