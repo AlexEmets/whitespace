@@ -1,0 +1,10 @@
+[Unit]
+Description=Whitespace backup of the api_series schema (the only state not rebuildable from chain)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=docker.service
+
+[Service]
+Type=oneshot
+User=whitespace
+Group=whitespace
+ExecStart=/home/whitespace/whitespace/deploy/backup-api-series.sh
