@@ -64,7 +64,7 @@ export function Tile({
 }) {
   return (
     <div className={`${styles.tile}${lead ? ` ${styles.tileLead}` : ''}`} data-testid={testId}>
-      <div className={`${styles.tileLabel} mono-upper`}>{label}</div>
+      <div className={styles.tileLabel}>{label}</div>
       <div className={styles.tileValue}>{value}</div>
       {note ? <div className={styles.tileNote}>{note}</div> : null}
     </div>
@@ -93,7 +93,7 @@ export function Section({
   return (
     <section className={styles.section} data-testid={testId}>
       <div className={styles.sectionHead}>
-        <h2 className={`${styles.sectionTitle} mono-upper`}>{title}</h2>
+        <h2 className={styles.sectionTitle}>{title}</h2>
         {aside ? <div className={styles.sectionNote}>{aside}</div> : null}
       </div>
       {note ? <p className={`${styles.sectionNote}`} style={{ margin: '-0.4rem 0 1.1rem' }}>{note}</p> : null}

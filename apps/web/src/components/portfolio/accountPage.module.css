@@ -1,19 +1,14 @@
 /*
- * Shared chrome for the two account-scoped pages, /portfolio and /points.
- *
- * Both mockups build every screen out of the same three primitives: a full-bleed rule
- * between bands, a row of bordered stat tiles, and a dense table. globals.css already owns
- * the tile and table primitives (`.stat-tile`, `.data-table`) for the landing page and the
- * terminal, and this module deliberately does not restyle either — it adds only the page
- * shell around them and the numeric alignment those two pages need.
- *
- * Every number in this app is monospace on purpose (see layout.tsx), so `tabular-nums`
- * costs nothing and guarantees columns of figures line up digit-for-digit even where a
- * fallback font is doing the rendering.
+ * Shared chrome for the two account-scoped pages, /portfolio and /points, in the Eclipse
+ * design: a centred column, a light display heading, stat tiles and sections as the same
+ * translucent panels the terminal is built from. globals.css owns `.data-table`; this
+ * module adds only the page shell around it and the numeric alignment the pages need.
  */
 
 .page {
-  padding-bottom: 4rem;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 24px 5rem;
 }
 
 /* ---------- Page head ---------- */
@@ -24,113 +19,113 @@
   justify-content: space-between;
   gap: 2rem 3rem;
   flex-wrap: wrap;
-  padding: 2.5rem 1.5rem 1.75rem;
-  border-bottom: 1px solid var(--border);
+  padding: 3.2rem 0 2rem;
 }
 
-/* Grows to fill whatever the meta column leaves, so the lede's own 44em max-width is what
-   sets the measure. Without the `flex-grow`, this is a content-sized flex item and the
-   paragraph wraps to roughly the width of the h1 above it — a 440px column of text under a
-   1440px heading, which reads as broken rather than as a narrow measure. */
+/* Grows to fill whatever the meta column leaves, so the lede's own max-width is what sets
+   the measure rather than the width of the heading above it. */
 .headMain {
   min-width: 0;
   flex: 1 1 32rem;
 }
 
 .eyebrow {
-  color: var(--fg-muted);
-  font-size: 0.66rem;
+  color: var(--accent);
+  font-size: 0.8rem;
 }
 
 .title {
-  font-size: 2rem;
-  font-weight: 500;
-  line-height: 1.1;
-  margin: 0.55rem 0 0;
+  font-family: var(--font-sans);
+  font-size: 3.2rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0.7rem 0 0;
 }
 
 .lede {
   color: var(--fg-muted);
-  font-size: 0.97rem;
-  line-height: 1.7;
+  font-size: 1.1rem;
+  font-weight: 300;
+  line-height: 1.65;
   max-width: 44em;
-  margin: 0.85rem 0 0;
+  margin: 1rem 0 0;
 }
 
 .headMeta {
-  color: var(--fg-dim);
-  font-size: 0.66rem;
+  color: var(--fg-muted);
+  font-size: 0.8rem;
   line-height: 1.9;
   text-align: right;
-  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .headMeta strong {
-  color: var(--fg-muted);
+  color: var(--fg);
   font-weight: 400;
 }
 
 /* ---------- Stat tiles ---------- */
 
-/* auto-fit rather than a fixed column count: /portfolio shows five tiles and /points
-   four, and neither should have to hand-declare a grid template. */
+/* auto-fit rather than a fixed column count: /portfolio shows five tiles and /points four. */
 .tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .tile {
-  padding: 1.5rem;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
   min-width: 0;
+  padding: 1.4rem 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 
-/* The tile row wraps, so the bottom rule belongs on the tiles rather than only on the
-   container; the container's own rule then doubles up under the last row. Negative margin
-   is not needed — the container rule is what a partially-filled last row sits on. */
-.tiles > .tile:last-child {
-  border-right: none;
-}
-
+/* The lead tile carries the page's headline figure, marked by the accent rim. */
 .tileLead {
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--accent-ring);
 }
 
 .tileLabel {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
-  font-size: 0.64rem;
-  margin-bottom: 0.6rem;
+  font-size: 0.78rem;
+  margin-bottom: 0.8rem;
 }
 
 .tileValue {
-  font-size: 1.5rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
+  font-size: 1.9rem;
+  font-weight: 300;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
 .tileUnit {
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   color: var(--fg-muted);
   margin-left: 0.4rem;
 }
 
 .tileNote {
   font-family: var(--font-sans);
-  color: var(--fg-dim);
-  font-size: 0.8rem;
+  color: var(--fg-muted);
+  font-size: 0.88rem;
+  font-weight: 300;
   line-height: 1.6;
-  margin-top: 0.6rem;
+  margin-top: 0.7rem;
 }
 
 /* ---------- Sections ---------- */
 
 .section {
-  padding: 1.9rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+  margin-top: 10px;
+  padding: 1.6rem 1.6rem 1.8rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 
 .sectionHead {
@@ -139,29 +134,34 @@
   justify-content: space-between;
   gap: 1rem 2rem;
   flex-wrap: wrap;
-  margin-bottom: 1.1rem;
+  margin-bottom: 1.2rem;
 }
 
 .sectionTitle {
-  font-size: 0.92rem;
-  font-weight: 500;
+  font-family: var(--font-sans);
+  font-size: 1.3rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
   margin: 0;
 }
 
 .sectionNote {
   font-family: var(--font-sans);
-  color: var(--fg-dim);
-  font-size: 0.82rem;
+  color: var(--fg-muted);
+  font-size: 0.92rem;
+  font-weight: 300;
   line-height: 1.6;
   max-width: 52em;
 }
 
 .sectionFoot {
   font-family: var(--font-sans);
-  color: var(--fg-dim);
-  font-size: 0.82rem;
+  color: var(--fg-muted);
+  font-size: 0.88rem;
+  font-weight: 300;
   line-height: 1.7;
-  margin: 0.9rem 0 0;
+  margin: 1rem 0 0;
   max-width: 60em;
 }
 
@@ -170,12 +170,16 @@
 /* Applied alongside globals.css's `.data-table`, never instead of it. */
 .num {
   text-align: right;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .tableWrap {
   overflow-x: auto;
+  margin: 0 -12px;
+}
+
+.tableWrap :global(.data-table) th {
+  background: transparent;
 }
 
 .subtle {
@@ -184,37 +188,39 @@
 
 .rowTime {
   color: var(--fg-muted);
-  font-size: 0.68rem;
+  font-size: 0.8rem;
   white-space: nowrap;
 }
 
-/* ---------- The four states ---------- */
+/* ---------- The four states (disconnected, loading, error, empty) ---------- */
 
 .state {
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  padding: 2.5rem 1.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 2.6rem 1.5rem;
   text-align: center;
 }
 
 .stateIcon {
-  color: var(--fg-dim);
-  font-size: 0.62rem;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
   margin-bottom: 0.9rem;
 }
 
 .stateTitle {
+  font-family: var(--font-sans);
   color: var(--fg);
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 1.15rem;
+  font-weight: 400;
   margin: 0 0 0.6rem;
 }
 
 .stateBody {
   font-family: var(--font-sans);
   color: var(--fg-muted);
-  font-size: 0.93rem;
-  line-height: 1.75;
+  font-size: 0.98rem;
+  font-weight: 300;
+  line-height: 1.7;
   max-width: 42em;
   margin: 0 auto;
 }
@@ -226,7 +232,7 @@
 
 .stateError {
   border-style: solid;
-  border-color: var(--short);
+  border-color: rgba(255, 122, 107, 0.4);
 }
 
 .stateError .stateTitle,
@@ -237,13 +243,13 @@
 .stateDetail {
   font-family: var(--font-sans);
   color: var(--fg-dim);
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   margin-top: 0.9rem;
   word-break: break-word;
 }
 
-/* A loading state must be visibly *alive*, or it is indistinguishable from an empty one
-   that simply failed silently. One slow pulse, no layout shift, no spinner asset. */
+/* A loading state must be visibly alive, or it is indistinguishable from an empty one that
+   failed silently. One slow pulse, no layout shift, no spinner asset. */
 .stateLoading .stateIcon {
   animation: pulse 1.6s ease-in-out infinite;
 }
@@ -264,19 +270,17 @@
   }
 }
 
-/* ---------- Funding (deposit / withdraw) ----------
-   The controls moved here from the header, where they competed with the block height and
-   the wallet chip. On this page they sit under the balances they act on. */
+/* ---------- Funding (deposit / withdraw) ---------- */
 
 .funding {
   display: grid;
-  gap: 0.9rem;
+  gap: 1rem;
   max-width: 46em;
 }
 
 /* Two equal actions, not a primary and a secondary: depositing and withdrawing are the
    same size of decision, and styling one as the default is a nudge this page has no
-   business making. Green is reserved for the terminal's submit. */
+   business making. */
 .fundingActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -285,22 +289,23 @@
 }
 
 .fundingActions button {
-  padding: 0.7rem 1rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  height: 42px;
+  padding: 0 1rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
   color: var(--fg);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
   cursor: pointer;
-  transition: border-color 120ms ease, color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 .fundingActions button:hover,
 .fundingActions button:focus-visible {
-  color: var(--fg);
+  color: var(--accent);
   border-color: var(--accent);
   outline: none;
 }
@@ -309,14 +314,15 @@
   font-family: var(--font-sans);
   margin: 0;
   max-width: 46em;
-  font-size: 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 300;
   line-height: 1.6;
-  color: var(--fg-dim);
+  color: var(--fg-muted);
 }
 
 .fundingNote strong {
-  color: var(--fg-muted);
-  font-weight: 500;
+  color: var(--fg);
+  font-weight: 400;
 }
 
 .fundingNote a {
@@ -340,8 +346,9 @@
   display: grid;
   gap: 0;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   max-width: 46em;
+  overflow: hidden;
 }
 
 .defRow {
@@ -349,9 +356,9 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 1.5rem;
-  padding: 0.7rem 0.9rem;
+  padding: 0.8rem 1rem;
   border-bottom: 1px solid var(--border);
-  font-size: 0.74rem;
+  font-size: 0.9rem;
 }
 
 .defRow:last-child {
@@ -359,17 +366,17 @@
 }
 
 .defKey {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
 }
 
 .defValue {
-  font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
 }
 
 .defTotal {
-  background: var(--bg-raised);
+  background: var(--accent-dim);
 }
 
 .defTotal .defKey {

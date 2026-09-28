@@ -9,16 +9,17 @@
  * have their own mockups, so the faucet carries its own layout and borrows only
  * `AccountState` from the shell.
  *
- * The backdrops are the landing page's, not new art: `--hero-grid` behind the hero and
- * `--hero-dot` in the rail are the same tokens globals.css already paints the brand
- * render with, so this page ships no image asset either.
+ * In the Eclipse design each band is a panel of its own, on the same centred column as
+ * /portfolio and /docs; the corona behind the header is the only backdrop.
  */
 
 .page {
   --pad: 2.25rem;
   /* The mockup puts the rule at 78.6% of a 1600px viewport — a 342px rail. */
   --rail: 25rem;
-  padding-bottom: 5rem;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 24px 5rem;
 }
 
 /* ---------- Bands ---------- */
@@ -28,7 +29,11 @@
 .band {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--rail);
-  border-bottom: 1px solid var(--border);
+  margin-top: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .rail {
@@ -43,21 +48,6 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-}
-
-/* The ruled backdrop. Masked to nothing by the bottom of the band so it reads as
-   texture the page emerges from rather than as a table someone forgot to fill in. */
-.hero::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    repeating-linear-gradient(to right, var(--hero-grid) 0 1px, transparent 1px 68px),
-    repeating-linear-gradient(to bottom, var(--hero-grid) 0 1px, transparent 1px 68px);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 96%);
-  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.45) 55%, transparent 96%);
 }
 
 .heroMain {
@@ -79,8 +69,8 @@
    wide monitor. */
 .title {
   font-size: clamp(2.75rem, 5.2vw, 4.3rem);
-  font-weight: 500;
-  letter-spacing: -0.02em;
+  font-weight: 300;
+  letter-spacing: -0.03em;
   line-height: 1;
   margin: 0.9rem 0 0;
 }
@@ -150,11 +140,9 @@
    into 1.05rem it sprawls, and "What you are claiming" would run ~275px on a 320px screen
    and collide with the padding. */
 .sectionTitle {
-  font-family: var(--font-mono);
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 1.3rem;
+  font-weight: 400;
   margin: 0;
   white-space: nowrap;
 }
@@ -191,25 +179,6 @@
   gap: 1rem;
 }
 
-/* The scattered dots from the landing hero, one single-stop radial each. Behind the
-   copy, and non-interactive. */
-.claimRail::before {
-  content: '';
-  position: absolute;
-  /* Not bled outward with a negative inset: the rail is the last column, so a right-hand
-     bleed pushes past the viewport and gives the whole document a horizontal scrollbar
-     for the sake of a decorative dot. */
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background-image:
-    radial-gradient(circle at 20% 23%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 78% 28%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 55% 52%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 33% 73%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 71% 81%, var(--hero-dot) 0 1.5px, transparent 1.5px);
-}
-
 .railHeading {
   font-size: 1.54rem;
   font-weight: 400;
@@ -230,7 +199,11 @@
 .pair {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-bottom: 1px solid var(--border);
+  margin-top: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .pairCol {
@@ -257,7 +230,7 @@
 
 .defs {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
 }
 
 .defRow {
@@ -305,7 +278,7 @@
   gap: 1.5rem;
   padding: 1.05rem 1.25rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   text-decoration: none;
   color: inherit;
   transition: border-color 140ms ease, background-color 140ms ease;

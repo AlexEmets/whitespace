@@ -22,40 +22,41 @@
 }
 
 .voidValue {
-  color: var(--fg-dim);
-  font-size: 1.5rem;
+  color: var(--fg-muted);
+  font-size: 1.9rem;
+  font-weight: 300;
   line-height: 1.25;
   letter-spacing: 0.01em;
 }
 
-/* The standing notice. Accent rule rather than the warning/degraded red: nothing is
+/* The standing notice. Accent-tinted rather than the warning/degraded red: nothing is
    broken and nothing is at risk — this is a policy statement, and colouring it like an
    incident would be its own small dishonesty. */
 .notice {
   margin: 0;
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--accent);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  padding: 1.4rem 1.5rem;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius-lg);
+  background: var(--accent-dim);
+  padding: 1.6rem 1.7rem;
 }
 
 .noticeEyebrow {
   color: var(--accent);
-  font-size: 0.64rem;
+  font-size: 0.8rem;
   margin-bottom: 0.7rem;
 }
 
 .noticeHead {
-  font-size: 1.05rem;
-  font-weight: 500;
+  font-size: 1.4rem;
+  font-weight: 300;
   margin: 0 0 0.8rem;
   line-height: 1.4;
 }
 
 .noticeBody {
   color: var(--fg-muted);
-  font-size: 0.76rem;
+  font-size: 0.98rem;
+  font-weight: 300;
   line-height: 1.8;
   max-width: 62em;
   margin: 0;
@@ -72,7 +73,8 @@
 
 .noticeList li {
   color: var(--fg-muted);
-  font-size: 0.74rem;
+  font-size: 0.95rem;
+  font-weight: 300;
   line-height: 1.7;
   padding-left: 1.4rem;
   position: relative;
@@ -87,7 +89,7 @@
   top: 0.62em;
   width: 0.7rem;
   height: 1px;
-  background: var(--fg-dim);
+  background: var(--accent);
 }
 
 .noticeList li strong {
@@ -98,32 +100,32 @@
 .feeGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
+  gap: 8px;
 }
 
 .feeCell {
-  background: var(--bg);
   padding: 1.1rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
 .feeLabel {
   color: var(--fg-muted);
-  font-size: 0.64rem;
+  font-size: 0.78rem;
   margin-bottom: 0.5rem;
 }
 
 .feeValue {
-  font-size: 1.15rem;
+  font-size: 1.4rem;
+  font-weight: 300;
   font-variant-numeric: tabular-nums;
 }
 
 .feeNote {
-  color: var(--fg-dim);
-  font-size: 0.64rem;
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  font-weight: 300;
   line-height: 1.6;
   margin-top: 0.55rem;
 }

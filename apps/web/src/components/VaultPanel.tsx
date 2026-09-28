@@ -25,7 +25,7 @@ export function VaultPanel() {
   return (
     <div className="vault-panel" data-testid="vault-panel">
       <div className="vault-stat">
-        <span className="vault-stat-label mono-upper">Vault TVL</span>
+        <span className="vault-stat-label">Vault TVL</span>
         {/* A dash until the read answers, a real 0.00 once it does. An empty vault and an
             unread one are different facts, so the dash carries a reason rather than
             being mistaken for "the vault is empty". */}
@@ -45,13 +45,13 @@ export function VaultPanel() {
       ) : (
         <>
           <div className="vault-stat">
-            <span className="vault-stat-label mono-upper">Your shares</span>
+            <span className="vault-stat-label">Your shares</span>
             <span className="vault-stat-value" data-testid="vault-shares">
               {formatMoney(shares, COLLATERAL_DECIMALS)}
             </span>
           </div>
           <div className="vault-stat">
-            <span className="vault-stat-label mono-upper">Wallet balance</span>
+            <span className="vault-stat-label">Wallet balance</span>
             <span className="vault-stat-value" data-testid="vault-usdw-balance">
               {formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW
             </span>
@@ -59,7 +59,7 @@ export function VaultPanel() {
 
           <FundingButtons idPrefix="vault" className="vault-actions" />
 
-          <p className="hint">Connected as {address}</p>
+          <p className="vault-hint">Connected as <span className="mono">{address}</span></p>
         </>
       )}
     </div>

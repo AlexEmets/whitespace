@@ -1,44 +1,52 @@
 /*
- * /docs. Long-form prose in a monospace interface, which is the whole design problem here:
- * JetBrains Mono at 13px is built for columns of figures, not for paragraphs, so the body
- * text needs a shorter measure (~72ch) and a taller leading than anywhere else in the app
- * to stay readable. Everything else — the rules between bands, the muted label colour, the
- * tabular figures — is the same language as the terminal.
+ * /docs, in the Eclipse design. The prose is set in Geologica light at a long-form size and
+ * a ~72ch measure; formulas and addresses stay monospace (the `.formula` blocks are
+ * hand-aligned with `white-space: pre`). Everything else — the panels, the muted label
+ * colour, the amber accent — is the same language as the terminal.
  *
  * This page does not reuse components/portfolio/accountPage.module.css: it has no stat
  * tiles, no account states and no tables of money, and it does have a sticky table of
  * contents that nothing else needs.
  */
 
+.head,
+.layout {
+  max-width: 1240px;
+  margin: 0 auto;
+}
+
 .head {
-  padding: 2.5rem 1.5rem 1.75rem;
-  border-bottom: 1px solid var(--border);
+  padding: 3.2rem 24px 2rem;
 }
 
 .eyebrow {
-  color: var(--fg-muted);
-  font-size: 0.66rem;
+  color: var(--accent);
+  font-size: 0.8rem;
 }
 
 .title {
-  font-size: 2rem;
-  font-weight: 500;
-  line-height: 1.1;
-  margin: 0.55rem 0 0;
+  font-size: 3.2rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0.7rem 0 0;
 }
 
 .lede {
   color: var(--fg-muted);
-  font-size: 0.82rem;
-  line-height: 1.8;
+  font-size: 1.1rem;
+  font-weight: 300;
+  line-height: 1.7;
   max-width: 68ch;
   margin: 0.9rem 0 0;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 10px;
   align-items: start;
+  padding: 0 24px 5rem;
 }
 
 @media (max-width: 900px) {
@@ -47,23 +55,23 @@
   }
   .toc {
     position: static;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
   }
 }
 
 /* Offsets by the sticky nav header's height so an anchored heading is not hidden under it. */
 .toc {
   position: sticky;
-  top: 52px;
-  padding: 1.75rem 1.25rem;
-  border-right: 1px solid var(--border);
+  top: calc(var(--header-h) + 10px);
+  padding: 1.3rem 1.2rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   align-self: start;
 }
 
 .tocLabel {
-  color: var(--fg-dim);
-  font-size: 0.62rem;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
   margin-bottom: 0.9rem;
 }
 
@@ -79,7 +87,8 @@
 .tocList a {
   color: var(--fg-muted);
   text-decoration: none;
-  font-size: 0.7rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
   line-height: 1.5;
   display: block;
 }
@@ -87,7 +96,9 @@
 .tocList a::before {
   counter-increment: toc;
   content: counter(toc, decimal-leading-zero) '  ';
-  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
 }
 
 .tocList a:hover {
@@ -96,38 +107,44 @@
 
 .body {
   min-width: 0;
+  display: grid;
+  gap: 10px;
 }
 
 .section {
-  padding: 2.25rem 2rem;
-  border-bottom: 1px solid var(--border);
-  scroll-margin-top: 60px;
+  padding: 2.2rem 2.4rem 2.4rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  scroll-margin-top: calc(var(--header-h) + 12px);
 }
 
 .sectionNumber {
-  color: var(--fg-dim);
-  font-size: 0.64rem;
-  margin-bottom: 0.6rem;
+  color: var(--accent);
+  font-size: 0.8rem;
+  margin-bottom: 0.7rem;
 }
 
 .h2 {
-  font-size: 1.25rem;
-  font-weight: 500;
-  margin: 0 0 1.1rem;
-  line-height: 1.3;
+  font-size: 1.9rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  margin: 0 0 1.2rem;
+  line-height: 1.2;
 }
 
 .h3 {
-  font-size: 0.85rem;
-  font-weight: 500;
-  margin: 1.9rem 0 0.7rem;
+  font-size: 1.15rem;
+  font-weight: 400;
+  margin: 2rem 0 0.8rem;
   color: var(--fg);
 }
 
 .p {
   color: var(--fg-muted);
-  font-size: 0.78rem;
-  line-height: 1.9;
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1.8;
   max-width: 72ch;
   margin: 0 0 1rem;
 }
@@ -135,7 +152,7 @@
 .p strong,
 .li strong {
   color: var(--fg);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .p code,
@@ -143,7 +160,7 @@
 .td code {
   color: var(--fg);
   background: var(--bg-raised);
-  border-radius: 2px;
+  border-radius: 6px;
   padding: 0.05rem 0.3rem;
   font-size: 0.92em;
 }
@@ -159,14 +176,14 @@
 
 .li {
   color: var(--fg-muted);
-  font-size: 0.78rem;
-  line-height: 1.85;
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1.75;
   padding-left: 1.4rem;
   position: relative;
 }
 
-/* A rule, not a bullet: this design language is drawn entirely in 1px lines and uses no
-   round shapes anywhere else. */
+/* A short accent rule rather than a bullet. */
 .li::before {
   content: '';
   position: absolute;
@@ -174,7 +191,7 @@
   top: 0.85em;
   width: 0.7rem;
   height: 1px;
-  background: var(--fg-dim);
+  background: var(--accent);
 }
 
 /* The two-phase flow, drawn as an ordered ladder — the single most important thing a
@@ -184,7 +201,7 @@
   display: grid;
   gap: 0;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   max-width: 72ch;
   margin: 0 0 1.2rem;
 }
@@ -202,36 +219,38 @@
 }
 
 .phaseIndex {
-  color: var(--fg-dim);
-  font-size: 0.64rem;
+  color: var(--accent);
+  font-size: 0.8rem;
   padding-top: 0.15rem;
 }
 
 .phaseTitle {
-  font-size: 0.8rem;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
   margin-bottom: 0.4rem;
 }
 
 .phaseBody {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
-  font-size: 0.75rem;
-  line-height: 1.8;
+  font-size: 0.95rem;
+  font-weight: 300;
+  line-height: 1.7;
 }
 
 .phaseOutcome {
-  background: var(--bg-raised);
+  background: var(--accent-dim);
 }
 
 .formula {
   border: 1px solid var(--border);
-  border-left: 2px solid var(--fg-dim);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  padding: 1rem 1.1rem;
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 1rem 1.2rem;
   margin: 0 0 1.2rem;
   overflow-x: auto;
   color: var(--fg);
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   line-height: 1.9;
   font-variant-numeric: tabular-nums;
   white-space: pre;
@@ -241,31 +260,32 @@
 /* A stated limitation, not an error — same reasoning as the /points notice: colouring an
    honest disclosure like an incident would misrepresent it. */
 .caveat {
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--warning);
-  border-radius: 4px;
-  padding: 0.95rem 1.1rem;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--radius);
+  background: var(--accent-dim);
+  padding: 1rem 1.2rem;
   margin: 0 0 1.2rem;
   max-width: 72ch;
 }
 
 .caveatLabel {
   color: var(--warning);
-  font-size: 0.62rem;
-  margin-bottom: 0.45rem;
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .caveatBody {
   color: var(--fg-muted);
-  font-size: 0.74rem;
-  line-height: 1.8;
+  font-size: 0.95rem;
+  font-weight: 300;
+  line-height: 1.7;
   margin: 0;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.72rem;
+  font-size: 0.88rem;
   margin: 0 0 1.2rem;
   max-width: 72ch;
 }
@@ -274,9 +294,7 @@
   text-align: left;
   color: var(--fg-muted);
   font-weight: 400;
-  font-size: 0.62rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 0.8rem;
   padding: 0.45rem 0.6rem;
   border-bottom: 1px solid var(--border);
 }
@@ -308,7 +326,7 @@
 .addrTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.7rem;
+  font-size: 0.85rem;
 }
 
 .addr {
@@ -323,16 +341,17 @@
 }
 
 .footNote {
-  color: var(--fg-dim);
-  font-size: 0.68rem;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  font-weight: 300;
   line-height: 1.8;
   max-width: 72ch;
   margin: 1.2rem 0 0;
 }
 
 .sourceLine {
-  color: var(--fg-dim);
-  font-size: 0.66rem;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
   line-height: 1.8;
   max-width: 72ch;
   margin: 1.4rem 0 0;
