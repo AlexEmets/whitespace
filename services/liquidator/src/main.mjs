@@ -15,7 +15,7 @@
  */
 
 import { loadConfig, loadForwarderKey } from './config.mjs';
-import { createClients } from './rpc.mjs';
+import { createClients, createEndpointProbes, endpointLabel } from './rpc.mjs';
 import { createChainReader } from './chainReader.mjs';
 import { createPositionTable } from './positionTable.mjs';
 import { createSequencerMonitor } from './sequencerLiveness.mjs';
@@ -95,7 +95,13 @@ async function main() {
     (err) => console.error('[liquidator] watcher error:', err.message),
   );
 
-  const stopWatchingLiveness = watchLiveness(publicClient, sequencerMonitor, positionTable, config.pollingIntervalMs);
+  const stopWatchingLiveness = watchLiveness({
+    endpoints: createEndpointProbes(config.rpcUrls),
+    sequencerMonitor,
+    intervalMs: config.pollingIntervalMs,
+    onEndpointResult: (url, ok) => metrics.setRpcHealth(endpointLabel(url), ok),
+    onReorg: (blockNumber) => positionTable.pruneFromBlock(blockNumber),
+  });
 
   const sweepLoop = createSweepLoop({
     intervalMs: config.pollingIntervalMs,

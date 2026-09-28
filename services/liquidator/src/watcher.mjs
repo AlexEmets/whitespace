@@ -76,30 +76,41 @@ export function watchOpenEvents(publicClient, callbacksAddress, onOpen, onError 
  * chainReader.readTrade always re-reads live state before any decision instead of
  * trusting the table alone (see docs/decisions/phase-6-liquidator.md).
  *
- * @param {import('viem').PublicClient} publicClient
- * @param {{ observe: (sample: { nowMs: number, blockNumber: bigint }) => void }} sequencerMonitor
- * @param {ReturnType<typeof import('./positionTable.mjs').createPositionTable>} positionTable
- * @param {number} intervalMs
+ * Every configured endpoint is probed individually each tick, so each one's health is
+ * reported on its own (`liquidator_rpc_healthy{endpoint=...}`) instead of being hidden
+ * behind the fallback transport. The head used for liveness is the highest block any
+ * endpoint returned.
+ *
+ * @param {object} opts
+ * @param {{ url: string, getBlockNumber: () => Promise<bigint> }[]} opts.endpoints
+ * @param {{ observe: Function, observeFailure: Function }} opts.sequencerMonitor
+ * @param {number} [opts.intervalMs]
+ * @param {(url: string, ok: boolean) => void} [opts.onEndpointResult]
+ * @param {(blockNumber: bigint) => void} [opts.onReorg] head moved backward to `blockNumber`
  * @returns {() => void} stop
  */
-export function watchLiveness(publicClient, sequencerMonitor, positionTable, intervalMs = 2_000) {
+export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000, onEndpointResult = () => {}, onReorg = () => {} }) {
+  if (!endpoints?.length) throw new Error('watchLiveness: at least one endpoint is required');
   let highestSeen = null;
   let stopped = false;
 
   async function tick() {
     if (stopped) return;
-    try {
-      const blockNumber = await publicClient.getBlockNumber();
-      if (highestSeen !== null && blockNumber < highestSeen) {
-        positionTable.pruneFromBlock(blockNumber);
-      }
-      if (highestSeen === null || blockNumber > highestSeen) highestSeen = blockNumber;
-      sequencerMonitor.observe({ nowMs: Date.now(), blockNumber });
-    } catch {
-      // The fallback transport (rpc.mjs) has already tried every endpoint. A failure
-      // here is "no new block observed": the monitor's gap clock keeps running, so a
-      // total RPC outage reaches STALLED instead of freezing the last known state.
+    const results = await Promise.allSettled(endpoints.map((e) => e.getBlockNumber()));
+    let head = null;
+    results.forEach((r, i) => {
+      onEndpointResult(endpoints[i].url, r.status === 'fulfilled');
+      if (r.status === 'fulfilled' && (head === null || r.value > head)) head = r.value;
+    });
+    if (head === null) {
+      // Every endpoint failed. That is "no new block observed": the monitor's gap clock
+      // keeps running, so a total RPC outage reaches STALLED instead of freezing the
+      // last known state.
       sequencerMonitor.observeFailure({ nowMs: Date.now() });
+    } else {
+      if (highestSeen !== null && head < highestSeen) onReorg(head);
+      if (highestSeen === null || head > highestSeen) highestSeen = head;
+      sequencerMonitor.observe({ nowMs: Date.now(), blockNumber: head });
     }
     if (!stopped) setTimeout(tick, intervalMs);
   }
