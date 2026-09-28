@@ -1,45 +1,100 @@
 {
   "chainId": 1874,
-  "deployedAt": "2026-09-08T10:24:04Z",
-  "commit": "22e1a5cbac4d69ae61646d5bc3f166b896e2e9b3",
+  "deployedAt": "2026-09-28T10:01:50Z",
+  "commit": "c86708da5fa69cf545f659b04072af8d4f6940ed",
+  "startBlock": 8993094,
   "contracts": {
-    "registry": "0xD6Cc323BF2736B121586B2929E0E27a80DDCC98A",
-    "collateral": "0x34A2945DBFe45e86dB968ff7E6Bb7d8394711f89",
-    "tradingStorage": "0xb51217a43BF812B354E18977a4781909C4d33341",
-    "pairsStorage": "0xc5B68AfA8f64288f6d06DEfC5c07555Ef5323397",
-    "pairInfos": "0xF87205EbCf03513D24B998925109FcB84Ce84ED1",
-    "trading": "0x9f7F9be7731E805B0b9174465257f0C1Ab589f27",
-    "callbacks": "0x4084cd63dB84c88c98418e33b88449b3b006da9c",
-    "vault": "0x7B9147B4b8b05e7e3c3F86694d8EA7a639c2D516",
-    "openPnl": "0x9287F73ac606F85657010F458c0CF5efBb22d880",
-    "priceRouter": "0xB14c4cf81007D60afDfd2Cc48b94cFCf861134a4",
-    "verifier": "0xF0F7Abe953Ac6448258AEc4d0b6ddB6b60750814",
-    "priceUpKeep": "0x6d8fa4DE0DD0aF71F044266aA630B560733efC96"
+    "registry": "0x86d4EC32F8ed6e07D6176b71De05c9866A30c357",
+    "tradingStorage": "0x05122cf5B6B3C44e2Ffb4B20C376498E4776FC47",
+    "pairsStorage": "0x2e5CcD43667fCE72e3EDE9Af5E3E1A10DBBA985A",
+    "pairInfos": "0x688C4166B54Cc1c138D322e8bEaD15dd915baAa5",
+    "trading": "0x2379Bc62d7213604175fEfA21b584Ce51A8a01c6",
+    "callbacks": "0x22253F52D87CfaBef8f1685ECcEFD4dE4Bd4Aa23",
+    "vault": "0x0aC538e15e4C7a27E6E38025Bed911B8975044F0",
+    "openPnl": "0x3911c9d929B776CcA45F0023bfe7128A75dA682D",
+    "priceRouter": "0x3fbF4775821413288BC2Df740E5d4Cf97C856C39",
+    "tradesUpKeep": "0x97162dD1FE0e34Cf6ca712a227f4cE4284B2fe65",
+    "collateral": "0x2E652a62314c4b51480E54fC55954f51bf20D2B7",
+    "verifier": "0x233A5F2d8c66dBd88eB43E4A9C7f7A9BF2F6b1Cf",
+    "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE"
   },
-  "libraries": {
-    "TradingLib": "0x23215259ee9349C8C7913E5d543833170316006b",
-    "TradingCallbacksLib": "0xa3c63D9F736c6dA082007546Ca2330C37C9194fe"
+  "roles": {
+    "gov": "0xFB042739DaA0946E9e6658CA6603Ff5EcEa60Dd8",
+    "manager": "0xE2DAD2187D7d9D363534EbA992a890465c0bA242",
+    "dev": "0x2b8ba090DEdF879f8045c0dDA5a78762cED90D19",
+    "owner": "0xDa13C59838D9edDBD313b9B32FC47F5F2D65D113"
   },
-  "retiredContracts": {
-    "note": "Superseded by the phase-A oracle migration. Kept for provenance: these are the addresses the proofTrade in 1874-operational.json was priced by.",
-    "verifier": "0xf2236F1Cc7610D75DD1D38563aA090bdD7102Fc8",
-    "priceUpKeep": "0x3Ce549F5Aa65141D10f25BE793d63572bC3908Be"
+  "trading": {
+    "marketOrdersTimeout": 11,
+    "triggerTimeout": 30
   },
   "oracle": {
-    "migratedAt": "2026-09-09T00:00:00Z",
-    "commit": "e7a78c2",
-    "verifier": "0xF0F7Abe953Ac6448258AEc4d0b6ddB6b60750814",
-    "priceUpKeep": "0x6d8fa4DE0DD0aF71F044266aA630B560733efC96",
-    "guardian": "0xc87061b624dcbb091cc6B07c39ccbA4c099719c9",
+    "verifier": "0x233A5F2d8c66dBd88eB43E4A9C7f7A9BF2F6b1Cf",
+    "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
     "threshold": 3,
     "signerCount": 5,
     "maxAge": 10,
     "maxDeviationBps": 500,
+    "guardian": "0xc87061b624dcbb091cc6B07c39ccbA4c099719c9",
     "feedKeys": [
-      "BTC/USDPriceUpkeep"
-    ],
-    "gasUsed": 2492362,
-    "gasPriceGwei": 5.001,
-    "costWbt": "0.012226723866671663"
-  }
+      "BTC/USDPriceUpkeep",
+      "ETH/USDPriceUpkeep",
+      "SOL/USDPriceUpkeep",
+      "WBT/USDPriceUpkeep"
+    ]
+  },
+  "markets": [
+    {
+      "pairIndex": 0,
+      "from": "BTC",
+      "to": "USD",
+      "feedId": "BTC/USD",
+      "oracle": "BTC/USD",
+      "registryKey": "BTC/USDPriceUpkeep",
+      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 10000,
+      "maxOpenInterest": "1000000000000"
+    },
+    {
+      "pairIndex": 1,
+      "from": "ETH",
+      "to": "USD",
+      "feedId": "ETH/USD",
+      "oracle": "ETH/USD",
+      "registryKey": "ETH/USDPriceUpkeep",
+      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 10000,
+      "maxOpenInterest": "1000000000000"
+    },
+    {
+      "pairIndex": 2,
+      "from": "SOL",
+      "to": "USD",
+      "feedId": "SOL/USD",
+      "oracle": "SOL/USD",
+      "registryKey": "SOL/USDPriceUpkeep",
+      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 10000,
+      "maxOpenInterest": "1000000000000"
+    },
+    {
+      "pairIndex": 3,
+      "from": "WBT",
+      "to": "USD",
+      "feedId": "WBT/USD",
+      "oracle": "WBT/USD",
+      "registryKey": "WBT/USDPriceUpkeep",
+      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 2500,
+      "maxOpenInterest": "100000000000"
+    }
+  ]
 }

@@ -23,8 +23,10 @@ export const DEPLOYMENT_1874 = deployment1874 as {
     priceRouter: Address;
     verifier: Address;
     priceUpKeep: Address;
+    tradesUpKeep: Address;
   };
-  libraries: Record<string, Address>;
+  /** First block of this deployment — the indexer's start block. */
+  startBlock: number;
 };
 
 export const TRADING_ADDRESS = DEPLOYMENT_1874.contracts.trading;
