@@ -14,7 +14,7 @@ One commit per change; every change lands with the tests that cover it.
 - [ ] `DeployTestnet.s.sol`: one script that deploys the whole system (hardened oracle, TradesUpKeep,
       markets with fees/spread/impact/funding, forwarders, liquidity), idempotent, with a test
       asserting every configured value.
-- [ ] `marketOrdersTimeout` 30 → 12, with the dead-window test flipped to prove it closed.
+- [ ] `marketOrdersTimeout` 30 → 11, with the dead-window test flipped to prove it closed.
 - [ ] Unit tests per external function: Trading (limit/stop place-update-cancel, TP/SL update,
       top-up, remove collateral, timeouts), Callbacks (every cancel reason), Vault (full request/
       settle/claim/cancel/reclaim, MM), PairInfos (fees, funding, rollover, liq price), PairsStorage,

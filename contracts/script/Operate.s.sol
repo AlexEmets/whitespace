@@ -100,7 +100,7 @@ contract OperateScript is Script {
     /// @dev Set by `run()`, once, before any of the eight functions execute. Distinguishes
     ///      "driven by `vm.startBroadcast`" from "driven by `vm.prank`" so `_relay` knows
     ///      whether it needs to do anything at all.
-    bool private _broadcasting;
+    bool internal _broadcasting;
 
     /// @dev Foundry's `vm.prank` overrides `msg.sender` for exactly the next call, no deeper —
     ///      confirmed empirically against forge 0.3.0: a prank set by the test is consumed by

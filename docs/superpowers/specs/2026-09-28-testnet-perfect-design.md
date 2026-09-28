@@ -82,7 +82,7 @@ contracts and never fire. `services/liquidator` becomes the **automation bot**:
 
 | Parameter | Now | New | Why |
 |---|---|---|---|
-| `marketOrdersTimeout` | 30 blocks | **12 blocks** | With `maxAge` 10 s at 1 s/block, 30 left a 20 s window where an order is neither fillable nor refundable (measured in `KeeperCensorship.t.sol`). |
+| `marketOrdersTimeout` | 30 blocks | **11 blocks** | With `maxAge` 10 s at 1 s/block, 30 left 19 blocks where an order is neither fillable nor refundable (measured in `KeeperCensorship.t.sol`). 11 makes every block exactly one of the two; below 11 fillable and refundable overlap, which is a free option. |
 | Open fee, dynamic spread, `priceImpactK` | 0 | per market, non-zero | Vault earns; the quote reflects size. |
 | Funding | 0 | non-zero, capped | Balances OI; funding history becomes meaningful. |
 | TradesUpKeep | not deployed | deployed, 2 forwarders | Liquidations and TP/SL/limit. |
