@@ -6,6 +6,7 @@ import type {
   FeeCharge,
   HealthResponse,
   LimitOrderSummary,
+  OrderHistoryEntry,
   MarketSummary,
   OrderSummary,
   PnlSummary,
@@ -32,7 +33,7 @@ export const api = {
   orders: (address: string) => getJson<OrderSummary[]>(`/orders/${address}`),
   price: (pairIndex: number) => getJson<PriceResponse>(`/price/${pairIndex}`),
   limitOrders: (address: string) => getJson<LimitOrderSummary[]>(`/limit-orders/${address}`),
-  orderHistory: (address: string, limit = 100) => getJson<OrderSummary[]>(`/orders/${address}/history?limit=${limit}`),
+  orderHistory: (address: string, limit = 100) => getJson<OrderHistoryEntry[]>(`/orders/${address}/history?limit=${limit}`),
   fees: (address: string, limit = 200) => getJson<FeeCharge[]>(`/fees/${address}?limit=${limit}`),
   pnl: (address: string) => getJson<PnlSummary>(`/pnl/${address}`),
 };

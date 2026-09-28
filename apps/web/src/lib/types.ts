@@ -136,6 +136,40 @@ export interface LimitOrderSummary {
   updatedAt: number;
 }
 
+/** GET /orders/:address/history — every market order and every limit-order event, newest
+ * first. A limit fill appears twice: as `automation_open` (the fill request) and as
+ * `limit_executed` (the resting order leaving the book). */
+export interface OrderHistoryEntry {
+  source: 'order' | 'limit';
+  id: string;
+  orderId: string | null;
+  kind:
+    | 'open'
+    | 'close'
+    | 'automation_open'
+    | 'automation_close'
+    | 'remove_collateral'
+    | 'limit_placed'
+    | 'limit_updated'
+    | 'limit_cancelled'
+    | 'limit_executed';
+  orderType: 'MARKET' | 'LIMIT' | 'STOP' | null;
+  pairIndex: number;
+  tradeId: string | null;
+  index: number | null;
+  buy: boolean | null;
+  collateral: string | null;
+  leverage: string | null;
+  price: string | null;
+  tp: string | null;
+  sl: string | null;
+  status: 'pending' | 'executed' | 'cancelled' | 'timeout';
+  cancelReason: string | null;
+  requestedAt: number;
+  resolvedAt: number | null;
+  txHash: string;
+}
+
 export type FeeKind = 'oracle' | 'dev' | 'vault_opening' | 'vault_liq' | 'rollover' | 'funding' | 'bond';
 
 /** GET /fees/:address — one fee event. `amount` is USDW, signed for funding

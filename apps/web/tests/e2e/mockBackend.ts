@@ -116,7 +116,29 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
     }
 
     if (/^\/orders\/0x[a-fA-F0-9]+\/history$/.test(path)) {
-      return route.fulfill({ json: [...state.orders].reverse().map(formatOrder) });
+      return route.fulfill({
+        json: [...state.orders].reverse().map((o) => ({
+          source: 'order',
+          id: o.orderId,
+          orderId: o.orderId,
+          kind: 'open',
+          orderType: 'MARKET',
+          pairIndex: o.pairIndex,
+          tradeId: o.tradeId ?? null,
+          index: null,
+          buy: o.buy,
+          collateral: fmtCollateral(o.collateral),
+          leverage: fmtLeverage(o.leverage),
+          price: null,
+          tp: null,
+          sl: null,
+          status: o.status,
+          cancelReason: o.cancelReason ?? null,
+          requestedAt: o.requestedAt,
+          resolvedAt: o.executedAt ?? null,
+          txHash: '0x0',
+        })),
+      });
     }
 
     if (/^\/fees\/0x[a-fA-F0-9]+$/.test(path)) {

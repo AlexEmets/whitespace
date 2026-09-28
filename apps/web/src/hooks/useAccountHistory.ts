@@ -1,7 +1,7 @@
 'use client';
 
 import { api } from '@/lib/api';
-import type { FeeCharge, LimitOrderSummary, OrderSummary, PnlSummary } from '@/lib/types';
+import type { FeeCharge, LimitOrderSummary, OrderHistoryEntry, PnlSummary } from '@/lib/types';
 import { useLiveResource } from './useLiveResource';
 
 /** Resting LIMIT/STOP entries for `address` — the Open Orders tab. */
@@ -18,7 +18,7 @@ export function useLimitOrders(address: `0x${string}` | undefined) {
 
 /** Every order ever requested — the Order History tab. */
 export function useOrderHistory(address: `0x${string}` | undefined) {
-  const { data, error, loading, refetch } = useLiveResource<OrderSummary[]>({
+  const { data, error, loading, refetch } = useLiveResource<OrderHistoryEntry[]>({
     channel: null,
     enabled: Boolean(address),
     pollMs: 15000,

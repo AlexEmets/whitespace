@@ -6,12 +6,12 @@ import {
   OrderHistoryList,
   RealizedPnlPanel,
 } from '@/components/terminal/AccountTables';
-import type { FeeCharge, LimitOrderSummary, OrderSummary, PnlSummary } from '@/lib/types';
+import type { FeeCharge, LimitOrderSummary, OrderHistoryEntry, PnlSummary } from '@/lib/types';
 
 const E18 = 10n ** 18n;
 let address: string | undefined = '0xTraderAddress000000000000000000000000';
 let limitOrders: LimitOrderSummary[] = [];
-let orderHistory: OrderSummary[] = [];
+let orderHistory: OrderHistoryEntry[] = [];
 let fees: FeeCharge[] = [];
 let pnl: PnlSummary | undefined;
 
@@ -121,16 +121,25 @@ describe('<LimitOrdersList>', () => {
 
 describe('<OrderHistoryList>', () => {
   it('labels each order kind and explains a cancellation', () => {
+    const base = {
+      source: 'order' as const, orderId: null, orderType: null, pairIndex: 0, tradeId: null, index: null, buy: null,
+      collateral: null, leverage: null, price: null, tp: null, sl: null, cancelReason: null, resolvedAt: null, txHash: '0x1',
+    };
     orderHistory = [
-      { orderId: '1', pairIndex: 0, kind: 'open', buy: true, collateral: '100.000000', leverage: '10.00', requestedAt: 1_790_000_000, requestedAtBlock: '1', status: 'executed', resolvedAt: 1, cancelReason: null, tradeId: '1' },
-      { orderId: '2', pairIndex: 0, kind: 'automation_close', buy: false, collateral: null, leverage: null, requestedAt: 1_790_000_100, requestedAtBlock: '2', status: 'cancelled', resolvedAt: 2, cancelReason: 'NOT_HIT', tradeId: null },
+      { ...base, id: '1', orderId: '1', kind: 'open', orderType: 'MARKET', buy: true, collateral: '100.000000', price: '65001.000000000000000000', status: 'executed', requestedAt: 1_790_000_000 },
+      { ...base, id: '2', orderId: '2', kind: 'automation_close', status: 'cancelled', cancelReason: 'NOT_HIT', requestedAt: 1_790_000_100 },
+      { ...base, id: 'lim-3', source: 'limit', kind: 'limit_cancelled', orderType: 'STOP', buy: false, status: 'cancelled', requestedAt: 1_790_000_200 },
+      { ...base, id: '4', orderId: '4', kind: 'close', status: 'timeout', requestedAt: 1_790_000_300 },
     ];
     render(<OrderHistoryList />);
     expect(screen.getByTestId('order-history-row-1')).toHaveTextContent('Market open');
+    expect(screen.getByTestId('order-history-row-1')).toHaveTextContent('65,001.00');
     expect(screen.getByTestId('order-history-row-1')).toHaveTextContent('Executed');
     expect(screen.getByTestId('order-history-row-2')).toHaveTextContent('TP / SL / liquidation');
     expect(screen.getByTestId('order-history-row-2')).toHaveTextContent('Cancelled · NOT_HIT');
-    expect(screen.getByTestId('order-history-row-2')).toHaveTextContent('—');
+    expect(screen.getByTestId('order-history-row-lim-3')).toHaveTextContent('Stop · Cancelled');
+    expect(screen.getByTestId('order-history-row-lim-3')).toHaveTextContent('Short');
+    expect(screen.getByTestId('order-history-row-4')).toHaveTextContent('Timed out');
   });
 
   it('says so when there is no history', () => {

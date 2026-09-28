@@ -159,6 +159,17 @@ const KIND_LABEL: Record<string, string> = {
   automation_open: 'Limit / stop fill',
   automation_close: 'TP / SL / liquidation',
   remove_collateral: 'Remove margin',
+  limit_placed: 'Placed',
+  limit_updated: 'Updated',
+  limit_cancelled: 'Cancelled',
+  limit_executed: 'Filled',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pending: 'Pending',
+  executed: 'Executed',
+  cancelled: 'Cancelled',
+  timeout: 'Timed out',
 };
 
 /** Every order ever requested, newest first. */
@@ -177,20 +188,26 @@ export function OrderHistoryList() {
             <th>Instrument</th>
             <th>Order</th>
             <th>Side</th>
+            <th>Price</th>
             <th>Margin</th>
             <th>Status</th>
           </tr>
         </thead>
         <tbody>
           {orders.map((o) => (
-            <tr key={o.orderId} data-testid={`order-history-row-${o.orderId}`}>
+            <tr key={o.id} data-testid={`order-history-row-${o.id}`}>
               <td>{formatTime(o.requestedAt)}</td>
               <td>{marketLabel(markets.find((m) => m.pairIndex === o.pairIndex), o.pairIndex)}</td>
-              <td>{KIND_LABEL[o.kind] ?? o.kind}</td>
+              <td>
+                {o.source === 'limit' ? `${o.orderType === 'STOP' ? 'Stop' : 'Limit'} · ` : ''}
+                {KIND_LABEL[o.kind] ?? o.kind}
+              </td>
               <td>{o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}</td>
+              <td>{o.price === null ? '—' : formatMoney(o.price, PRICE_DECIMALS_NUM)}</td>
               <td>{o.collateral === null ? '—' : `${formatMoney(o.collateral, COLLATERAL_DECIMALS)} USDW`}</td>
-              <td title={o.status === 'cancelled' ? explainCancelReason(o.cancelReason ?? '') : undefined}>
-                {o.status === 'cancelled' ? `Cancelled · ${o.cancelReason ?? 'unknown'}` : o.status === 'executed' ? 'Executed' : 'Pending'}
+              <td title={o.status === 'cancelled' && o.cancelReason ? explainCancelReason(o.cancelReason) : undefined}>
+                {STATUS_LABEL[o.status] ?? o.status}
+                {o.status === 'cancelled' && o.cancelReason ? ` · ${o.cancelReason}` : ''}
               </td>
             </tr>
           ))}
