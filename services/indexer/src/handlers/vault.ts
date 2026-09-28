@@ -2,6 +2,7 @@ import { ponder } from 'ponder:registry';
 import { toMeta } from '../lib/event.js';
 import { recordLpActivity } from '../lib/lpActivity.js';
 import { onSettlementExecuted, onAsyncDepositWithdrawExecuted } from '../lib/vaultSettlement.js';
+import { onVaultDepositClaimed, onVaultWithdrawClaimed } from '../lib/lpPoints.js';
 
 // --- Per-LP activity (lp_activity; see src/lib/lpActivity.ts for the kinds) ----------
 // One ponder.on per event: Ponder registers handlers by literal event name.
@@ -14,9 +15,11 @@ ponder.on('Vault:WithdrawRequestedV2', async ({ event, context }) => {
 });
 ponder.on('Vault:DepositClaimedV2', async ({ event, context }) => {
   await recordLpActivity(context.db, 'DepositClaimedV2', event.args, toMeta(event));
+  await onVaultDepositClaimed(context.db, event.args, toMeta(event));
 });
 ponder.on('Vault:WithdrawClaimedV2', async ({ event, context }) => {
   await recordLpActivity(context.db, 'WithdrawClaimedV2', event.args, toMeta(event));
+  await onVaultWithdrawClaimed(context.db, event.args, toMeta(event));
 });
 ponder.on('Vault:RequestDepositCanceledV2', async ({ event, context }) => {
   await recordLpActivity(context.db, 'RequestDepositCanceledV2', event.args, toMeta(event));
