@@ -1,0 +1,23 @@
+[Unit]
+Description=Whitespace automation bot %i (liquidations, TP/SL, limit and stop entries)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+After=network-online.target whitespace-indexer.service whitespace-keeper.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=whitespace
+Group=whitespace
+WorkingDirectory=/home/whitespace/whitespace/services/liquidator
+# One env file per instance: its own forwarder key, instance name and metrics port. Two
+# instances (`a`, `b`) run with two allowlisted forwarder keys and no coordination — a lost
+# race resolves on chain as NO_TRADE / PENDING_TRIGGER, which costs gas, not money.
+EnvironmentFile=/home/whitespace/whitespace/services/liquidator/.env.%i
+Environment=HOME=/home/whitespace
+ExecStart=/usr/bin/node src/main.mjs
+Restart=always
+RestartSec=5
+MemoryMax=250M
+
+[Install]
+WantedBy=multi-user.target
