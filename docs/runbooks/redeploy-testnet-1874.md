@@ -84,8 +84,16 @@ export ORACLE_THRESHOLD=3 GUARDIAN_ADDRESS=$(addr guardian) KEEPER_ADDRESS=$(add
 export LIQUIDATOR_ADDRESSES=$(addr bot-a),$(addr bot-b) LP_AMOUNT=100000000000
 START_BLOCK=$(cast block-number --rpc-url $RPC)
 forge script script/DeployTestnet.s.sol:DeployTestnetScript --sig "deployTestnet()" \
-  --rpc-url $RPC --broadcast --legacy --slow -vvv
+  --rpc-url $RPC --broadcast --legacy --slow --sender "$(addr owner)" -vvv
 ```
+
+`--sender` is not optional. `OstiumTrading` and `OstiumTradingCallbacks` link two external
+libraries, which forge deploys BEFORE the script body runs — through the CREATE2 factory, from
+whatever `--sender` says. Without it they come from Foundry's default sender
+(`0x1804…1f38`), which holds no funds, and the run aborts with "You seem to be using Foundry's
+default sender" (observed on the anvil rehearsal). **Mainnet 1875 has no CREATE2 factory**
+(spec §10.2): there the libraries must be deployed first with `forge create` and passed with
+`--libraries`.
 
 If the run dies after the core is deployed, **do not re-run `deployTestnet()`** (it would
 deploy a second core). Resume configuration against the registry it printed:
@@ -93,10 +101,12 @@ deploy a second core). Resume configuration against the registry it printed:
 ```bash
 export REGISTRY_ADDRESS=0x...
 forge script script/DeployTestnet.s.sol:DeployTestnetScript --sig "configureTestnet()" \
-  --rpc-url $RPC --broadcast --legacy --slow -vvv
+  --rpc-url $RPC --broadcast --legacy --slow --sender "$(addr owner)" -vvv
 ```
 
-Every step reads before it writes, so a resume sends only what is missing.
+Every step reads before it writes, so a resume sends only what is missing — and a replay over
+a finished system sends nothing at all (rehearsed on anvil 2026-09-28: 101 transactions for the
+full deploy, 0 for the replay).
 
 ## 3. Write the manifest from chain
 
