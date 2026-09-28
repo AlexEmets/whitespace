@@ -1,0 +1,9 @@
+[Unit]
+Description=Whitespace gas and disk check (alerts via Telegram)
+Documentation=file:/home/whitespace/whitespace/docs/runbooks/deploy-server.md
+
+[Service]
+Type=oneshot
+User=whitespace
+Group=whitespace
+ExecStart=/home/whitespace/whitespace/deploy/check-balances.sh

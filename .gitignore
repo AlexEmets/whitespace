@@ -41,3 +41,4 @@ pgdata/
 # Playwright artefacts
 test-results/
 playwright-report/
+deploy/alerts.env
