@@ -3,9 +3,12 @@ import type {
   Candle,
   CandleInterval,
   ClosedPositionSummary,
+  FeeCharge,
   HealthResponse,
+  LimitOrderSummary,
   MarketSummary,
   OrderSummary,
+  PnlSummary,
   PositionSummary,
   PriceResponse,
 } from './types';
@@ -28,4 +31,8 @@ export const api = {
   positionHistory: (address: string) => getJson<ClosedPositionSummary[]>(`/positions/${address}/history`),
   orders: (address: string) => getJson<OrderSummary[]>(`/orders/${address}`),
   price: (pairIndex: number) => getJson<PriceResponse>(`/price/${pairIndex}`),
+  limitOrders: (address: string) => getJson<LimitOrderSummary[]>(`/limit-orders/${address}`),
+  orderHistory: (address: string, limit = 100) => getJson<OrderSummary[]>(`/orders/${address}/history?limit=${limit}`),
+  fees: (address: string, limit = 200) => getJson<FeeCharge[]>(`/fees/${address}?limit=${limit}`),
+  pnl: (address: string) => getJson<PnlSummary>(`/pnl/${address}`),
 };

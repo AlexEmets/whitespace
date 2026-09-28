@@ -120,8 +120,48 @@ export interface PriceResponse {
   source: 'publisher' | 'chain';
 }
 
+/** GET /limit-orders/:address — a resting LIMIT/STOP entry (spec 2026-09-28 §9.2). */
+export interface LimitOrderSummary {
+  pairIndex: number;
+  index: number;
+  orderType: 'LIMIT' | 'STOP';
+  buy: boolean;
+  collateral: string;
+  leverage: string;
+  /** The order's trigger (its `openPrice` on chain). */
+  triggerPrice: string;
+  tp: string;
+  sl: string;
+  placedAt: number;
+  updatedAt: number;
+}
+
+export type FeeKind = 'oracle' | 'dev' | 'vault_opening' | 'vault_liq' | 'rollover' | 'funding' | 'bond';
+
+/** GET /fees/:address — one fee event. `amount` is USDW, signed for funding
+ * (negative = the trader received it). */
+export interface FeeCharge {
+  id: string;
+  tradeId: string | null;
+  pairIndex: number | null;
+  kind: FeeKind;
+  amount: string;
+  at: number;
+  txHash: string;
+}
+
+/** GET /pnl/:address — totals over closed positions. */
+export interface PnlSummary {
+  realizedPnl: string;
+  fees: string;
+  funding: string;
+  trades: number;
+}
+
 export type WsMessage =
   | { channel: `price:${string}`; type: 'price'; data: PriceResponse }
   | { channel: `positions:${string}`; type: 'positions'; data: PositionSummary[] }
   | { channel: `orders:${string}`; type: 'orders'; data: OrderSummary[] }
-  | { channel: `candles:${string}:${CandleInterval}`; type: 'candle'; data: Candle };
+  | { channel: `candles:${string}:${CandleInterval}`; type: 'candle'; data: Candle }
+  | { channel: `limitOrders:${string}`; type: 'limitOrders'; data: LimitOrderSummary[] }
+  | { channel: `fees:${string}`; type: 'fees'; data: FeeCharge[] };
