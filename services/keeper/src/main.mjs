@@ -43,7 +43,9 @@ async function main() {
   const engine = createKeeperEngine({
     reportSource,
     txSender,
-    onDeadLetter: (entry) => console.error('[keeper] DEAD LETTER:', entry),
+    onRetry: ({ orderId, reason, attempt, waitMs }) =>
+      console.warn(`[keeper] orderId=${orderId} report attempt ${attempt} refused (${reason}), retrying in ${waitMs}ms`),
+    onGiveUp: ({ orderId, reason }) => console.error(`[keeper] orderId=${orderId} GAVE UP: ${reason}`),
   });
 
   const cursorStore = createCursorStore(config.cursorPath, {

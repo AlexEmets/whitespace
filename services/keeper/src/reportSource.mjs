@@ -7,7 +7,9 @@
  *    process running) — see docs/decisions/phase-3-price-publisher.md for when this
  *    is and isn't appropriate to use.
  *
- * Both return the same shape: { ok: true, signedReport } | { ok: false, reason }.
+ * Both return the same shape: { ok: true, signedReport } | { ok: false, reason, status? }.
+ * `status` is the publisher's HTTP status; the engine uses it to tell a refusal that will
+ * clear (409, 5xx) from one that will not (400, 404). A network failure has none.
  * Neither ever fabricates the timestamp — it is always the caller-supplied value.
  */
 
@@ -36,7 +38,7 @@ export function createHttpReportSource(baseUrl, fetchImpl = fetch) {
       }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        return { ok: false, reason: body.error ?? `http_${res.status}` };
+        return { ok: false, reason: body.error ?? `http_${res.status}`, status: res.status };
       }
       const body = await res.json();
       return { ok: true, signedReport: body.signedReport };

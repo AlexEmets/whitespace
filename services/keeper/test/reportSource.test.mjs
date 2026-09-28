@@ -44,7 +44,20 @@ test('HttpReportSource surfaces the publisher error reason on a non-2xx response
     async (base) => {
       const source = createHttpReportSource(base);
       const result = await source.getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_OPEN' });
-      assert.deepEqual(result, { ok: false, reason: 'degraded_opens_blocked' });
+      assert.deepEqual(result, { ok: false, reason: 'degraded_opens_blocked', status: 409 });
+    },
+  );
+});
+
+test('HttpReportSource falls back to http_<status> when the error body is not JSON', async () => {
+  await withFixtureServer(
+    (req, res) => {
+      res.writeHead(502);
+      res.end('bad gateway');
+    },
+    async (base) => {
+      const result = await createHttpReportSource(base).getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_CLOSE' });
+      assert.deepEqual(result, { ok: false, reason: 'http_502', status: 502 });
     },
   );
 });
@@ -54,6 +67,7 @@ test('HttpReportSource surfaces a network failure as ok:false rather than throwi
   const result = await source.getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_CLOSE' });
   assert.equal(result.ok, false);
   assert.match(result.reason, /^fetch_failed:/);
+  assert.equal(result.status, undefined, 'no status: the engine treats it as retryable');
 });
 
 test('LocalReportSource builds and signs a v2 report with the exact caller-supplied timestamp', async () => {
