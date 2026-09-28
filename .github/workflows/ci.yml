@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   contracts:
     runs-on: ubuntu-latest
@@ -31,8 +34,73 @@ jobs:
       - name: Contract tests
         run: cd contracts && forge test -vv
 
+      - name: Coverage
+        run: cd contracts && forge coverage --ir-minimum --report summary | tee /tmp/coverage.txt
+
       - name: Tool tests
         run: node --test tools/
+
+  node-services:
+    # Plain-ESM packages and services on node:test: shared, reporter, metrics, txsender,
+    # keeper, price-publisher, liquidator (automation bot).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Package tests
+        run: pnpm -r --filter './packages/**' test
+      - name: Service tests
+        run: |
+          for svc in keeper price-publisher liquidator; do
+            echo "::group::$svc" && pnpm --filter "@whitespace/$svc" test && echo "::endgroup::"
+          done
+
+  indexer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @whitespace/indexer test
+
+  api:
+    # The suite stands up a throwaway Postgres with initdb/pg_ctl (test/pgHarness.ts); the
+    # runner image ships the binaries outside PATH.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Put Postgres binaries on PATH
+        run: ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1 >> "$GITHUB_PATH"
+      - run: pnpm --filter @whitespace/api test
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter @whitespace/web typecheck
+      - name: Unit tests
+        run: pnpm --filter @whitespace/web test
+      - name: Build
+        run: pnpm --filter @whitespace/web build
+      - name: Install Playwright browser
+        run: pnpm --filter @whitespace/web exec playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: pnpm --filter @whitespace/web e2e
+        env: { CI: 'true' }
 
   network-drift:
     runs-on: ubuntu-latest
