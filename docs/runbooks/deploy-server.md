@@ -17,8 +17,8 @@ direct A record (`deploy/Caddyfile`); ufw opens only 22, 80, 443.
 | eRPC (docker) | 4001 | `docker-compose.yml` `127.0.0.1:4001` |
 | Postgres (docker) | 5433 | `docker-compose.yml` `127.0.0.1:5433` |
 | whitespace-publisher | 8787 | `PUBLISHER_HOST`, default 127.0.0.1 |
-| whitespace-keeper metrics | `KEEPER_METRICS_PORT` | loopback |
-| whitespace-bot@a / @b metrics | 9464 / 9465 | loopback |
+| whitespace-keeper metrics | 9465 | `KEEPER_METRICS_HOST`, default 127.0.0.1 |
+| whitespace-bot@a / @b metrics | 9466 / 9467 | `LIQUIDATOR_METRICS_HOST`, default 127.0.0.1 |
 | whitespace-indexer (Ponder) | 42069 | `ponder start --hostname 127.0.0.1` (unit) |
 
 Check after any change: `ss -ltnp | grep -v 127.0.0.1` must list only Caddy (and sshd).
@@ -70,7 +70,7 @@ started after the build it serves. It exits non-zero on any failure.
 | symptom | first check | fix |
 |---|---|---|
 | orders stay pending | `journalctl -u whitespace-keeper -n 100`; keeper gas | fund keeper; restart keeper |
-| no liquidations / TP / SL | bot logs, `curl 127.0.0.1:9464/metrics` | fund bot; check indexer lag |
+| no liquidations / TP / SL | bot logs, `curl 127.0.0.1:9466/metrics` | fund bot; check indexer lag |
 | opens refused, closes work | publisher `/status` degraded | venue outage — by design |
 | site 502 | `systemctl status whitespace-web`; `.next/BUILD_ID` | rerun `deploy/deploy.sh` |
 | indexer lag grows | Ponder logs, RPC 429s | eRPC health; restart indexer |

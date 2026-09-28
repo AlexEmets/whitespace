@@ -124,7 +124,7 @@ See `docs/runbooks/deploy-server.md` for the host. In order:
 5. Publisher: `PUBLISHER_VERIFIER_ADDRESS` = new verifier (it signs the verifier address into
    every report — a stale value makes every report fail `verify()`).
 6. Bots: copy `bot-a.json`/`bot-b.json` to the box's key dir; write `services/liquidator/.env.a`
-   and `.env.b` (forwarder key path, instance name, metrics ports 9464/9465, `DATABASE_URL`).
+   and `.env.b` (forwarder key path, instance name, metrics ports 9466/9467 (the keeper holds 9465), `DATABASE_URL`).
 7. `deploy/deploy.sh` — rebuilds web (addresses are baked in at build time) and restarts all.
 
 ## 5. Acceptance — prove every feature live
