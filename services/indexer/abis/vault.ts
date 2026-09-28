@@ -72,4 +72,50 @@ export const vaultAbi = [
       { name: 'assets', type: 'uint256', indexed: false },
     ],
   },
+  // Requests that end without a claim.
+  {
+    type: 'event',
+    name: 'RequestDepositCanceledV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'assets', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'RequestWithdrawCanceledV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'shares', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'DepositReclaimedV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'assets', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'WithdrawReclaimedV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'shares', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'DepositPartiallyRefunded',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'refundedAssets', type: 'uint256', indexed: false },
+    ],
+  },
 ] as const;

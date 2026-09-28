@@ -268,7 +268,7 @@ export const lpActivity = onchainTable(
   (t) => ({
     id: t.text().primaryKey(), // `${kind}-${owner}-${settlementId}-${logIndex}`
     owner: t.hex().notNull(),
-    kind: t.text().notNull(), // 'deposit_requested'|'withdraw_requested'|'deposit_claimed'|'withdraw_claimed'
+    kind: t.text().notNull(), // see LP_EVENTS in src/lib/lpActivity.ts: {deposit,withdraw}_{requested,claimed,cancelled,reclaimed}, deposit_refunded
     settlementId: t.integer().notNull(),
     amount: t.bigint().notNull(), // assets (PRECISION_6) or shares, per event
     timestamp: t.integer().notNull(),

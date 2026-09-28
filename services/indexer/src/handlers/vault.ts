@@ -1,92 +1,37 @@
 import { ponder } from 'ponder:registry';
-import { lpActivity } from '../../ponder.schema.js';
 import { toMeta } from '../lib/event.js';
+import { recordLpActivity } from '../lib/lpActivity.js';
 import { onSettlementExecuted, onAsyncDepositWithdrawExecuted } from '../lib/vaultSettlement.js';
 
-// See the comment on `type Db = any` in src/lib/db.ts.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Db = any;
-
-async function record(
-  db: Db,
-  kind: string,
-  owner: `0x${string}`,
-  settlementId: number,
-  amount: bigint,
-  logIndex: number,
-  timestamp: number,
-  blockNumber: bigint,
-  txHash: `0x${string}`,
-): Promise<void> {
-  await db
-    .insert(lpActivity)
-    .values({
-      id: `${kind}-${owner}-${settlementId}-${logIndex}`,
-      owner,
-      kind,
-      settlementId,
-      amount,
-      timestamp,
-      blockNumber,
-      txHash,
-    })
-    .onConflictDoUpdate({});
-}
+// --- Per-LP activity (lp_activity; see src/lib/lpActivity.ts for the kinds) ----------
+// One ponder.on per event: Ponder registers handlers by literal event name.
 
 ponder.on('Vault:DepositRequestedV2', async ({ event, context }) => {
-  await record(
-    context.db,
-    'deposit_requested',
-    event.args.owner,
-    event.args.settlementId,
-    event.args.assets,
-    event.log.logIndex,
-    Number(event.block.timestamp),
-    event.block.number,
-    event.transaction.hash,
-  );
+  await recordLpActivity(context.db, 'DepositRequestedV2', event.args, toMeta(event));
 });
-
 ponder.on('Vault:WithdrawRequestedV2', async ({ event, context }) => {
-  await record(
-    context.db,
-    'withdraw_requested',
-    event.args.owner,
-    event.args.settlementId,
-    event.args.shares,
-    event.log.logIndex,
-    Number(event.block.timestamp),
-    event.block.number,
-    event.transaction.hash,
-  );
+  await recordLpActivity(context.db, 'WithdrawRequestedV2', event.args, toMeta(event));
 });
-
 ponder.on('Vault:DepositClaimedV2', async ({ event, context }) => {
-  await record(
-    context.db,
-    'deposit_claimed',
-    event.args.owner,
-    event.args.settlementId,
-    event.args.shares,
-    event.log.logIndex,
-    Number(event.block.timestamp),
-    event.block.number,
-    event.transaction.hash,
-  );
+  await recordLpActivity(context.db, 'DepositClaimedV2', event.args, toMeta(event));
 });
-
 ponder.on('Vault:WithdrawClaimedV2', async ({ event, context }) => {
-  await record(
-    context.db,
-    'withdraw_claimed',
-    event.args.owner,
-    event.args.settlementId,
-    event.args.assets,
-    event.log.logIndex,
-    Number(event.block.timestamp),
-    event.block.number,
-    event.transaction.hash,
-  );
+  await recordLpActivity(context.db, 'WithdrawClaimedV2', event.args, toMeta(event));
+});
+ponder.on('Vault:RequestDepositCanceledV2', async ({ event, context }) => {
+  await recordLpActivity(context.db, 'RequestDepositCanceledV2', event.args, toMeta(event));
+});
+ponder.on('Vault:RequestWithdrawCanceledV2', async ({ event, context }) => {
+  await recordLpActivity(context.db, 'RequestWithdrawCanceledV2', event.args, toMeta(event));
+});
+ponder.on('Vault:DepositReclaimedV2', async ({ event, context }) => {
+  await recordLpActivity(context.db, 'DepositReclaimedV2', event.args, toMeta(event));
+});
+ponder.on('Vault:WithdrawReclaimedV2', async ({ event, context }) => {
+  await recordLpActivity(context.db, 'WithdrawReclaimedV2', event.args, toMeta(event));
+});
+ponder.on('Vault:DepositPartiallyRefunded', async ({ event, context }) => {
+  await recordLpActivity(context.db, 'DepositPartiallyRefunded', event.args, toMeta(event));
 });
 
 // --- Settlements (vault_settlement; see src/lib/vaultSettlement.ts) -----------------

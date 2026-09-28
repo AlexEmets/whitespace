@@ -28,6 +28,15 @@ const CANONICAL: Record<string, string> = {
   SettlementExecuted:
     'SettlementExecuted(uint32,uint32,int256,uint8,int256,uint256,uint256,int256,uint256,uint256,int256)',
   AsyncDepositWithdrawExecuted: 'AsyncDepositWithdrawExecuted(uint32,int256,uint256,uint256,uint256)',
+  DepositRequestedV2: 'DepositRequestedV2(address,uint32,uint256)',
+  WithdrawRequestedV2: 'WithdrawRequestedV2(address,uint32,uint256)',
+  DepositClaimedV2: 'DepositClaimedV2(address,uint32,uint256)',
+  WithdrawClaimedV2: 'WithdrawClaimedV2(address,uint32,uint256)',
+  RequestDepositCanceledV2: 'RequestDepositCanceledV2(address,uint32,uint256)',
+  RequestWithdrawCanceledV2: 'RequestWithdrawCanceledV2(address,uint32,uint256)',
+  DepositReclaimedV2: 'DepositReclaimedV2(address,uint32,uint256)',
+  WithdrawReclaimedV2: 'WithdrawReclaimedV2(address,uint32,uint256)',
+  DepositPartiallyRefunded: 'DepositPartiallyRefunded(address,uint32,uint256)',
 };
 
 function eventOf(abi: readonly unknown[], name: string): AbiEvent {
