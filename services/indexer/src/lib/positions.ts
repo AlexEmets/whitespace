@@ -1,4 +1,4 @@
-import { order, position, closedPosition, market } from '../../ponder.schema.js';
+import { order, position, closedPosition, market, liquidation } from '../../ponder.schema.js';
 import { updateIfExists, findOrWarn } from './db.js';
 import { limitOrderLabel } from './enums.js';
 import { recordTick, quoteNotional } from './candleTick.js';
@@ -126,15 +126,20 @@ export async function onMarketCloseExecuted(
   await recordTick(db, pos.pairIndex, r.at, price, closedNotional);
 
   if (percentageClosed >= FULL_CLOSE_PCT) {
+    // A market close can liquidate; the event does not say so, VaultLiqFeeCharged (earlier
+    // in the same callback) does. The trader is then sent nothing — the event's
+    // usdcSentToTrader is the value the vault kept. (A liquidation whose value was exactly
+    // 0 emits no fee event and stays 'close'; usdcSentToTrader is 0 either way.)
+    const liquidated = (await db.find(liquidation, { orderId })) != null;
     await writeClosed(
       db,
       tradeId,
       pos,
       {
         closePrice: price,
-        closeReason: 'close',
+        closeReason: liquidated ? 'liq' : 'close',
         percentProfit,
-        usdcSentToTrader,
+        usdcSentToTrader: liquidated ? 0n : usdcSentToTrader,
         percentageClosed: Number(percentageClosed),
         closeOrderId: orderId,
       },
@@ -186,6 +191,25 @@ export async function onLimitCloseExecuted(
     },
     r,
   );
+}
+
+/** VaultLiqFeeCharged: remember that this close order liquidated the trade. */
+export async function onVaultLiqFeeCharged(
+  db: Db,
+  args: { orderId: bigint; tradeId: bigint; trader: `0x${string}`; amount: bigint },
+  r: Resolution,
+): Promise<void> {
+  await db
+    .insert(liquidation)
+    .values({
+      orderId: args.orderId,
+      tradeId: args.tradeId,
+      trader: args.trader.toLowerCase(),
+      liquidationFee: args.amount,
+      at: r.at,
+      txHash: r.txHash,
+    })
+    .onConflictDoNothing();
 }
 
 // --- Mid-life changes ---------------------------------------------------------------

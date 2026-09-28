@@ -224,6 +224,21 @@ export const orderEvent = onchainTable(
   }),
 );
 
+/** Close orders that turned out to be liquidations, keyed by the close orderId, from
+ * VaultLiqFeeCharged. A MARKET close can liquidate (closeTradeMarketCallback checks
+ * tradeValue < liqMarginValue), and MarketCloseExecutedV2 says nothing about it — it even
+ * reports the liquidation fee as `usdcSentToTrader` while the trader is actually sent 0.
+ * VaultLiqFeeCharged fires earlier in the same callback, so the close handler reads this
+ * row to label the close 'liq'. */
+export const liquidation = onchainTable('liquidation', (t) => ({
+  orderId: t.bigint().primaryKey(),
+  tradeId: t.bigint().notNull(),
+  trader: t.hex().notNull(),
+  liquidationFee: t.bigint().notNull(), // PRECISION_6, what the vault kept
+  at: t.integer().notNull(),
+  txHash: t.hex().notNull(),
+}));
+
 /** Every fee the protocol charged a trader (spec §9.1), one row per charge. See
  * src/lib/fees.ts for the event → kind mapping and the two places a log does not map to
  * exactly one row (FeesChargedV2 → rollover + funding; the bond's OracleFeeCharged is

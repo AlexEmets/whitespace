@@ -9,6 +9,7 @@ import {
   onTopUpCollateral,
   onRemoveCollateralExecuted,
   onBondChargedToPosition,
+  onVaultLiqFeeCharged,
 } from '../src/lib/positions.js';
 
 const trader = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19';
@@ -78,6 +79,21 @@ describe('position lifecycle', () => {
       expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ collateral: 75_000_000n, leverage: 1000 });
       expect(ctx.rows(closedPosition)).toEqual([]);
       expect(ctx.get(market, { pairIndex: 0 })!.openInterestLong).toBe(750_000_000n);
+    });
+
+    it('a market close that liquidated is recorded as a liquidation that paid the trader nothing', async () => {
+      // closeTradeMarketCallback: when tradeValue < liqMarginValue the vault keeps the value
+      // as a liquidation fee (VaultLiqFeeCharged, emitted first) and the trader is sent 0,
+      // yet MarketCloseExecutedV2 still reports that value as usdcSentToTrader.
+      await onVaultLiqFeeCharged(ctx.db, { orderId: 3n, tradeId: 2n, trader, amount: 4_000_000n }, R);
+      await onMarketCloseExecuted(ctx.db, marketClose({ usdcSentToTrader: 4_000_000n }), R);
+      expect(ctx.get(closedPosition, { tradeId: 2n })).toMatchObject({ closeReason: 'liq', usdcSentToTrader: 0n });
+    });
+
+    it('a liquidation of a different close order does not relabel this one', async () => {
+      await onVaultLiqFeeCharged(ctx.db, { orderId: 8n, tradeId: 2n, trader, amount: 4_000_000n }, R);
+      await onMarketCloseExecuted(ctx.db, marketClose(), R);
+      expect(ctx.get(closedPosition, { tradeId: 2n })).toMatchObject({ closeReason: 'close', usdcSentToTrader: 116_000_000n });
     });
 
     it('an unknown trade resolves the order and touches nothing else', async () => {

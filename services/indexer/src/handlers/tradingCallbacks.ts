@@ -12,6 +12,7 @@ import {
   onLimitCloseExecuted,
   onRemoveCollateralExecuted,
   onBondChargedToPosition,
+  onVaultLiqFeeCharged,
   type Resolution,
 } from '../lib/positions.js';
 import { onTradeFee, onFeesChargedV2, onOracleFeeBondCharged } from '../lib/fees.js';
@@ -210,6 +211,7 @@ ponder.on('TradingCallbacks:VaultOpeningFeeCharged', async ({ event, context }) 
 
 ponder.on('TradingCallbacks:VaultLiqFeeCharged', async ({ event, context }) => {
   await onTradeFee(context.db, 'vault_liq', event.args, toMeta(event));
+  await onVaultLiqFeeCharged(context.db, event.args, resolution(event));
 });
 
 ponder.on('TradingCallbacks:FeesChargedV2', async ({ event, context }) => {
