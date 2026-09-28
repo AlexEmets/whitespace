@@ -18,7 +18,7 @@ delivered by the keeper through the hardened upkeep. Shared helpers:
 | Vault | `test/unit/Vault.t.sol` | 19 |
 | PairInfos economics | `test/unit/PairInfosEconomics.t.sol` | 18 (4 fuzz) |
 | TradesUpKeep | `test/unit/TradesUpKeep.t.sol` | 17 |
-| Findings (`test_BUG_*`) | `test/unit/Findings.t.sol` | 1 |
+| Findings (regressions) | `test/unit/Findings.t.sol` | 1 |
 | Protocol invariants | `test/invariant/Protocol.t.sol` | 5 invariants + 1 reachability test |
 
 - **Trading:** market open success with every USDW accounted for; every request revert;
@@ -77,7 +77,9 @@ initialisers; OpenPnl's are the `CurrentNotionalUnderflow` guards.
 
 ## Findings
 
-### BUG — a short open can leave OI above `maxOi` (`test_BUG_shortOpenCanLeaveOiAboveTheCap`)
+### FIXED — a short open could leave OI above `maxOi` (`test_aShortOpenCannotLeaveOiAboveTheCap`)
+
+**Status: fixed** in `lib/TradingCallbacksLib.sol` (`withinExposureLimits` now takes the fill price and charges a short at `notional * price / fillPrice`); the test was inverted into a regression that failed before the fix. Original analysis below.
 
 `TradingCallbacksLib.withinExposureLimits` admits a trade if
 `OI_side × price + collateral × leverage ≤ maxOi`, i.e. it charges the **pre-fee** notional.
