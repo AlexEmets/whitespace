@@ -92,7 +92,7 @@ contract VaultTest is TestnetTrading {
 
         _settle();
         assertEq(vault.lastSettlementId(), id, "settled");
-        assertEq(vault.lastSettlementTs(), block.timestamp, "timestamped");
+        assertEq(vault.lastSettlementTs(), vm.getBlockTimestamp(), "timestamped");
         assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.CLAIMABLE), "claimable");
         assertEq(vault.settlementAllocationScaleP(id), 1e18, "fully allocated");
         assertEq(vault.settlementShareToAssetsPrice(id), 1e18, "price locked");
@@ -422,8 +422,9 @@ contract VaultTest is TestnetTrading {
     function test_dailyPnlCap_revertsAnOversizedWinningClose() public {
         _openAt(trader, BTC, 10_000e6, 10_000, true, _basePrice(BTC));
         (uint256 id, uint32 t) = _requestClose(trader, BTC, 0, 0, uint192(uint256(int256(_px(BTC, 200)))), 500);
+        bytes memory report = this.signedReportExt(BTC, t, _px(BTC, 200), true);
         vm.expectRevert(IOstiumVault.MaxDailyPnlReached.selector);
-        _deliverAt(id, BTC, t, _px(BTC, 200));
+        _deliver(id, report);
         assertEq(ts.openTradesCount(trader, BTC), 1, "position still open");
 
         _advance(MARKET_TIMEOUT);

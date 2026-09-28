@@ -35,6 +35,12 @@ abstract contract TestnetTrading is TestnetFixture {
 
     function _setUpTestnet() internal {
         _deployTestnet();
+        _bindTestnet();
+    }
+
+    /// @dev Binds the typed handles to an already-populated `d` (e.g. in an invariant handler
+    ///      that is handed the deployment rather than deploying its own).
+    function _bindTestnet() internal {
         trading = OstiumTrading(d.trading);
         callbacks = OstiumTradingCallbacks(d.callbacks);
         pairInfos = OstiumPairInfos(d.pairInfos);
@@ -58,27 +64,37 @@ abstract contract TestnetTrading is TestnetFixture {
         return uint192(uint256(int256(_basePrice(pairIndex))));
     }
 
+    /// @notice The fixture's report (3-of-5, bid/ask one basis point either side), or with
+    ///         `open == false` a closed-market report, whose price/bid/ask the upkeep zeroes.
+    /// @dev    External, and called as `this.signedReportExt`, on purpose: the fixture's
+    ///         `_report` builds a nine-field struct literal, and once the optimiser inlines that
+    ///         into a caller holding a few locals the stack is too deep. An external self-call
+    ///         is never inlined.
+    function signedReportExt(uint16 pairIndex, uint32 timestamp, int192 price, bool open)
+        external
+        view
+        returns (bytes memory)
+    {
+        ReportLib.Report memory r;
+        r.chainId = block.chainid;
+        r.verifier = address(verifier);
+        r.feedId = _feedOf(pairIndex);
+        r.timestamp = timestamp;
+        r.price = price;
+        int192 half = open ? price / 10_000 : int192(0);
+        r.bid = price - half;
+        r.ask = price + half;
+        r.isMarketOpen = open;
+        return ReportLib.signedReport(r, ReportLib.keys3(K1, K2, K3));
+    }
+
     /// @dev A 3-of-5 report for a closed market: the upkeep zeroes price/bid/ask.
     function _closedReport(uint16 pairIndex, uint32 timestamp) internal view returns (bytes memory) {
-        int192 price = _basePrice(pairIndex);
-        return ReportLib.signedReport(
-            ReportLib.Report({
-                chainId: block.chainid,
-                verifier: address(verifier),
-                feedId: _feedOf(pairIndex),
-                timestamp: timestamp,
-                price: price,
-                bid: price,
-                ask: price,
-                isMarketOpen: false,
-                isDayTradingClosed: false
-            }),
-            ReportLib.keys3(K1, K2, K3)
-        );
+        return this.signedReportExt(pairIndex, timestamp, _basePrice(pairIndex), false);
     }
 
     function _deliverAt(uint256 orderId, uint16 pairIndex, uint32 timestamp, int192 price) internal {
-        _deliver(orderId, _report(pairIndex, timestamp, price));
+        _deliver(orderId, this.signedReportExt(pairIndex, timestamp, price, true));
     }
 
     // -------------------------------------------------------------------------------------
@@ -95,18 +111,17 @@ abstract contract TestnetTrading is TestnetFixture {
         uint192 tp,
         uint192 sl
     ) internal pure returns (IOstiumTradingStorage.Trade memory t) {
-        t = IOstiumTradingStorage.Trade({
-            collateral: collateral,
-            openPrice: openPrice,
-            tp: tp,
-            sl: sl,
-            trader: who,
-            leverage: leverage,
-            pairIndex: pairIndex,
-            index: 0,
-            buy: buy,
-            isDayTrade: false
-        });
+        // Field by field, not a struct literal: a 10-field literal evaluates every field onto
+        // the stack before allocating, which is too deep once this is inlined into a caller
+        // that already holds a few locals.
+        t.collateral = collateral;
+        t.openPrice = openPrice;
+        t.tp = tp;
+        t.sl = sl;
+        t.trader = who;
+        t.leverage = leverage;
+        t.pairIndex = pairIndex;
+        t.buy = buy;
     }
 
     /// @notice Opens and fills a market position at `price`; returns its trade index.
@@ -115,11 +130,15 @@ abstract contract TestnetTrading is TestnetFixture {
         returns (uint8 index)
     {
         index = ts.firstEmptyTradeIndex(who, pairIndex);
-        (uint256 orderId, uint32 t) = _requestOpen(
-            _tradeFull(who, pairIndex, collateral, leverage, buy, uint192(uint256(int256(price))), 0, 0), 500
-        );
-        _deliverAt(orderId, pairIndex, t, price);
-        require(ts.getOpenTrade(who, pairIndex, index).leverage != 0, "open did not fill");
+        uint32 countBefore = ts.openTradesCount(who, pairIndex);
+        _fillAt(_tradeFull(who, pairIndex, collateral, leverage, buy, uint192(uint256(int256(price))), 0, 0), price);
+        require(ts.openTradesCount(who, pairIndex) == countBefore + 1, "open did not fill");
+    }
+
+    /// @dev Kept separate from `_openAt` so neither function is too deep for the stack.
+    function _fillAt(IOstiumTradingStorage.Trade memory t, int192 price) internal {
+        (uint256 orderId, uint32 timestamp) = _requestOpen(t, 500);
+        _deliverAt(orderId, t.pairIndex, timestamp, price);
     }
 
     /// @notice Places a LIMIT or STOP order; returns its limit index.
@@ -135,8 +154,12 @@ abstract contract TestnetTrading is TestnetFixture {
         IOstiumTradingStorage.OpenOrderType kind
     ) internal returns (uint8 index) {
         index = ts.firstEmptyOpenLimitIndex(who, pairIndex);
-        vm.prank(who);
-        trading.openTrade(_tradeFull(who, pairIndex, collateral, leverage, buy, target, tp, sl), _noBuilder(), kind, 0);
+        _submit(_tradeFull(who, pairIndex, collateral, leverage, buy, target, tp, sl), kind);
+    }
+
+    function _submit(IOstiumTradingStorage.Trade memory t, IOstiumTradingStorage.OpenOrderType kind) internal {
+        vm.prank(t.trader);
+        trading.openTrade(t, _noBuilder(), kind, 0);
     }
 
     function _requestClose(address who, uint16 pairIndex, uint8 index, uint16 pct, uint192 wanted, uint32 slippageP)
@@ -174,9 +197,30 @@ abstract contract TestnetTrading is TestnetFixture {
         IOstiumTradingStorage.LimitOrder kind,
         uint256 priceTimestamp
     ) internal returns (Vm.Log[] memory) {
+        return _performPayload(forwarder, _automationPayload(who, pairIndex, index, kind, priceTimestamp));
+    }
+
+    /// @notice The fixture's `_trigger`, but stamped with `vm.getBlockTimestamp()`: under via-IR
+    ///         the optimiser may reuse a `block.timestamp` read from before a `vm.warp` in the
+    ///         same (inlined) function, which would backdate the automation request.
+    function _triggerNow(
+        address forwarder,
+        address who,
+        uint16 pairIndex,
+        uint8 index,
+        IOstiumTradingStorage.LimitOrder kind
+    ) internal returns (uint256 orderId, uint32 timestamp) {
+        bytes memory payload = _automationPayload(who, pairIndex, index, kind, vm.getBlockTimestamp());
         vm.recordLogs();
         vm.prank(forwarder);
-        tradesUpKeep.performUpkeep(_automationPayload(who, pairIndex, index, kind, priceTimestamp));
+        tradesUpKeep.performUpkeep(payload);
+        return _lastPriceRequest();
+    }
+
+    function _performPayload(address forwarder, bytes memory payload) internal returns (Vm.Log[] memory) {
+        vm.recordLogs();
+        vm.prank(forwarder);
+        tradesUpKeep.performUpkeep(payload);
         return vm.getRecordedLogs();
     }
 

@@ -539,15 +539,15 @@ contract TradingTest is TestnetTrading {
         IOstiumTradingStorage.OpenLimitOrder memory o = ts.getOpenLimitOrder(trader, BTC, 0);
         assertEq(o.targetPrice, 64_000e18, "target");
         assertEq(uint8(o.orderType), uint8(LIMIT), "kind");
-        assertEq(o.createdAt, block.timestamp, "createdAt");
-        assertEq(o.lastUpdated, block.timestamp, "lastUpdated");
+        assertEq(o.createdAt, vm.getBlockTimestamp(), "createdAt");
+        assertEq(o.lastUpdated, vm.getBlockTimestamp(), "lastUpdated");
         assertEq(ts.limitOrderIds(trader, BTC, 0), 1, "first limit order id");
         assertFalse(_hasPriceRequest(vm.getRecordedLogs()), "no oracle request for a resting order");
     }
 
     function test_limitLong_executesWhenTheAskFillIsAtOrBelowTarget() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 63_900e18);
 
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
@@ -560,7 +560,7 @@ contract TradingTest is TestnetTrading {
 
     function test_limitLong_notHitLeavesTheOrderResting() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.NOT_HIT);
         // mid exactly at target: the ask-side fill is one basis point above it
@@ -574,11 +574,11 @@ contract TradingTest is TestnetTrading {
     function test_limitShort_executesWhenTheBidFillIsAtOrAboveTarget() public {
         _place(trader, BTC, 1_000e6, 1_000, false, 66_000e18, 0, 0, LIMIT);
         uint256 snap = vm.snapshotState();
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 66_000e18); // bid 65,993.4 < target
         assertEq(ts.openTradesCount(trader, BTC), 0, "not hit at mid == target");
         vm.revertToState(snap);
-        (id, t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (id, t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 66_100e18);
         assertEq(ts.getOpenTrade(trader, BTC, 0).openPrice, _spreadFill(66_100e18, false, true), "short filled at the bid");
     }
@@ -587,14 +587,14 @@ contract TradingTest is TestnetTrading {
     function test_stopLong_executesAtOrAboveTargetOnTheMid() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 66_000e18, 0, 0, STOP);
         uint256 snap = vm.snapshotState();
-        (uint256 id, uint32 t) = _trigger(liquidatorB, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorB, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.NOT_HIT);
         _deliverAt(id, BTC, t, 66_000e18 - 1);
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0), "one wei below: not hit");
         vm.revertToState(snap);
 
-        (id, t) = _trigger(liquidatorB, trader, BTC, 0, OPEN);
+        (id, t) = _triggerNow(liquidatorB, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 66_000e18);
         assertEq(ts.getOpenTrade(trader, BTC, 0).openPrice, _spreadFill(66_000e18, true, true), "exactly at target: hit");
         assertFalse(ts.hasOpenLimitOrder(trader, BTC, 0), "consumed");
@@ -603,11 +603,11 @@ contract TradingTest is TestnetTrading {
     function test_stopShort_executesAtOrBelowTarget() public {
         _place(trader, BTC, 1_000e6, 1_000, false, 64_000e18, 0, 0, STOP);
         uint256 snap = vm.snapshotState();
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 64_000e18 + 1);
         assertEq(ts.openTradesCount(trader, BTC), 0, "one wei above: not hit");
         vm.revertToState(snap);
-        (id, t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (id, t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 64_000e18);
         assertEq(ts.openTradesCount(trader, BTC), 1, "at target: hit");
     }
@@ -615,14 +615,14 @@ contract TradingTest is TestnetTrading {
     function test_limitOpen_cancelsWhenTheFillWouldAlreadyHitTpOrSl() public {
         // STOP long 66,000 with TP 66,050: a 66,100 mid fills at 66,106.61 >= TP
         _place(trader, BTC, 1_000e6, 1_000, true, 66_000e18, 66_050e18, 0, STOP);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.TP_REACHED);
         _deliverAt(id, BTC, t, 66_100e18);
 
         // LIMIT long ETH 2,490 with SL 2,489: a 2,488 mid fills at 2,488.2488 <= SL
         _place(trader, ETH, 1_000e6, 1_000, true, 2_490e18, 0, 2_489e18, LIMIT);
-        (id, t) = _trigger(liquidatorA, trader, ETH, 0, OPEN);
+        (id, t) = _triggerNow(liquidatorA, trader, ETH, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, ETH, IOstiumTradingCallbacks.CancelReason.SL_REACHED);
         _deliverAt(id, ETH, t, 2_488e18);
@@ -631,7 +631,7 @@ contract TradingTest is TestnetTrading {
 
     function test_limitOpen_cancelsOnExposureLimitsAndKeepsTheOrder() public {
         _place(trader, WBT, 5_000e6, 2_500, true, 21e18, 0, 0, LIMIT);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, WBT, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, WBT, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, WBT, IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS);
         _deliverAt(id, WBT, t, _basePrice(WBT));
@@ -640,14 +640,14 @@ contract TradingTest is TestnetTrading {
 
     function test_limitOpen_cancelsWhenCallbacksPausedOrMarketClosed() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED);
         _deliver(id, _closedReport(BTC, t));
 
         vm.prank(manager);
         callbacks.pause();
-        (id, t) = _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        (id, t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.PAUSED);
         _deliverAt(id, BTC, t, 63_000e18);
@@ -665,8 +665,8 @@ contract TradingTest is TestnetTrading {
         assertEq(o.targetPrice, 63_000e18, "target");
         assertEq(o.tp, 70_000e18, "tp");
         assertEq(o.sl, 60_000e18, "sl");
-        assertEq(o.lastUpdated, block.timestamp, "lastUpdated moved");
-        assertEq(o.createdAt, block.timestamp - 7, "createdAt kept");
+        assertEq(o.lastUpdated, vm.getBlockTimestamp(), "lastUpdated moved");
+        assertEq(o.createdAt, vm.getBlockTimestamp() - 7, "createdAt kept");
     }
 
     function test_updateLimit_rejections() public {
@@ -682,7 +682,7 @@ contract TradingTest is TestnetTrading {
         trading.updateOpenLimitOrder(BTC, 0, 64_000e18, 0, 64_000e18);
         vm.stopPrank();
 
-        _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.updateOpenLimitOrder(BTC, 0, 63_000e18, 0, 0);
@@ -715,7 +715,7 @@ contract TradingTest is TestnetTrading {
 
     function test_cancelLimit_blockedWhileATriggerIsPending() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
-        _trigger(liquidatorA, trader, BTC, 0, OPEN);
+        _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.cancelOpenLimitOrder(BTC, 0);
@@ -737,7 +737,7 @@ contract TradingTest is TestnetTrading {
         _openWithTpSl(66_000e18, 0);
         uint256 before = _bal(trader);
         uint256 vaultBefore = _bal(d.vault);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, TP);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, TP);
         _deliverAt(id, BTC, t, 66_100e18);
         assertEq(ts.openTradesCount(trader, BTC), 0, "closed");
         uint256 paid = _bal(trader) - before;
@@ -748,7 +748,7 @@ contract TradingTest is TestnetTrading {
 
     function test_tp_notHitOneTickShort() public {
         _openWithTpSl(66_000e18, 0);
-        (uint256 id, uint32 t) = _trigger(liquidatorA, trader, BTC, 0, TP);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, TP);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.callbacks);
         emit IOstiumTradingCallbacks.AutomationCloseOrderCanceled(
@@ -763,7 +763,7 @@ contract TradingTest is TestnetTrading {
         _openWithTpSl(0, 64_000e18);
         uint256 before = _bal(trader);
         uint256 vaultBefore = _bal(d.vault);
-        (uint256 id, uint32 t) = _trigger(liquidatorB, trader, BTC, 0, SL);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorB, trader, BTC, 0, SL);
         _deliverAt(id, BTC, t, 64_000e18); // mid exactly at SL
         assertEq(ts.openTradesCount(trader, BTC), 0, "closed at the SL");
         uint256 paid = _bal(trader) - before;
@@ -773,7 +773,7 @@ contract TradingTest is TestnetTrading {
 
     function test_sl_notHitOneWeiAbove() public {
         _openWithTpSl(0, 64_000e18);
-        (uint256 id, uint32 t) = _trigger(liquidatorB, trader, BTC, 0, SL);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorB, trader, BTC, 0, SL);
         _deliverAt(id, BTC, t, 64_000e18 + 1);
         assertEq(ts.openTradesCount(trader, BTC), 1, "survives");
     }
@@ -795,7 +795,7 @@ contract TradingTest is TestnetTrading {
         trading.updateTp(BTC, 1, maxTp);
         vm.stopPrank();
         assertEq(ts.getOpenTrade(trader, BTC, 0).tp, maxTp, "exactly the max-gain price accepted");
-        assertEq(ts.getOpenTradeInfo(trader, BTC, 0).tpLastUpdated, block.timestamp, "timestamped");
+        assertEq(ts.getOpenTradeInfo(trader, BTC, 0).tpLastUpdated, vm.getBlockTimestamp(), "timestamped");
 
         _open(other, ETH, 1_000e6, 1_000, false);
         uint192 os = ts.getOpenTrade(other, ETH, 0).openPrice;
@@ -836,7 +836,7 @@ contract TradingTest is TestnetTrading {
 
     function test_updateTpSl_blockedByAPendingTriggerOrClose() public {
         _openWithTpSl(66_000e18, 64_000e18);
-        _trigger(liquidatorA, trader, BTC, 0, TP);
+        _triggerNow(liquidatorA, trader, BTC, 0, TP);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.updateTp(BTC, 0, 67_000e18);
