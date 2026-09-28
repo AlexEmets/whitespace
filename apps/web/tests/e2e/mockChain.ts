@@ -1,14 +1,32 @@
 import {
   decodeFunctionData,
+  encodeAbiParameters,
   encodeEventTopics,
+  parseAbiParameters,
   encodeFunctionResult,
   numberToHex,
   type Address,
   type Hex,
 } from 'viem';
 import { CHAIN_ID } from '../../src/lib/config';
-import { COLLATERAL_ADDRESS, PAIRS_STORAGE_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_ADDRESS, VAULT_ADDRESS } from '../../src/lib/deployment';
-import { ERC20_ABI, PAIRS_STORAGE_ABI, PAIR_INFOS_ABI, TRADING_ABI, VAULT_ABI } from '../../src/lib/abi';
+import {
+  CALLBACKS_ADDRESS,
+  COLLATERAL_ADDRESS,
+  PAIRS_STORAGE_ADDRESS,
+  PAIR_INFOS_ADDRESS,
+  TRADING_ADDRESS,
+  TRADING_STORAGE_ADDRESS,
+  VAULT_ADDRESS,
+} from '../../src/lib/deployment';
+import {
+  CALLBACKS_ABI,
+  ERC20_ABI,
+  PAIRS_STORAGE_ABI,
+  PAIR_INFOS_ABI,
+  TRADING_ABI,
+  TRADING_STORAGE_ABI,
+  VAULT_ABI,
+} from '../../src/lib/abi';
 import { PAIR_INFOS_IMPACT_ABI } from '../../src/lib/abiPairInfos';
 import { MOCK_TRADER_ADDRESS, type TestState } from './testState';
 
@@ -94,8 +112,27 @@ export function createMockChain(state: TestState) {
     if (addressEquals(to, TRADING_ADDRESS)) {
       const decoded = decodeFunctionData({ abi: TRADING_ABI, data });
       if (decoded.functionName === 'marketOrdersTimeout') {
-        return encodeFunctionResult({ abi: TRADING_ABI, functionName: 'marketOrdersTimeout', result: 30 });
+        return encodeFunctionResult({ abi: TRADING_ABI, functionName: 'marketOrdersTimeout', result: 11 });
       }
+      if (decoded.functionName === 'triggerTimeout') {
+        return encodeFunctionResult({ abi: TRADING_ABI, functionName: 'triggerTimeout', result: 30 });
+      }
+    }
+
+    if (addressEquals(to, CALLBACKS_ADDRESS)) {
+      decodeFunctionData({ abi: CALLBACKS_ABI, data }); // maxSl_P is the only read
+      return encodeFunctionResult({ abi: CALLBACKS_ABI, functionName: 'maxSl_P', result: 75 });
+    }
+
+    if (addressEquals(to, TRADING_STORAGE_ADDRESS)) {
+      const decoded = decodeFunctionData({ abi: TRADING_STORAGE_ABI, data });
+      const [, pairIndex, index] = decoded.args as [Address, number, number];
+      const p = state.positions.find((x) => x.pairIndex === pairIndex && x.index === index);
+      return encodeFunctionResult({
+        abi: TRADING_STORAGE_ABI,
+        functionName: 'openTradesInfo',
+        result: [BigInt(p?.tradeId ?? 0), 0n, Number(p?.leverage ?? 0), 0, 0, 0, false],
+      });
     }
 
     if (addressEquals(to, PAIR_INFOS_ADDRESS)) {
@@ -120,6 +157,22 @@ export function createMockChain(state: TestState) {
           functionName: 'pairDynamicSpreadState',
           result: [0n, 0n, 0],
         });
+      }
+      if (decoded.functionName === 'getPendingAccFundingFees') {
+        return encodeFunctionResult({
+          abi: PAIR_INFOS_ABI,
+          functionName: 'getPendingAccFundingFees',
+          result: [0n, 0n, state.fundingRatePerBlock, 0n],
+        });
+      }
+      if (decoded.functionName === 'getTradeFundingFee') {
+        return encodeFunctionResult({ abi: PAIR_INFOS_ABI, functionName: 'getTradeFundingFee', result: [0n, 0n] });
+      }
+      if (decoded.functionName === 'getTradeRolloverFee') {
+        return encodeFunctionResult({ abi: PAIR_INFOS_ABI, functionName: 'getTradeRolloverFee', result: 0n });
+      }
+      if (decoded.functionName === 'getTradeLiquidationPrice' || decoded.functionName === 'getTradeLiquidationPricePure') {
+        return encodeFunctionResult({ abi: PAIR_INFOS_ABI, functionName: decoded.functionName, result: 58_500n * 10n ** 18n });
       }
       if (decoded.functionName === 'pairOpeningFees') {
         // Matches the ruling's stated real config: opening fees are currently zero.
@@ -149,6 +202,7 @@ export function createMockChain(state: TestState) {
    */
   function isSimulatedWrite(data: Hex): boolean {
     for (const abi of [ERC20_ABI, VAULT_ABI, TRADING_ABI] as const) {
+      // A read on TRADING_ABI (marketOrdersTimeout, triggerTimeout) is not a write.
       try {
         const { functionName } = decodeFunctionData({ abi, data });
         const item = (abi as readonly { type: string; name?: string; stateMutability?: string }[]).find(
@@ -233,8 +287,65 @@ export function createMockChain(state: TestState) {
     if (addressEquals(to, TRADING_ADDRESS)) {
       const decoded = decodeFunctionData({ abi: TRADING_ABI, data });
       let logs: unknown[] = [];
+      state.sentTrading.push({ functionName: decoded.functionName, args: decoded.args ?? [] });
+      const now = Math.floor(Date.now() / 1000);
 
-      if (decoded.functionName === 'openTrade') {
+      if (decoded.functionName === 'openTrade' && (decoded.args[2] as number) !== 0) {
+        const [t, , orderType] = decoded.args;
+        const index = state.limitOrders.filter((o) => o.pairIndex === t.pairIndex).length;
+        state.limitOrders.push({
+          pairIndex: t.pairIndex,
+          index,
+          orderType: orderType === 1 ? 'LIMIT' : 'STOP',
+          buy: t.buy,
+          collateral: t.collateral.toString(),
+          leverage: t.leverage.toString(),
+          triggerPrice: t.openPrice.toString(),
+          tp: t.tp.toString(),
+          sl: t.sl.toString(),
+          placedAt: now,
+          updatedAt: now,
+        });
+        const topics = encodeEventTopics({
+          abi: TRADING_ABI,
+          eventName: 'OpenLimitPlacedV2',
+          args: { trader: t.trader, pairIndex: t.pairIndex },
+        });
+        logs = [
+          {
+            address: TRADING_ADDRESS,
+            topics,
+            data: encodeAbiParameters(
+              parseAbiParameters(
+                'uint8 index, (uint256,uint192,uint192,uint192,address,uint32,uint16,uint8,bool,bool) trade, uint8 orderType, (address,uint32) builderFee',
+              ),
+              [
+                index,
+                [t.collateral, t.openPrice, t.tp, t.sl, t.trader, t.leverage, t.pairIndex, index, t.buy, t.isDayTrade],
+                orderType as number,
+                ['0x0000000000000000000000000000000000000000', 0],
+              ],
+            ),
+            blockHash: numberToHex(blockCounter + 1000),
+            blockNumber: numberToHex(blockCounter),
+            transactionHash: hash,
+            transactionIndex: '0x0',
+            logIndex: '0x0',
+            removed: false,
+          },
+        ];
+      } else if (decoded.functionName === 'cancelOpenLimitOrder') {
+        const [pairIndex, index] = decoded.args;
+        state.limitOrders = state.limitOrders.filter((o) => !(o.pairIndex === pairIndex && o.index === index));
+      } else if (decoded.functionName === 'updateOpenLimitOrder') {
+        const [pairIndex, index, price, tp, sl] = decoded.args;
+        const o = state.limitOrders.find((x) => x.pairIndex === pairIndex && x.index === index);
+        if (o) Object.assign(o, { triggerPrice: price.toString(), tp: tp.toString(), sl: sl.toString(), updatedAt: now });
+      } else if (decoded.functionName === 'updateTp' || decoded.functionName === 'updateSl') {
+        const [pairIndex, index, value] = decoded.args;
+        const p = state.positions.find((x) => x.pairIndex === pairIndex && x.index === index);
+        if (p) p[decoded.functionName === 'updateTp' ? 'tp' : 'sl'] = value.toString();
+      } else if (decoded.functionName === 'openTrade') {
         const [t] = decoded.args;
         const orderId = state.nextOrderId;
         state.nextOrderId += 1n;

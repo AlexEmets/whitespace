@@ -41,6 +41,37 @@ export interface MockPosition {
   tradeId: string;
 }
 
+export interface MockLimitOrder {
+  pairIndex: number;
+  index: number;
+  orderType: 'LIMIT' | 'STOP';
+  buy: boolean;
+  collateral: string;
+  leverage: string;
+  triggerPrice: string;
+  tp: string;
+  sl: string;
+  placedAt: number;
+  updatedAt: number;
+}
+
+export interface MockFee {
+  id: string;
+  tradeId: string | null;
+  pairIndex: number | null;
+  kind: string;
+  /** raw 1e6, signed */
+  amount: string;
+  at: number;
+  txHash: string;
+}
+
+/** A decoded wallet-signed call to Trading, recorded so tests can assert exactly what was signed. */
+export interface SentCall {
+  functionName: string;
+  args: readonly unknown[];
+}
+
 export class TestState {
   usdwBalance = 10_000_000_000n; // 10,000.00 USDW
   /** spender (lowercased address) -> approved amount */
@@ -59,4 +90,11 @@ export class TestState {
   degraded = false;
   /** PairInfos priceImpactK (PRECISION_18-scaled). 0 = no size-dependent impact. */
   priceImpactK = 0n;
+  /** Oracle bid/ask half-spread around the mark, raw 1e18. The real API always sends both. */
+  halfSpread = 0n;
+  limitOrders: MockLimitOrder[] = [];
+  fees: MockFee[] = [];
+  sentTrading: SentCall[] = [];
+  /** Per-block funding rate, PRECISION_18, positive when longs pay. */
+  fundingRatePerBlock = 0n;
 }

@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { asciiToBytes32Hex } from '@whitespace/shared/markets';
 import { SCALE, toDecimalString } from '@whitespace/shared/decimal';
-import { MOCK_PAIR_INDEX, type MockOrder, type MockPosition, type TestState } from './testState';
+import { MOCK_PAIR_INDEX, type MockLimitOrder, type MockOrder, type MockPosition, type TestState } from './testState';
 
 // TestState holds raw on-chain base units, as the chain and the indexer do. The real API
 // (services/api/src/format.ts) formats every money field into a decimal string on the way
@@ -19,6 +19,17 @@ function formatPosition(p: MockPosition) {
     openPrice: fmtPrice(p.openPrice),
     tp: fmtPrice(p.tp),
     sl: fmtPrice(p.sl),
+  };
+}
+
+function formatLimitOrder(o: MockLimitOrder) {
+  return {
+    ...o,
+    collateral: fmtCollateral(o.collateral),
+    leverage: fmtLeverage(o.leverage),
+    triggerPrice: fmtPrice(o.triggerPrice),
+    tp: fmtPrice(o.tp),
+    sl: fmtPrice(o.sl),
   };
 }
 
@@ -79,6 +90,9 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
         json: {
           index: fmtPrice(state.indexPrice),
           mark: fmtPrice(state.markPrice),
+          bid: fmtPrice((BigInt(state.markPrice) - state.halfSpread).toString()),
+          ask: fmtPrice((BigInt(state.markPrice) + state.halfSpread).toString()),
+          source: 'publisher',
           updatedAt: Math.floor(Date.now() / 1000),
           healthyVenues: state.degraded ? 2 : 4,
           minHealthyVenues: 3,
@@ -95,6 +109,31 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
     const historyMatch = path.match(/^\/positions\/(0x[a-fA-F0-9]+)\/history$/);
     if (historyMatch) {
       return route.fulfill({ json: [] });
+    }
+
+    if (/^\/limit-orders\/0x[a-fA-F0-9]+$/.test(path)) {
+      return route.fulfill({ json: state.limitOrders.map(formatLimitOrder) });
+    }
+
+    if (/^\/orders\/0x[a-fA-F0-9]+\/history$/.test(path)) {
+      return route.fulfill({ json: [...state.orders].reverse().map(formatOrder) });
+    }
+
+    if (/^\/fees\/0x[a-fA-F0-9]+$/.test(path)) {
+      return route.fulfill({ json: state.fees.map((f) => ({ ...f, amount: fmtCollateral(f.amount) })) });
+    }
+
+    if (/^\/pnl\/0x[a-fA-F0-9]+$/.test(path)) {
+      const funding = state.fees.filter((f) => f.kind === 'funding' || f.kind === 'rollover');
+      const sum = (xs: typeof state.fees) => xs.reduce((a, f) => a + BigInt(f.amount), 0n).toString();
+      return route.fulfill({
+        json: {
+          realizedPnl: fmtCollateral('0'),
+          fees: fmtCollateral(sum(state.fees.filter((f) => !funding.includes(f)))),
+          funding: fmtCollateral(sum(funding)),
+          trades: 0,
+        },
+      });
     }
 
     const ordersMatch = path.match(/^\/orders\/(0x[a-fA-F0-9]+)$/);
