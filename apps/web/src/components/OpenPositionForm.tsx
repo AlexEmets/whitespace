@@ -28,6 +28,7 @@ import { estimatePositionSizeBase } from '@/lib/pnl';
 import { slippageBpsToCover } from '@/lib/quote';
 import type { MarketSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
+import { RiskPreview } from './RiskPreview';
 import styles from './OrderPanel.module.css';
 
 const PERCENT_MARKS = [0, 25, 50, 75, 100] as const;
@@ -100,7 +101,6 @@ export function OpenPositionForm({
   const maxLeverageX = maxLeverage > 0n ? Number(maxLeverage / 100n) : 1;
   const [leverageX, setLeverageX] = useState(Math.min(10, Math.max(1, maxLeverageX)));
   const [leverageTouched, setLeverageTouched] = useState(false);
-  const [leverageOpen, setLeverageOpen] = useState(false);
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
 
   // `maxLeverage` is 0n until /markets resolves; re-derive the default then unless the trader
@@ -275,45 +275,54 @@ export function OpenPositionForm({
           ? `${buy ? 'Buy · Long' : 'Sell · Short'} ${baseAsset}`
           : `Place ${KIND_LABEL[kind]} ${buy ? 'Buy' : 'Sell'} ${baseAsset}`;
 
+  // The spread meter is display-only: the width of a bar, from a percentage that is also
+  // printed exactly beside it. Square-root scaled so the half-spread of a small order is a
+  // visible sliver and a very large order still fits (0.8% fills the track).
+  const spreadPercent = quote ? Number(quote.spreadP) / 1e18 : 0;
+  const spreadWidth = Math.min(100, Math.sqrt(Math.max(0, spreadPercent) / 0.8) * 100);
+  const quoteSize =
+    ticket && ticket.sizeBaseRaw > 0n ? `${formatMoney(ticket.sizeBaseRaw, PRICE_DECIMALS_NUM, { fractionDigits: 4 })} ${baseAsset}` : null;
+  const leverageFill = maxLeverageX > 1 ? ((leverageX - 1) / (maxLeverageX - 1)) * 100 : 100;
+
   return (
     <form onSubmit={handleSubmit} data-testid="open-position-form" className={styles.panel}>
-      <div className={styles.topRow}>
-        <button
-          type="button"
-          className={styles.leverageButton}
-          data-testid="leverage-button"
-          aria-expanded={leverageOpen}
-          onClick={() => setLeverageOpen((o) => !o)}
-        >
-          <span data-testid="leverage-value">{leverageX}×</span>
-        </button>
-        <span className={styles.marginMode} title="Every position has its own margin. Cross margin does not exist in these contracts.">
-          Isolated
-        </span>
-      </div>
-
-      {leverageOpen ? (
-        <div className={`leverage-row ${styles.leverageEditor}`}>
-          <input
-            data-testid="leverage-slider"
-            type="range"
-            min={1}
-            max={Math.max(1, maxLeverageX)}
-            step={1}
-            value={leverageX}
-            aria-label="Leverage"
-            style={{ ['--fill' as string]: `${maxLeverageX > 1 ? ((leverageX - 1) / (maxLeverageX - 1)) * 100 : 100}%` }}
-            onChange={(e) => {
-              setLeverageTouched(true);
-              setLeverageX(Number(e.target.value));
-            }}
-          />
-          <div className="bounds">
-            <span>1×</span>
-            <span>{maxLeverageX}× max</span>
-          </div>
+      <section className={styles.quoteCard} aria-label="Vault quote">
+        <div className={styles.quoteHead}>
+          <span className={styles.quoteTitle}>Vault quote{quoteSize ? ` · ${quoteSize}` : ''}</span>
+          <span className={styles.quoteLive}>{quote ? 'live' : '—'}</span>
         </div>
-      ) : null}
+        <div className={styles.sideTrack}>
+          <button
+            type="button"
+            data-testid="direction-long"
+            aria-pressed={buy}
+            className={`${styles.side} ${buy ? `${styles.buyActive} active` : ''}`}
+            onClick={() => setBuy(true)}
+          >
+            <span>Long</span>
+            <span className={styles.sidePrice} data-testid="quote-buy">{buyLabel}</span>
+          </button>
+          <button
+            type="button"
+            data-testid="direction-short"
+            aria-pressed={!buy}
+            className={`${styles.side} ${!buy ? `${styles.sellActive} active` : ''}`}
+            onClick={() => setBuy(false)}
+          >
+            <span>Short</span>
+            <span className={styles.sidePrice} data-testid="quote-sell">{sellLabel}</span>
+          </button>
+        </div>
+        <div className={styles.spreadRow}>
+          <div className={styles.spreadTrack} aria-hidden="true">
+            {quote ? <span className={styles.spreadFill} style={{ left: `${50 - spreadWidth / 2}%`, width: `${spreadWidth}%` }} /> : null}
+            <span className={styles.spreadMid} />
+          </div>
+          <span>
+            spread <b data-testid="quote-spread">{quote ? formatPercent18(quote.spreadP) : '—'}</b>
+          </span>
+        </div>
+      </section>
 
       <div className={styles.kindTabs} role="tablist">
         {ORDER_KINDS.map((k) => (
@@ -329,47 +338,10 @@ export function OpenPositionForm({
             {KIND_LABEL[k]}
           </button>
         ))}
+        <span className={styles.marginMode} title="Every position has its own margin. Cross margin does not exist in these contracts.">
+          Isolated
+        </span>
       </div>
-
-      <div className={styles.sideButtons}>
-        <button
-          type="button"
-          data-testid="direction-long"
-          className={`${styles.side} ${buy ? `${styles.buyActive} active` : ''}`}
-          onClick={() => setBuy(true)}
-        >
-          <span>Buy</span>
-          <span className={styles.sidePrice} data-testid="quote-buy">{buyLabel}</span>
-        </button>
-        <button
-          type="button"
-          data-testid="direction-short"
-          className={`${styles.side} ${!buy ? `${styles.sellActive} active` : ''}`}
-          onClick={() => setBuy(false)}
-        >
-          <span>Sell</span>
-          <span className={styles.sidePrice} data-testid="quote-sell">{sellLabel}</span>
-        </button>
-      </div>
-
-      <dl className={styles.facts}>
-        <div>
-          <dt>Spread</dt>
-          <dd data-testid="quote-spread">{quote ? formatPercent18(quote.spreadP) : '—'}</dd>
-        </div>
-        <div>
-          <dt>Available to trade</dt>
-          <dd data-testid="usdw-balance">{formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</dd>
-        </div>
-        <div>
-          <dt>Current position</dt>
-          <dd data-testid="current-position" className={currentPosition === null ? undefined : currentPosition >= 0n ? styles.long : styles.short}>
-            {currentPosition === null
-              ? '—'
-              : `${currentPosition >= 0n ? '+' : '−'}${formatMoney(currentPosition >= 0n ? currentPosition : -currentPosition, PRICE_DECIMALS_NUM, { fractionDigits: 4 })} ${baseAsset}`}
-          </dd>
-        </div>
-      </dl>
 
       {kind !== 'MARKET' ? (
         <div className="field-group">
@@ -393,9 +365,12 @@ export function OpenPositionForm({
         </div>
       ) : null}
 
-      <div className="field-group">
+      <div className={`field-group ${styles.sizeInput}`}>
         <div className="field-label-row">
           <span>Size</span>
+          <span>
+            Avail. <span className="mono" data-testid="usdw-balance">{formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</span>
+          </span>
         </div>
         <div className="input-with-suffix">
           <input
@@ -413,22 +388,49 @@ export function OpenPositionForm({
       </div>
 
       <div className={styles.percentRow}>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={Math.min(100, Math.round(percentUsed))}
-          aria-label="Percent of available balance"
-          data-testid="size-percent-slider"
-          onChange={(e) => setPercent(Number(e.target.value))}
-        />
         <div className={styles.percentMarks}>
           {PERCENT_MARKS.slice(1).map((pct) => (
             <button type="button" key={pct} onClick={() => setPercent(pct)} data-testid={`quick-fill-${pct}`}>
               {pct === 100 ? 'Max' : `${pct}%`}
             </button>
           ))}
+        </div>
+        <input
+          type="range"
+          className="slim-range"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.min(100, Math.round(percentUsed))}
+          aria-label="Percent of available balance"
+          data-testid="size-percent-slider"
+          style={{ ['--fill' as string]: `${Math.min(100, Math.round(percentUsed))}%` }}
+          onChange={(e) => setPercent(Number(e.target.value))}
+        />
+      </div>
+
+      <div className="leverage-row">
+        <div className="field-label-row">
+          <span>Leverage</span>
+          <span data-testid="leverage-value">{leverageX}×</span>
+        </div>
+        <input
+          data-testid="leverage-slider"
+          type="range"
+          min={1}
+          max={Math.max(1, maxLeverageX)}
+          step={1}
+          value={leverageX}
+          aria-label="Leverage"
+          style={{ ['--fill' as string]: `${leverageFill}%` }}
+          onChange={(e) => {
+            setLeverageTouched(true);
+            setLeverageX(Number(e.target.value));
+          }}
+        />
+        <div className="bounds">
+          <span>1×</span>
+          <span>{maxLeverageX}× max</span>
         </div>
       </div>
 
@@ -450,6 +452,8 @@ export function OpenPositionForm({
           </div>
         </div>
       ) : null}
+
+      {ticket && ticket.sizeBaseRaw > 0n ? <RiskPreview entry={entryPrice} liq={estLiqPrice} tp={tpRaw} sl={slRaw} /> : null}
 
       {isDegraded ? (
         <p role="alert" className="error-text" data-testid="open-blocked-degraded">
@@ -474,21 +478,20 @@ export function OpenPositionForm({
         <p role="alert" className="error-text" data-testid="faucet-error">{faucet.error}</p>
       ) : null}
 
-      <div className="submit-row">
-        <button type="submit" className={buy ? 'long' : 'short'} data-testid="submit-open-button" disabled={!canSubmit}>
-          {submitLabel}
-        </button>
-        {state.phase === 'approving' ? (
-          <p className="approval-notice" role="status" data-testid="approval-notice">
-            First order from this wallet — it will ask twice: once to allow USDW, then for the order itself.
-          </p>
-        ) : null}
-      </div>
-
       <dl className={styles.summary}>
         <div>
+          <dt>Current position</dt>
+          <dd data-testid="current-position" className={currentPosition === null ? undefined : currentPosition >= 0n ? styles.long : styles.short}>
+            {currentPosition === null
+              ? '—'
+              : `${currentPosition >= 0n ? '+' : '−'}${formatMoney(currentPosition >= 0n ? currentPosition : -currentPosition, PRICE_DECIMALS_NUM, { fractionDigits: 4 })} ${baseAsset}`}
+          </dd>
+        </div>
+        <div>
           <dt>Liquidation price</dt>
-          <dd data-testid="est-liq-price">{estLiqPrice !== null ? formatMoney(estLiqPrice, PRICE_DECIMALS_NUM) : '—'}</dd>
+          <dd data-testid="est-liq-price" className={estLiqPrice !== null ? styles.liq : undefined}>
+            {estLiqPrice !== null ? formatMoney(estLiqPrice, PRICE_DECIMALS_NUM) : '—'}
+          </dd>
         </div>
         <div>
           <dt>Order value</dt>
@@ -548,25 +551,36 @@ export function OpenPositionForm({
         </div>
       </dl>
 
+      <div className="submit-row">
+        <button type="submit" className={buy ? 'long' : 'short'} data-testid="submit-open-button" disabled={!canSubmit}>
+          {submitLabel}
+        </button>
+        {state.phase === 'approving' ? (
+          <p className="approval-notice" role="status" data-testid="approval-notice">
+            First order from this wallet — it will ask twice: once to allow USDW, then for the order itself.
+          </p>
+        ) : null}
+      </div>
+
       {state.phase === 'error' ? (
         <p role="alert" className="error-text" data-testid="open-error">{state.message}</p>
       ) : null}
 
       {state.phase === 'placed' ? (
-        <p role="status" data-testid="order-placed">
+        <p role="status" className={styles.status} data-testid="order-placed">
           {KIND_LABEL[state.kind]} order placed. It rests on chain until the price reaches it — see Open Orders.
         </p>
       ) : null}
 
       {state.phase === 'submitted' ? (
-        <div data-testid="order-pending-banner" role="status">
+        <div className={styles.status} data-testid="order-pending-banner" role="status">
           {!submittedOrder || submittedOrder.status === 'pending' ? (
-            <p>
+            <p className={styles.status}>
               Order requested (id {state.orderId || '—'}). Nothing has happened yet — the position opens, or the order
               is cancelled, once a keeper delivers the signed price report.
             </p>
           ) : submittedOrder.status === 'executed' ? (
-            <p data-testid="order-filled">Filled — your position is now open.</p>
+            <p className={`${styles.status} ${styles.long}`} data-testid="order-filled">Filled — your position is now open.</p>
           ) : (
             <p data-testid="order-cancelled" className="error-text">
               Cancelled ({submittedOrder.cancelReason ?? 'unknown reason'}): {explainCancelReason(submittedOrder.cancelReason ?? '')}

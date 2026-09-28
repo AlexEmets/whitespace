@@ -198,11 +198,26 @@ describe('<OpenPositionForm>', () => {
   it('states the selected leverage as a figure, not only as a slider position', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
     expect(screen.getByTestId('leverage-value')).toHaveTextContent('10×');
-    expect(screen.queryByTestId('leverage-slider')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('leverage-button'));
 
     fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '25' } });
     expect(screen.getByTestId('leverage-value')).toHaveTextContent('25×');
+  });
+
+  /** The Eclipse ticket keeps the slider on the panel: leverage is set on every order, so
+   * hiding it behind a toggle cost a click each time and hid the market's maximum. */
+  it('keeps the leverage slider and the market maximum on the ticket without a toggle', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('leverage-slider')).toHaveAttribute('max', '100');
+    expect(screen.queryByTestId('leverage-button')).not.toBeInTheDocument();
+  });
+
+  it('marks the chosen side as pressed for assistive tech, not only by colour', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    expect(screen.getByTestId('direction-long')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('direction-short')).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByTestId('direction-short'));
+    expect(screen.getByTestId('direction-long')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('direction-short')).toHaveAttribute('aria-pressed', 'true');
   });
 
   /**

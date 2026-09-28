@@ -1,136 +1,375 @@
-/* Order-entry panel, laid out after Variational Omni's: leverage and margin mode on top,
-   order-kind tabs, then the two side buttons carrying the vault's quote. */
+/* The order ticket, after Variational Omni's: there is no book, so the ticket opens with
+   the vault's two-sided quote for the size being typed, and the side selector *is* that
+   quote — Long at the ask, Short at the bid. */
 
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 12px;
 }
 
-.topRow {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+/* ---- Quote card ---- */
+
+.quoteCard {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
-.leverageButton,
-.marginMode {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  color: var(--fg);
-  padding: 0.5rem;
-  text-align: center;
+.quoteHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.quoteTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quoteTitle::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.quoteLive {
+  font-family: var(--font-mono);
   font-size: 0.8rem;
 }
 
-.leverageButton {
-  cursor: pointer;
-}
-
-.leverageButton:hover {
-  border-color: var(--accent);
-}
-
-.marginMode {
-  color: var(--fg-muted);
-}
-
-.leverageEditor {
-  margin-bottom: 0;
-}
-
-.kindTabs {
+/* The side selector: one compact track, outline + faint tint on the chosen side. Only the
+   submit button below carries a solid fill, so the ticket has one loud control, not three. */
+.sideTrack {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  padding: 2px;
-}
-
-.kindTabs button {
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  padding: 0.45rem 0;
-  font-size: 0.75rem;
-  cursor: pointer;
-  border-radius: 3px;
-}
-
-.kindTabs .kindActive {
-  background: var(--bg-panel);
-  color: var(--fg);
-}
-
-.sideButtons {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
 .side {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
-  padding: 0.45rem 0.3rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-raised);
+  justify-content: space-between;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
   color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: 0.96rem;
   cursor: pointer;
-  font-size: 0.75rem;
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    color 0.12s ease;
+}
+
+.side:hover {
+  color: var(--fg);
 }
 
 .sidePrice {
-  font-size: 0.8rem;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 0.96rem;
 }
 
-.buyActive {
-  background: var(--long-dim);
-  border-color: var(--long);
+.buyActive,
+.buyActive:hover {
   color: var(--long);
+  font-weight: 500;
+  background: var(--long-dim);
+  box-shadow: inset 0 0 0 1px rgba(94, 234, 212, 0.55);
 }
 
-.sellActive {
+.sellActive,
+.sellActive:hover {
+  color: var(--short);
+  font-weight: 500;
   background: var(--short-dim);
-  border-color: var(--short);
+  box-shadow: inset 0 0 0 1px rgba(255, 122, 107, 0.55);
+}
+
+.spreadRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.spreadRow b {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--fg);
+}
+
+.spreadTrack {
+  position: relative;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.spreadFill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--long), var(--accent), var(--short));
+}
+
+.spreadMid {
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  width: 1px;
+  height: 10px;
+  background: var(--fg);
+}
+
+/* ---- Order kind ---- */
+
+.kindTabs {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  font-family: var(--font-sans);
+}
+
+.kindTabs button {
+  padding: 0 0 5px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 0.96rem;
+  cursor: pointer;
+}
+
+.kindTabs button:hover {
+  color: var(--fg);
+}
+
+.kindTabs .kindActive {
+  color: var(--fg);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+.marginMode {
+  margin-left: auto;
+  padding-bottom: 5px;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+/* ---- Size ---- */
+
+.unitToggle {
+  position: absolute;
+  right: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.unitToggle:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sizeInput input {
+  height: 46px;
+  font-size: 1.3rem;
+  font-weight: 300;
+}
+
+.percentRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.percentMarks {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.percentMarks button {
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.percentMarks button:hover {
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+/* ---- TP / SL ---- */
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.92rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.checkbox input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.tpSl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tpSl input {
+  height: 34px;
+  font-size: 0.9rem;
+}
+
+/* ---- Risk preview ---- */
+
+.risk {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+}
+
+.riskTitle {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.riskTrack {
+  position: relative;
+  height: 24px;
+}
+
+.riskTrack::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.riskDot {
+  position: absolute;
+  top: 5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.riskLegend {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.riskLegend span {
+  text-align: center;
+}
+
+.riskLegend span:first-child {
+  text-align: left;
+}
+
+.riskLegend span:last-child {
+  text-align: right;
+}
+
+.risk_liq {
+  color: var(--accent);
+}
+
+.risk_sl {
   color: var(--short);
 }
 
-.facts,
+.risk_entry {
+  color: var(--fg);
+}
+
+.risk_tp {
+  color: var(--long);
+}
+
+/* ---- Summary ---- */
+
 .summary {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  font-size: 0.72rem;
+  gap: 6px;
+  font-size: 0.85rem;
 }
 
-.facts > div,
 .summary > div {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 0.5rem;
 }
 
-.facts dt,
 .summary dt {
   color: var(--fg-muted);
 }
 
-.facts dd,
 .summary dd {
   margin: 0;
   text-align: right;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
 }
 
-.summary {
-  border-top: 1px solid var(--border);
-  padding-top: 0.6rem;
+.liq {
+  color: var(--accent);
 }
 
 .long {
@@ -141,69 +380,31 @@
   color: var(--short);
 }
 
-.unitToggle {
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  font-size: 0.72rem;
-}
-
-.unitToggle:hover {
-  color: var(--fg);
-}
-
-.percentRow input[type='range'] {
-  width: 100%;
-  accent-color: var(--accent);
-}
-
-.percentMarks {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.3rem;
-}
-
-.percentMarks button {
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--fg-muted);
-  border-radius: 3px;
-  padding: 0.25rem 0;
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
-.checkbox {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  font-size: 0.72rem;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-
-.tpSl {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
-}
-
 .linkButton {
-  background: transparent;
-  border: none;
-  color: var(--accent);
-  cursor: pointer;
   padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
   font: inherit;
+  cursor: pointer;
 }
 
 .slippageInput {
   width: 4.5rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
   color: var(--fg);
   font: inherit;
   text-align: right;
+}
+
+.status {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
 }
