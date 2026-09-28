@@ -194,4 +194,38 @@ describe('<FaucetPanel>', () => {
       /allowance was not granted.*first order will ask/i,
     );
   });
+
+  /**
+   * The note describes a condition, not an event. The order form grants the allowance
+   * itself on the first order, and from then on "the trading allowance was not granted"
+   * is false — the note used to stay up anyway, beside a trade that had already opened.
+   */
+  it('drops the allowance note once the allowance has been granted some other way', async () => {
+    allowanceState = 0n;
+    approveMock.mockRejectedValueOnce(new Error('User rejected the request.'));
+    const { rerender } = render(<FaucetPanel />);
+
+    fireEvent.click(screen.getByTestId('faucet-panel-button'));
+    expect(await screen.findByTestId('faucet-panel-error')).toBeInTheDocument();
+
+    // The first order's own approve (OpenPositionForm) grants an unlimited allowance.
+    allowanceState = maxUint256;
+    rerender(<FaucetPanel />);
+
+    expect(screen.queryByTestId('faucet-panel-error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('faucet-panel-success')).toBeInTheDocument();
+  });
+
+  it('keeps a failed mint on screen whatever the allowance does', async () => {
+    claimFaucetMock.mockRejectedValueOnce(new Error('execution reverted'));
+    const { rerender } = render(<FaucetPanel />);
+
+    fireEvent.click(screen.getByTestId('faucet-panel-button'));
+    expect(await screen.findByTestId('faucet-panel-error')).toBeInTheDocument();
+
+    allowanceState = maxUint256;
+    rerender(<FaucetPanel />);
+
+    expect(screen.getByTestId('faucet-panel-error')).toBeInTheDocument();
+  });
 });

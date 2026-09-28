@@ -11,11 +11,17 @@ import { describeTxError } from '@/lib/tx';
 export const FAUCET_MINT_USDW = 1_000_000_000n; // 1,000.00 USDW at 6 decimals
 export const FAUCET_COOLDOWN_HOURS = 24;
 
+export const ALLOWANCE_NOT_GRANTED =
+  'Minted — but the trading allowance was not granted. Your first order will ask for it again.';
+
 export interface FaucetState {
   claim: () => Promise<boolean>;
   /** True from the click until the receipt has been mined AND the balance refetched. */
   pending: boolean;
-  /** Set only by the most recent claim; cleared when the next one starts. */
+  /**
+   * Set only by the most recent claim; cleared when the next one starts. A declined
+   * allowance is reported here too, but only while the allowance is still missing.
+   */
   error: string | null;
   /** True after a claim that mined. Cleared when the next claim starts. */
   claimed: boolean;
@@ -43,6 +49,7 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [claimed, setClaimed] = useState(false);
+  const [allowanceDeclined, setAllowanceDeclined] = useState(false);
 
   /**
    * Grants the spender an unlimited allowance in the same gesture as the mint.
@@ -69,14 +76,13 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
       await erc20.approve(maxUint256);
       await erc20.refetchAllowance();
     } catch {
-      setError(
-        'Minted — but the trading allowance was not granted. Your first order will ask for it again.',
-      );
+      setAllowanceDeclined(true);
     }
   }
 
   async function claim(): Promise<boolean> {
     setError(null);
+    setAllowanceDeclined(false);
     setClaimed(false);
     setPending(true);
     try {
@@ -93,5 +99,11 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
     }
   }
 
-  return { claim, pending, error, claimed };
+  // The declined-allowance note states a condition, not an event. Any later approval —
+  // usually the order form's own, on the first order — makes it false, and it used to stay
+  // up beside a trade that had already opened. So it is shown only while the allowance is
+  // still short of what arming would have granted.
+  const allowanceMissing = allowanceDeclined && erc20.allowance < FAUCET_MINT_USDW;
+
+  return { claim, pending, error: error ?? (allowanceMissing ? ALLOWANCE_NOT_GRANTED : null), claimed };
 }
