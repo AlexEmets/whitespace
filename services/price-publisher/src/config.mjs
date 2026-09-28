@@ -39,10 +39,9 @@ export function loadConfig(env = process.env) {
 
   const chainId = Number(env.PUBLISHER_CHAIN_ID ?? deployment?.chainId ?? 1874);
 
-  // NOTE: deployments/1874.json's `verifier` field is the OLD 1-of-N OstiumVerifier.
-  // The k-of-N verifier this service's wire format targets is being built concurrently
-  // (see docs/decisions/phase-3-price-publisher.md) and its address is not yet known.
-  // Override with PUBLISHER_VERIFIER_ADDRESS once it is deployed.
+  // The k-of-N verifier every signed report is bound to (it is part of the signed
+  // payload). deployments/1874.json's `contracts.verifier` is that verifier since the
+  // oracle migration; the pre-migration one is under `retiredContracts`.
   const verifierAddress = env.PUBLISHER_VERIFIER_ADDRESS ?? deployment?.contracts?.verifier;
   if (!verifierAddress) {
     throw new Error('loadConfig: no verifier address (set PUBLISHER_VERIFIER_ADDRESS or deployments/1874.json)');
