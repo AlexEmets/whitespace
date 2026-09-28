@@ -120,3 +120,56 @@ Exact values live in the deploy script and are pinned by its test.
 
 Mainnet deploy, Safe/Timelock governance (planned as the next rehearsal step), permissionless
 liquidation, Cross margin, points/leaderboard, audit.
+
+## 9. Interfaces between workstreams (fixed before parallel work starts)
+
+Money fields on the API are decimal strings (`services/api/src/format.ts`): prices 18 dp,
+USDW 6 dp, leverage 2 dp. Addresses lowercase hex. Times unix seconds.
+
+### 9.1 Indexer tables added (Postgres, same schema as the existing ones)
+
+`limit_order` — resting LIMIT/STOP entries, one row per (trader, pair_index, index) slot while
+open; deleted on execution/cancel, mirrored into `order_event` history.
+
+| column | type |
+|---|---|
+| id | text PK `${trader}-${pairIndex}-${index}` |
+| trader, pair_index, index | hex, int, int |
+| order_type | text `'LIMIT'` \| `'STOP'` |
+| buy | bool |
+| collateral | numeric (6 dp) |
+| leverage | int (2 dp) |
+| trigger_price | numeric (18 dp) — the `openPrice` of the order |
+| tp, sl | numeric (18 dp) |
+| placed_at, updated_at | int |
+| placed_tx | hex |
+
+`fee_charge` — every fee event: one row per log (`OracleFeeCharged`, `DevFeeCharged`,
+`VaultOpeningFeeCharged`, `VaultLiqFeeCharged`, `FeesChargedV2`, `OracleFeeBondCharged`).
+
+| column | type |
+|---|---|
+| id | text PK `${txHash}-${logIndex}` |
+| trader, trade_id, pair_index | hex, numeric, int (nullable where the event lacks it) |
+| kind | `'oracle'` \| `'dev'` \| `'vault_opening'` \| `'vault_liq'` \| `'rollover'` \| `'funding'` \| `'bond'` |
+| amount | numeric (6 dp), **signed** for funding (negative = received) |
+| at, block_number, tx_hash | int, numeric, hex |
+
+`vault_settlement` — one row per settlement (`id`, assets/shares totals, share price, at).
+
+### 9.2 API endpoints added
+
+- `GET /limit-orders/:address` → `LimitOrder[]` — open LIMIT/STOP entries.
+- `GET /orders/:address/history?limit=100` → every order ever requested, newest first
+  (the existing `/orders/:address` stays the 1-hour lifecycle view).
+- `GET /fees/:address?limit=200` → `FeeCharge[]` newest first; the web derives the Funding
+  History tab from `kind in ('funding','rollover')`.
+- `GET /pnl/:address` → `{ realizedPnl, fees, funding, trades }` totals over closed positions.
+- `GET /vault/settlements?limit=50`.
+- WS: new channels `limitOrders:<addr>`, `fees:<addr>`.
+
+### 9.3 Automation bot reads
+
+`position` (open trades with tp/sl/leverage/openPrice/collateral) and `limit_order` straight from
+the indexer database, refreshed every sweep; the chain is re-read for each candidate before
+triggering.
