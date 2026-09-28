@@ -14,13 +14,36 @@ const { Pool } = pg;
 
 let pool: pg.Pool | undefined;
 
+const IDENTIFIER_RE = /^[a-z_][a-z0-9_]{0,62}$/;
+
+/**
+ * The Postgres schema the indexer (Ponder) writes to. A redeploy indexes into a NEW schema so the
+ * previous deployment's rows are left untouched, and the API follows it through this one setting
+ * instead of per-table qualifiers. Spliced into `SET search_path`, so only a bare identifier is
+ * accepted. `public` stays on the path after it for anything not moved.
+ */
+export function indexerSchemaFromEnv(env: Record<string, string | undefined> = process.env): string {
+  const raw = env.INDEXER_SCHEMA;
+  if (raw === undefined) return 'public';
+  if (!IDENTIFIER_RE.test(raw)) {
+    throw new Error(`INDEXER_SCHEMA must be a bare lowercase identifier, got ${JSON.stringify(raw)}`);
+  }
+  return raw;
+}
+
 export function getPool(): pg.Pool {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
     if (!connectionString) {
       throw new Error('DATABASE_URL is required');
     }
+    const schema = indexerSchemaFromEnv();
     pool = new Pool({ connectionString });
+    if (schema !== 'public') {
+      pool.on('connect', (client) => {
+        client.query(`SET search_path TO ${schema}, public`).catch(() => undefined);
+      });
+    }
   }
   return pool;
 }

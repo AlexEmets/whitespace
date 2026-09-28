@@ -1,7 +1,7 @@
 /**
  * The continuous index-price series, and the OHLC candles built from it.
  *
- * THE PROBLEM THIS SOLVES. Until now the only candle source was `public.candle`, which
+ * THE PROBLEM THIS SOLVES. Until now the only candle source was the indexer's `candle`, which
  * the indexer fills from `PriceReceived` logs. A price report reaches the chain only when
  * an order needs one, so that table holds exactly as many ticks as the market has ever
  * had orders — three, at the time this was written, across two buckets two days apart.
@@ -116,7 +116,7 @@ export async function readIndexCandles(
             i.open, i.high, i.low, i.close,
             COALESCE(c.volume, 0) AS volume
        FROM ${SCHEMA}.index_candle i
-       LEFT JOIN public.candle c
+       LEFT JOIN candle c
               ON c.pair_index = i.pair_index
              AND c.interval   = i.interval
              AND c.bucket_start = i.bucket_start
@@ -134,7 +134,7 @@ export async function readLatestIndexCandle(pairIndex: number, interval: string)
             i.open, i.high, i.low, i.close,
             COALESCE(c.volume, 0) AS volume
        FROM ${SCHEMA}.index_candle i
-       LEFT JOIN public.candle c
+       LEFT JOIN candle c
               ON c.pair_index = i.pair_index
              AND c.interval   = i.interval
              AND c.bucket_start = i.bucket_start
