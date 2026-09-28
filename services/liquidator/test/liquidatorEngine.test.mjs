@@ -287,3 +287,23 @@ test('evaluateAll sweeps every candidate independently and updates position-coun
   // submitted/failed outcomes.
   assert.equal(metrics.positionsBelowMaintenance.value(), 2);
 });
+
+// The callback resolves max leverage with the trade's own isDayTrade flag
+// (OstiumTradingCallbacks.sol:525 -> TradingCallbacksLib.getEffectiveMaxLeverage). A day
+// trade on a pair with an overnight cap uses pairMaxLeverage, which moves liqMarginValue.
+for (const isDayTrade of [true, false]) {
+  test(`readMaxLeverage is asked with the trade's own isDayTrade (${isDayTrade})`, async () => {
+    const calls = [];
+    const engine = createLiquidatorEngine(
+      baseDeps({
+        readTrade: async () => ({ ...OPEN_TRADE, isDayTrade }),
+        readMaxLeverage: async (pairIndex, dayTrade) => {
+          calls.push([pairIndex, dayTrade]);
+          return 10000n;
+        },
+      }),
+    );
+    await engine.evaluateOne(CANDIDATE);
+    assert.deepEqual(calls, [[0, isDayTrade]]);
+  });
+}

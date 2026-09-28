@@ -83,6 +83,7 @@ export function createChainReader({
       leverage: trade.leverage,
       openPrice: trade.openPrice,
       buy: trade.buy,
+      isDayTrade: trade.isDayTrade,
       initialLeverage: tradeInfo.initialLeverage,
       rolloverFee,
       fundingFee: fundingFeeResult[0],

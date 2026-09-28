@@ -29,7 +29,7 @@ import { canSubmitLiquidation } from './degradedMode.mjs';
  * @param {object} deps
  * @param {(trader: `0x${string}`, pairIndex: number, index: number) => Promise<{
  *   collateral: bigint, leverage: bigint, openPrice: bigint, buy: boolean,
- *   initialLeverage: bigint, rolloverFee: bigint, fundingFee: bigint,
+ *   initialLeverage: bigint, rolloverFee: bigint, fundingFee: bigint, isDayTrade: boolean,
  * } | null>} deps.readTrade Live trade + exact fee snapshot. Must return
  *   `leverage: 0n` (or null) for a slot that is not currently open.
  * @param {(pairIndex: number, isDayTrade: boolean) => Promise<bigint>} deps.readMaxLeverage
@@ -89,7 +89,7 @@ export function createLiquidatorEngine({
     }
 
     const [maxLeverage, liqMarginThresholdP, currentPrice] = await Promise.all([
-      readMaxLeverage(pairIndex, false),
+      readMaxLeverage(pairIndex, trade.isDayTrade === true),
       readLiqMarginThresholdP(),
       readIndexPrice(pairIndex),
     ]);
