@@ -59,7 +59,7 @@ export function VaultPanel() {
 
           <FundingButtons idPrefix="vault" className="vault-actions" />
 
-          <p className="vault-hint">Connected as <span className="mono">{address}</span></p>
+          <p className="vault-hint vault-hint-foot">Connected as <span className="mono">{address}</span></p>
         </>
       )}
     </div>

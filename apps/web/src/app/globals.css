@@ -2044,16 +2044,24 @@ table.data-table[data-testid='positions-table'] td:last-child {
   line-height: 1.9;
 }
 
+/* The two panels are halves of one row, so both stretch to the taller one and end on the
+   same line; sizing each to its own content left the shorter one stopping short. */
 .vault-grid {
   display: grid;
   grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
   gap: 10px;
-  align-items: start;
+  align-items: stretch;
 }
 
 /* The Section primitive spaces itself from the band above; beside the panel it must not. */
 .vault-grid > section {
   margin-top: 0;
+}
+
+/* The panel's closing line ("Connected as …") sits on its bottom edge, level with the end
+   of the explainer beside it, rather than floating above the stretched space. */
+.vault-grid .vault-hint-foot {
+  margin-top: auto;
 }
 
 @media (max-width: 900px) {
