@@ -22,6 +22,11 @@ if (!chainInfo) {
 }
 export const CHAIN_INFO = chainInfo;
 
+/** The site's own public origin, for absolute URLs that leave the browser — the preview
+ * image a share link points X and Telegram at. Defaults to the canonical origin Caddy
+ * serves (deploy/Caddyfile); a local build sets it to its own address. */
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.whitespace.finance';
+
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000';
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? 'ws://localhost:4000/ws';
 

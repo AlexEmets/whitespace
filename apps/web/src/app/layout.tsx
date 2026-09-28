@@ -3,6 +3,7 @@ import { Azeret_Mono, Geologica } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { NavHeader } from '@/components/NavHeader';
 import { Providers } from '@/components/Providers';
+import { SITE_URL } from '@/lib/config';
 import { DEFAULT_THEME, THEME_INIT_SCRIPT } from '@/lib/theme';
 import './globals.css';
 
@@ -41,6 +42,7 @@ const azeretMono = Azeret_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: 'Whitespace — Whitechain Perp DEX',
   description: 'Trade perpetual futures on Whitechain testnet.',
 };

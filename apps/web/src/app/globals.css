@@ -2450,3 +2450,43 @@ table.data-table[data-testid='positions-table'] td:last-child {
     font-size: 16px;
   }
 }
+
+/* ---------- /share/:address/:id ---------- */
+
+.share-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.2rem;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 3rem) var(--page-pad) 5rem;
+  text-align: center;
+}
+
+.share-image {
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.share-page h1 {
+  margin: 0.6rem 0 0;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+}
+
+.share-page p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-weight: 300;
+  font-size: 1.05rem;
+}
+
+.share-page .cta-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
