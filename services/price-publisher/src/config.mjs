@@ -24,6 +24,7 @@ function readDeployment() {
  * @returns {{
  *   chainId: number,
  *   verifierAddress: `0x${string}`,
+ *   host: string,
  *   port: number,
  *   markets: string[],
  *   venues: string[],
@@ -47,6 +48,10 @@ export function loadConfig(env = process.env) {
     throw new Error('loadConfig: no verifier address (set PUBLISHER_VERIFIER_ADDRESS or deployments/1874.json)');
   }
 
+  // Loopback by default. /v2/report hands out signed prices to whoever asks; the keeper,
+  // API and bot all run on this host, so nothing else has any business reaching it.
+  // Override only behind something that authenticates.
+  const host = env.PUBLISHER_HOST ?? '127.0.0.1';
   const port = Number(env.PUBLISHER_PORT ?? 8787);
 
   const markets = env.PUBLISHER_MARKETS ? env.PUBLISHER_MARKETS.split(',') : MARKET_FEEDS;
@@ -71,6 +76,7 @@ export function loadConfig(env = process.env) {
   return {
     chainId,
     verifierAddress,
+    host,
     port,
     markets,
     venues,

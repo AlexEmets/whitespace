@@ -92,8 +92,8 @@ async function main() {
   }, config.bounds.markEmaSampleIntervalMs);
 
   const server = createServerApp(engine);
-  server.listen(config.port, () => {
-    console.log(`[price-publisher] HTTP API listening on :${config.port}`);
+  server.listen(config.port, config.host, () => {
+    console.log(`[price-publisher] HTTP API listening on ${config.host}:${config.port}`);
   });
 
   const shutdown = () => {
