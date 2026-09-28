@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import WebSocket from 'ws';
 import { startTestServer, type TestServer } from './testServer.js';
-import { truncateAll, seedMarket, seedPriceReport, TRADER, seedOpenPosition } from './seed.js';
+import { truncateAll, seedMarket, seedPriceReport, TRADER, seedOpenPosition, seedLimitOrder, seedFee } from './seed.js';
+import { parseChannel } from '../src/ws.js';
 
 function onceMessage(ws: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
@@ -132,5 +133,50 @@ describe('WS /ws', () => {
     ws.send(JSON.stringify({ type: 'subscribe', channel: 'candles:0:1m' }));
     await onceMessage(ws);
     ws.close();
+  });
+
+  async function subscribeAndWaitForUpdate(channel: string, seed: () => Promise<void>) {
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel }));
+    expect(await onceMessage(ws)).toEqual({ type: 'subscribed', channel });
+    const updates: Array<Record<string, unknown>> = [];
+    ws.on('message', (raw) => updates.push(JSON.parse(raw.toString())));
+    await seed();
+    await waitForCondition(() => updates.some((u) => Array.isArray(u.data) && (u.data as unknown[]).length > 0));
+    ws.close();
+    return updates.find((u) => Array.isArray(u.data) && (u.data as unknown[]).length > 0)!;
+  }
+
+  it('supports limitOrders:<address> with the REST shape', async () => {
+    const update = await subscribeAndWaitForUpdate(`limitOrders:${TRADER}`, () => seedLimitOrder());
+    expect(update.channel).toBe(`limitOrders:${TRADER}`);
+    const [order] = update.data as Array<Record<string, unknown>>;
+    expect(order).toMatchObject({ id: `${TRADER}-0-0`, orderType: 'LIMIT', collateral: '50.000000', triggerPrice: '60000.000000000000000000' });
+    const rest = await (await fetch(`${server.baseUrl}/limit-orders/${TRADER}`)).json();
+    expect(update.data).toEqual(rest);
+  });
+
+  it('supports fees:<address> with the REST shape', async () => {
+    const update = await subscribeAndWaitForUpdate(`fees:${TRADER}`, () => seedFee('0xa-1-funding', 'funding', '-5'));
+    const rest = await (await fetch(`${server.baseUrl}/fees/${TRADER}`)).json();
+    expect(update.data).toEqual(rest);
+    expect((update.data as Array<{ amount: string }>)[0].amount).toBe('-0.000005');
+  });
+
+  it.each(['limitOrders:0x12', 'fees:nope', 'limitOrders:', 'fees'])('rejects the malformed channel %s', async (channel) => {
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel }));
+    expect((await onceMessage(ws)).type).toBe('error');
+    ws.close();
+  });
+});
+
+describe('parseChannel', () => {
+  it('lowercases the address of the new wallet channels', () => {
+    expect(parseChannel('fees:0x2B8BA090DEdF879F8045C0DDa5a78762CED90D19')).toEqual({
+      kind: 'fees',
+      args: ['0x2b8ba090dedf879f8045c0dda5a78762ced90d19'],
+    });
+    expect(parseChannel(`limitOrders:${TRADER}`)).toEqual({ kind: 'limitOrders', args: [TRADER] });
   });
 });

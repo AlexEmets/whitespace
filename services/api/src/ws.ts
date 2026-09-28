@@ -5,14 +5,19 @@ import { price as fmtPrice, collateral as fmtCollateral, leverage as fmtLeverage
 import { readLatestIndexCandle } from './indexSeries.js';
 import { resolveOrders } from './routes/orders.js';
 import { resolvePrice } from './routes/price.js';
+import { resolveLimitOrders } from './routes/limitOrders.js';
+import { resolveFees } from './routes/fees.js';
+import { parseAddress } from './validate.js';
 
-type ChannelKind = 'price' | 'positions' | 'orders' | 'candles';
-const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles'];
+type ChannelKind = 'price' | 'positions' | 'orders' | 'candles' | 'limitOrders' | 'fees';
+const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles', 'limitOrders', 'fees'];
+/** Channels whose argument is a wallet; the address must be well-formed. */
+const ADDRESS_KINDS: ChannelKind[] = ['limitOrders', 'fees'];
 
 type ParsedChannel = { kind: ChannelKind; args: string[] };
 
 /** Parses "price:<pairIndex>" | "positions:<address>" | "orders:<address>"
- * | "candles:<pairIndex>:<interval>". Returns null for anything else — the
+ * | "limitOrders:<address>" | "fees:<address>" | "candles:<pairIndex>:<interval>". Returns null for anything else — the
  * caller must reject the subscription rather than silently accept garbage. */
 export function parseChannel(channel: string): ParsedChannel | null {
   const parts = channel.split(':');
@@ -23,6 +28,10 @@ export function parseChannel(channel: string): ParsedChannel | null {
     return { kind, args: [parts[1], parts[2]] };
   }
   if (parts.length !== 2 || !parts[1]) return null;
+  if (ADDRESS_KINDS.includes(kind)) {
+    const address = parseAddress(parts[1]);
+    return address ? { kind, args: [address] } : null;
+  }
   return { kind, args: [parts[1]] };
 }
 
@@ -65,6 +74,14 @@ async function fetchChannelData(parsed: ParsedChannel): Promise<unknown> {
       // different WHERE clauses and different columns, so whether an order appeared to
       // exist depended on which transport last answered.
       return resolveOrders(parsed.args[0]);
+    }
+    case 'limitOrders': {
+      // Same resolver as GET /limit-orders/:address.
+      return resolveLimitOrders(parsed.args[0]);
+    }
+    case 'fees': {
+      // Same resolver and default window (200 newest) as GET /fees/:address.
+      return resolveFees(parsed.args[0]);
     }
     case 'candles': {
       const pairIndex = Number(parsed.args[0]);
