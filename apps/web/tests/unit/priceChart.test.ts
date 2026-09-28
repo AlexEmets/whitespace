@@ -8,7 +8,9 @@ import {
   niceStep,
   panView,
   priceTicks,
+  applyWheelZoom,
   timeTickIndices,
+  wheelZoomFactor,
   zoomView,
 } from '@/components/PriceChart';
 
@@ -295,5 +297,96 @@ describe('domainWithMark', () => {
 
   it('is a no-op when there is no mark yet', () => {
     expect(domainWithMark(lo, hi, null)).toEqual({ min: lo, max: hi });
+  });
+});
+
+/**
+ * Wheel zoom. A trackpad fires dozens of small wheel events per gesture; zooming a fixed step
+ * per event (the old 15%) turned one gentle two-finger stroke into a lurch. The factor now
+ * follows how far the wheel actually moved.
+ */
+describe('wheelZoomFactor', () => {
+  const PIXELS = 0;
+  const LINES = 1;
+
+  it('zooms out for a positive delta and in for a negative one', () => {
+    expect(wheelZoomFactor(100, PIXELS, false)).toBeGreaterThan(1);
+    expect(wheelZoomFactor(-100, PIXELS, false)).toBeLessThan(1);
+    expect(wheelZoomFactor(0, PIXELS, false)).toBe(1);
+  });
+
+  it('is symmetric, so in-then-out returns to where it started', () => {
+    expect(wheelZoomFactor(100, PIXELS, false) * wheelZoomFactor(-100, PIXELS, false)).toBeCloseTo(1, 10);
+  });
+
+  it('moves a mouse notch (≈100 px) by well under the old 15%', () => {
+    const notch = wheelZoomFactor(100, PIXELS, false);
+    expect(notch).toBeGreaterThan(1.04);
+    expect(notch).toBeLessThan(1.1);
+  });
+
+  it('moves one small trackpad event by under 1%', () => {
+    expect(wheelZoomFactor(4, PIXELS, false)).toBeLessThan(1.01);
+  });
+
+  it('treats a line-mode delta (Firefox mouse wheel) like the pixels it stands for', () => {
+    expect(wheelZoomFactor(3, LINES, false)).toBeCloseTo(wheelZoomFactor(48, PIXELS, false), 10);
+  });
+
+  it('keeps a trackpad pinch gentle per event', () => {
+    // Pinch arrives as wheel events with ctrlKey and deltas of a few units each.
+    const pinch = wheelZoomFactor(3, PIXELS, true);
+    expect(pinch).toBeGreaterThan(wheelZoomFactor(3, PIXELS, false));
+    expect(pinch).toBeLessThan(1.03);
+  });
+
+  it('caps a single runaway event', () => {
+    expect(wheelZoomFactor(10_000, PIXELS, false)).toBeLessThanOrEqual(1.2);
+    expect(wheelZoomFactor(-10_000, PIXELS, false)).toBeGreaterThanOrEqual(1 / 1.2);
+  });
+});
+
+/**
+ * The window holds a whole number of candles, so a trackpad's sub-1% steps would each round
+ * away to nothing. They are banked until they add up to a whole candle.
+ */
+describe('applyWheelZoom', () => {
+  const TOTAL = 500;
+  const trackpadStep = wheelZoomFactor(4, 0, false);
+
+  it('banks a step too small to move a whole candle, leaving the view as it was', () => {
+    const view = { visible: 100, endOffset: 0 };
+    const step = applyWheelZoom(view, TOTAL, trackpadStep, 1);
+    expect(step.view).toEqual(view);
+    expect(step.pending).toBeCloseTo(trackpadStep, 10);
+  });
+
+  it('turns a run of small trackpad steps into real zoom', () => {
+    let view = { visible: 100, endOffset: 0 };
+    let pending = 1;
+    for (let i = 0; i < 40; i++) {
+      const step = applyWheelZoom(view, TOTAL, pending * trackpadStep, 1);
+      view = step.view;
+      pending = step.pending;
+    }
+    // 40 steps of ~0.28% ≈ 11.8% wider, give or take the candle still in the bank.
+    expect(view.visible).toBeGreaterThanOrEqual(110);
+    expect(view.visible).toBeLessThanOrEqual(112);
+  });
+
+  it('spends the bank once it moves the window', () => {
+    const step = applyWheelZoom({ visible: 100, endOffset: 0 }, TOTAL, 1.05, 1);
+    expect(step.view.visible).toBe(105);
+    expect(step.pending).toBeCloseTo(1, 10);
+  });
+
+  it('does not bank zoom-in past the tightest window, so reversing responds at once', () => {
+    const floor = { visible: MIN_VISIBLE_CANDLES, endOffset: 0 };
+    expect(applyWheelZoom(floor, TOTAL, 1 / 1.01, 1).pending).toBe(1);
+  });
+
+  it('does not bank zoom-out past the whole series', () => {
+    const everything = { visible: TOTAL, endOffset: 0 };
+    expect(applyWheelZoom(everything, TOTAL, 1.01, 1).pending).toBe(1);
   });
 });

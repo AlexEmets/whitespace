@@ -28,7 +28,16 @@ const TIME_TICK_TARGET = 6;
 /** Below this the bars are too thin to read as candles; above `total` there is nothing
  * left to show. Both ends are clamps, not scroll limits — see `clampView`. */
 export const MIN_VISIBLE_CANDLES = 20;
-const ZOOM_STEP = 1.15;
+/** Zoom per pixel of wheel travel, as the exponent of the factor: a 100 px mouse notch
+ * zooms ~7%. A trackpad pinch (wheel events with ctrlKey) sends deltas of a few units
+ * where a scroll sends tens, so it gets its own, larger rate. */
+const WHEEL_ZOOM_PER_PX = 0.0007;
+const PINCH_ZOOM_PER_PX = 0.005;
+/** The most a single wheel event may zoom — a guard against one runaway delta. */
+const MAX_ZOOM_PER_EVENT = 1.2;
+/** Pixels per wheel `deltaMode` unit: lines (Firefox's mouse wheel) and pages. */
+const LINE_PX = 16;
+const PAGE_PX = 800;
 
 /* -------------------------------------------------------------------------- */
 /* Pure geometry — exported so tests can exercise it without a DOM.            */
@@ -79,6 +88,45 @@ export function zoomView(view: ChartView, total: number, factor: number, cursorR
   const zoomed = clampView({ visible: current.visible * factor, endOffset: current.endOffset }, total);
   const nextFirst = anchor - ratio * zoomed.visible;
   return clampView({ visible: zoomed.visible, endOffset: total - zoomed.visible - nextFirst }, total);
+}
+
+/**
+ * The zoom factor for one wheel event — > 1 widens the window (zooms out). Proportional to
+ * how far the wheel travelled, not a fixed step per event: a trackpad sends dozens of tiny
+ * events per gesture, and zooming 15% on each made a gentle two-finger stroke lurch.
+ * Exponential, so equal travel in and out cancels exactly.
+ */
+export function wheelZoomFactor(deltaY: number, deltaMode: number, ctrlKey: boolean): number {
+  const px = deltaMode === 1 ? deltaY * LINE_PX : deltaMode === 2 ? deltaY * PAGE_PX : deltaY;
+  const exponent = px * (ctrlKey ? PINCH_ZOOM_PER_PX : WHEEL_ZOOM_PER_PX);
+  const cap = Math.log(MAX_ZOOM_PER_EVENT);
+  return Math.exp(Math.max(-cap, Math.min(cap, exponent)));
+}
+
+/**
+ * Applies a pending wheel zoom to the window. The window holds a whole number of candles,
+ * so a trackpad's sub-1% steps would each round away to nothing; instead the factor is
+ * banked (`pending`) until it moves the window, and whatever the rounding did not realise
+ * stays in the bank. At either limit the bank is
+ * dropped, so a gesture that reverses direction responds at once instead of first
+ * unwinding zoom that could never be applied.
+ */
+export function applyWheelZoom(
+  view: ChartView,
+  total: number,
+  pending: number,
+  cursorRatio: number,
+): { view: ChartView; pending: number } {
+  const current = clampView(view, total);
+  const next = zoomView(current, total, pending, cursorRatio);
+  if (next.visible !== current.visible || next.endOffset !== current.endOffset) {
+    // Keep what rounding did not realise: 100 candles x 1.0056 shows 101, and the 0.44 of a
+    // candle it rounded up is owed back, or a run of small steps would drift wider.
+    return { view: next, pending: (current.visible * pending) / next.visible };
+  }
+  const atFloor = pending < 1 && current.visible <= MIN_VISIBLE_CANDLES;
+  const atCeiling = pending > 1 && current.visible >= maxVisible(total);
+  return { view: current, pending: atFloor || atCeiling ? 1 : pending };
 }
 
 /** Pan by whole bars. Positive `deltaCandles` walks back in time (drag right). */
@@ -283,6 +331,11 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
 
   const total = candles.length;
   const [rawView, setRawView] = useState<ChartView>({ visible: 0, endOffset: 0 });
+  // The wheel handler lives in a native listener, so it reads the window through a ref, and
+  // banks sub-candle zoom between events (see applyWheelZoom).
+  const viewRef = useRef(rawView);
+  viewRef.current = rawView;
+  const pendingZoom = useRef(1);
   const [hover, setHover] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -392,9 +445,13 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY === 0) return;
       event.preventDefault();
-      const factor = event.deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
-      const ratio = ratioFromClientX(event.clientX);
-      setRawView((v) => zoomView(v, total, factor, ratio));
+      const pending = pendingZoom.current * wheelZoomFactor(event.deltaY, event.deltaMode, event.ctrlKey);
+      const step = applyWheelZoom(viewRef.current, total, pending, ratioFromClientX(event.clientX));
+      pendingZoom.current = step.pending;
+      if (step.view !== viewRef.current) {
+        viewRef.current = step.view;
+        setRawView(step.view);
+      }
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
