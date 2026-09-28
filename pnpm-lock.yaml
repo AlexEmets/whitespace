@@ -73,6 +73,12 @@ importers:
 
   packages/shared: {}
 
+  packages/txsender:
+    dependencies:
+      '@whitespace/metrics':
+        specifier: workspace:*
+        version: link:../metrics
+
   services/api:
     dependencies:
       '@whitespace/shared':
