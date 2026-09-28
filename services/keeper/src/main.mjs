@@ -1,19 +1,13 @@
 /**
- * Live entrypoint: watches PriceRequestedV2 on the price upkeep, fetches a signed
- * report from the price-publisher HTTP API, and submits performUpkeep as the
- * registered forwarder. Not exercised by the unit test suite — run manually with
- * `pnpm --filter @whitespace/keeper start`, or `node src/main.mjs` from this
- * directory. See docs/decisions/phase-3-price-publisher.md for whether this was
- * actually run against live testnet 1874.
+ * Live entrypoint: builds real viem clients, starts the keeper (src/app.mjs) and its
+ * /health + /metrics server. Not exercised by the unit test suite — run manually with
+ * `pnpm --filter @whitespace/keeper start`, or `node src/main.mjs` from this directory.
  */
 
 import { loadConfig, loadForwarderKey } from './config.mjs';
 import { createClients } from './rpc.mjs';
-import { watchPriceRequested } from './watcher.mjs';
-import { createHttpReportSource } from './reportSource.mjs';
-import { createTxSender } from './txSender.mjs';
-import { createDeadLetterQueue } from './deadLetter.mjs';
-import { createKeeperEngine } from './keeperEngine.mjs';
+import { createKeeper } from './app.mjs';
+import { createHealthServerApp } from './healthServer.mjs';
 
 async function main() {
   const config = loadConfig();
@@ -28,44 +22,18 @@ async function main() {
   });
   console.log(`[keeper] forwarder address=${account.address}`);
 
-  const deadLetter = createDeadLetterQueue({ filePath: config.deadLetterFilePath });
-  const reportSource = createHttpReportSource(config.publisherBaseUrl);
-  const txSender = createTxSender({
-    publicClient,
-    walletClient,
-    account,
-    priceUpKeepAddress: config.priceUpKeepAddress,
-    deadLetter,
-    maxRetries: config.maxRetries,
-  });
-  const engine = createKeeperEngine({
-    reportSource,
-    txSender,
-    onDeadLetter: (entry) => console.error('[keeper] DEAD LETTER:', entry),
-  });
+  const keeper = createKeeper({ config, publicClient, walletClient, account });
+  keeper.start();
 
-  const unwatch = watchPriceRequested(
-    publicClient,
-    config.priceUpKeepAddress,
-    async (event) => {
-      console.log(
-        `[keeper] PriceRequestedV2 orderId=${event.orderId} type=${event.orderTypeName} ` +
-          `feed=${event.feed} timestamp=${event.timestamp}`,
-      );
-      const result = await engine.handlePriceRequested(event);
-      if (result.ok) {
-        console.log(`[keeper] orderId=${event.orderId} delivered, tx=${result.hash}`);
-      } else {
-        console.error(`[keeper] orderId=${event.orderId} FAILED: ${result.reason}`);
-      }
-    },
-    (err) => console.error('[keeper] watcher error:', err.message),
-  );
+  const server = createHealthServerApp(keeper);
+  server.listen(config.metricsPort, config.metricsHost, () => {
+    console.log(`[keeper] health/metrics on ${config.metricsHost}:${config.metricsPort}`);
+  });
 
   const shutdown = () => {
     console.log('[keeper] shutting down');
-    unwatch();
-    process.exit(0);
+    keeper.stop();
+    server.close(() => process.exit(0));
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

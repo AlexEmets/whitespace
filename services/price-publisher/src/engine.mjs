@@ -23,7 +23,14 @@ import { weightOf } from '@whitespace/shared/venues';
  * @param {{ address: `0x${string}`, privateKey: `0x${string}` }[]} opts.signerKeys
  * @param {number} opts.signatureThresholdK
  * @param {() => number} [opts.now]
+ * @param {number} [opts.markStalenessMs] a mark not moved by a real index sample for
+ *        longer than this is stale: reported as such, never signed, and reseeded from the
+ *        next index. Default: MARK_STALE_SAMPLES sample intervals of the feed.
  */
+/** Default mark staleness bound, in sample intervals. One or two missed samples are
+ * jitter; three in a row means the index is gone. */
+export const MARK_STALE_SAMPLES = 3;
+
 export function createPublisherEngine({
   chainId,
   verifierAddress,
@@ -33,6 +40,7 @@ export function createPublisherEngine({
   signerKeys,
   signatureThresholdK,
   now = () => Date.now(),
+  markStalenessMs,
 }) {
   // Bounds are resolved ONCE per feed and stored beside that feed's ticks, rather than
   // looked up at each use. There is exactly one place the index is computed
@@ -45,6 +53,9 @@ export function createPublisherEngine({
     state.set(feed, {
       ticks: new Map(),
       bounds: feedBounds,
+      /** When a real (non-null) index last moved the mark. */
+      markUpdatedAt: null,
+      staleAfterMs: markStalenessMs ?? MARK_STALE_SAMPLES * feedBounds.markEmaSampleIntervalMs,
       ema: createMarkEma({
         windowMs: feedBounds.markEmaWindowMs,
         sampleIntervalMs: feedBounds.markEmaSampleIntervalMs,
@@ -74,12 +85,37 @@ export function createPublisherEngine({
   function sampleMark(feed, at = now()) {
     const s = requireFeed(feed);
     const aggregate = currentAggregate(feed, at);
-    s.ema.update(aggregate.index);
-    return { aggregate, mark: s.ema.value };
+    let reseeded = false;
+    if (aggregate.index !== null) {
+      // After a stale gap the old mark is a price from before the outage. Blending the
+      // first new index into it would drag the mark back toward that price for a whole
+      // window; start again from the market instead, exactly as at startup.
+      if (s.markUpdatedAt !== null && at - s.markUpdatedAt > s.staleAfterMs) {
+        s.ema.reset();
+        reseeded = true;
+      }
+      s.ema.update(aggregate.index);
+      s.markUpdatedAt = at;
+    }
+    // A null index leaves the value alone (one missed sample must not poison it) but
+    // does not refresh its age either, so a long gap shows up as a stale mark.
+    return { aggregate, mark: s.ema.value, reseeded, ...markStatus(feed, at) };
   }
 
   function markOf(feed) {
     return requireFeed(feed).ema.value;
+  }
+
+  /** @returns {{ mark: bigint|null, markAgeMs: number|null, stale: boolean, staleAfterMs: number }} */
+  function markStatus(feed, at = now()) {
+    const s = requireFeed(feed);
+    const markAgeMs = s.markUpdatedAt === null ? null : at - s.markUpdatedAt;
+    const stale = s.ema.value === null || markAgeMs === null || markAgeMs > s.staleAfterMs;
+    return { mark: s.ema.value, markAgeMs, stale, staleAfterMs: s.staleAfterMs };
+  }
+
+  function markStalenessMsOf(feed) {
+    return requireFeed(feed).staleAfterMs;
   }
 
   /**
@@ -104,6 +140,7 @@ export function createPublisherEngine({
 
     const mark = s.ema.value;
     if (mark === null) return { ok: false, reason: 'no_mark_yet', aggregate };
+    if (markStatus(feed).stale) return { ok: false, reason: 'mark_stale', aggregate };
 
     if (signerKeys.length < signatureThresholdK) {
       return { ok: false, reason: 'insufficient_signer_keys', aggregate };
@@ -134,11 +171,14 @@ export function createPublisherEngine({
   }
 
   return {
+    now,
     markets: [...state.keys()],
     ingestTick,
     currentAggregate,
     sampleMark,
     markOf,
+    markStatus,
+    markStalenessMsOf,
     signReportFor,
     snapshot,
   };

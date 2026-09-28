@@ -9,6 +9,7 @@
     "test": "node --test test/"
   },
   "dependencies": {
+    "@whitespace/metrics": "workspace:*",
     "@whitespace/reporter": "workspace:*",
     "@whitespace/shared": "workspace:*",
     "viem": "^2.21.0",
