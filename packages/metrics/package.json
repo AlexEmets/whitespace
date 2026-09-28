@@ -9,6 +9,6 @@
     "./registry": "./src/registry.mjs"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test"
   }
 }

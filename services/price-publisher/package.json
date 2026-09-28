@@ -6,7 +6,7 @@
   "main": "src/main.mjs",
   "scripts": {
     "start": "node src/main.mjs",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "@whitespace/metrics": "workspace:*",

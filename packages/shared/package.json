@@ -22,6 +22,6 @@
     "./orderTypes": "./src/orderTypes.mjs"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test"
   }
 }

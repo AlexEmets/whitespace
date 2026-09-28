@@ -12,6 +12,6 @@
     "viem": "^2.21.0"
   },
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test"
   }
 }
