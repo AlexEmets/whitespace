@@ -1,5 +1,6 @@
 'use client';
 
+import { useFundingRate } from '@/hooks/useFundingRate';
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
@@ -10,13 +11,14 @@ import type { MarketSummary } from '@/lib/types';
 /**
  * Centre header: market name, the real per-market max leverage (design-honesty ruling:
  * "Isolated · <maxLeverage> max", not the mockup's "Cross · 50x max" — Ostium positions
- * are isolated, not cross), last/index price, and four stat cells. FUNDING has no
- * backing endpoint in the read API and is shown as an honest dash rather than invented.
- * 24H VOLUME is derived from real candle data (useMarket24h), not fabricated.
+ * are isolated, not cross), mark/index price, and the stat cells. FUNDING is the pair's
+ * live per-block rate read from OstiumPairInfos, expressed per hour. 24H VOLUME is derived
+ * from real candle data (useMarket24h), not fabricated.
  */
 export function MarketHeaderBar({ market }: { market: MarketSummary | undefined }) {
   const { data: price } = usePrice(market?.pairIndex ?? null);
   const change = useMarket24h(market?.pairIndex ?? null);
+  const funding = useFundingRate(market?.pairIndex ?? null);
 
   if (!market) return <div className="market-header">Select a market</div>;
 
@@ -59,8 +61,12 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
       </div>
       <div className="stat-cell mono-upper">
         Funding · 1h
-        <span className="stat-value dash" title="No funding-rate endpoint in the read API">
-          —
+        <span
+          className={`stat-value${funding === null ? ' dash' : ''}`}
+          data-testid="funding-rate"
+          title="Positive: longs pay shorts. Charged continuously every block."
+        >
+          {funding === null ? '—' : `${formatMoney(funding, 18, { fractionDigits: 4, grouping: false, signDisplay: true })}%`}
         </span>
       </div>
       <div className="stat-cell mono-upper">
