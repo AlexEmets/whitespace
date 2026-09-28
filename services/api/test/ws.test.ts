@@ -2,7 +2,9 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import WebSocket from 'ws';
 import { startTestServer, type TestServer } from './testServer.js';
 import { truncateAll, seedMarket, seedPriceReport, TRADER, seedOpenPosition, seedLimitOrder, seedFee } from './seed.js';
-import { parseChannel } from '../src/ws.js';
+import { parseChannel, MAX_SUBSCRIPTIONS_PER_SOCKET } from '../src/ws.js';
+import { MAX_POSITIONS } from '../src/routes/positions.js';
+import { getPool } from '../src/db.js';
 
 function onceMessage(ws: WebSocket): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
@@ -164,6 +166,67 @@ describe('WS /ws', () => {
   });
 
   it.each(['limitOrders:0x12', 'fees:nope', 'limitOrders:', 'fees'])('rejects the malformed channel %s', async (channel) => {
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel }));
+    expect((await onceMessage(ws)).type).toBe('error');
+    ws.close();
+  });
+});
+
+describe('WS polling is bounded', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startTestServer({ wsPollIntervalMs: 30 });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+  beforeEach(async () => {
+    await truncateAll();
+  });
+
+  it('the positions:<address> poll reads at most MAX_POSITIONS rows', async () => {
+    // Every subscribed wallet is re-queried every poll; an unbounded SELECT made each
+    // tick's cost (and the payload held in lastPayload) grow with the wallet's row count.
+    await getPool().query(
+      `INSERT INTO "position" (trade_id, trader, pair_index, index, buy, collateral, leverage, open_price, tp, sl, is_day_trade, open_order_id, open_tx_hash, opened_at, opened_at_block)
+       SELECT g, $1, 0, 0, true, 1, 100, 1, 0, 0, false, g, '0x01', g, g FROM generate_series(1, $2::int) g`,
+      [TRADER, MAX_POSITIONS + 1],
+    );
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel: `positions:${TRADER}` }));
+    await onceMessage(ws);
+    const update = await onceMessage(ws);
+    expect((update.data as unknown[]).length).toBe(MAX_POSITIONS);
+    // Newest first, so the one dropped is the oldest.
+    expect((update.data as Array<{ tradeId: string }>)[0].tradeId).toBe(String(MAX_POSITIONS + 1));
+    const rest = await (await fetch(`${server.baseUrl}/positions/${TRADER}`)).json();
+    expect(rest).toEqual(update.data);
+    ws.close();
+  });
+
+  it('one socket cannot subscribe to more than MAX_SUBSCRIPTIONS_PER_SOCKET channels', async () => {
+    const ws = await connect(server.wsUrl);
+    for (let i = 0; i < MAX_SUBSCRIPTIONS_PER_SOCKET; i++) {
+      ws.send(JSON.stringify({ type: 'subscribe', channel: `price:${i}` }));
+      expect((await onceMessage(ws)).type).toBe('subscribed');
+    }
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:999' }));
+    const refused = await onceMessage(ws);
+    expect(refused).toMatchObject({ type: 'error', channel: 'price:999' });
+    expect(server.app.wsManager.channelSubscriberCount('price:999')).toBe(0);
+    // Re-subscribing to a channel it already holds is not a new subscription.
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:0' }));
+    expect((await onceMessage(ws)).type).toBe('subscribed');
+    // Freeing one makes room again.
+    ws.send(JSON.stringify({ type: 'unsubscribe', channel: 'price:1' }));
+    await onceMessage(ws);
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:999' }));
+    expect((await onceMessage(ws)).type).toBe('subscribed');
+    ws.close();
+  });
+
+  it.each(['positions:garbage', 'orders:0x12'])('rejects a wallet channel with a malformed address: %s', async (channel) => {
     const ws = await connect(server.wsUrl);
     ws.send(JSON.stringify({ type: 'subscribe', channel }));
     expect((await onceMessage(ws)).type).toBe('error');
