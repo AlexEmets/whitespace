@@ -4,7 +4,7 @@ import { Router } from './router.js';
 import { handleHealth } from './routes/health.js';
 import { handleMarkets, handleMarket, handleCandles } from './routes/markets.js';
 import { handlePositions, handlePositionsHistory } from './routes/positions.js';
-import { handleOrders } from './routes/orders.js';
+import { handleOrders, handleOrdersHistory } from './routes/orders.js';
 import { handlePrice } from './routes/price.js';
 import { handleLimitOrders } from './routes/limitOrders.js';
 import { createWsManager, type WsManager } from './ws.js';
@@ -18,6 +18,7 @@ router.get('/markets/:pairIndex/candles', handleCandles);
 router.get('/positions/:address', handlePositions);
 router.get('/positions/:address/history', handlePositionsHistory);
 router.get('/orders/:address', handleOrders);
+router.get('/orders/:address/history', handleOrdersHistory);
 router.get('/price/:pairIndex', handlePrice);
 router.get('/limit-orders/:address', handleLimitOrders);
 

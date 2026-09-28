@@ -124,3 +124,25 @@ export async function seedLimitOrder(
     [`${trader}-0-${index}`, trader, index, over.orderType ?? 'LIMIT', over.placedAt ?? 1788882000, TX_A],
   );
 }
+
+export async function seedOrder(
+  orderId: number,
+  over: { kind?: string; status?: string; requestedAt?: number; trader?: string; cancelReason?: string | null } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO "order" (order_id, trader, pair_index, kind, trade_id, index, buy, collateral, leverage, status, requested_at, requested_at_block, request_tx_hash, resolved_at, cancel_reason)
+     VALUES ($1, $2, 0, $3, NULL, NULL, NULL, NULL, NULL, $4, $5, 7285600, $6, NULL, $7)`,
+    [orderId, over.trader ?? TRADER, over.kind ?? 'open', over.status ?? 'pending', over.requestedAt ?? 1000, TX_B, over.cancelReason ?? null],
+  );
+}
+
+export async function seedOrderEvent(
+  id: string,
+  over: { kind?: string; at?: number; trader?: string } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO order_event (id, trader, pair_index, index, kind, order_type, buy, collateral, leverage, trigger_price, tp, sl, order_id, trade_id, at, block_number, tx_hash)
+     VALUES ($1, $2, 0, 1, $3, 'STOP', false, 25000000, 500, '59000000000000000000000', 0, '61000000000000000000000', NULL, NULL, $4, 900, $5)`,
+    [id, over.trader ?? TRADER, over.kind ?? 'limit_placed', over.at ?? 1000, TX_A],
+  );
+}
