@@ -14,7 +14,8 @@ export const COLLATERAL = '999000000';
 export async function truncateAll(): Promise<void> {
   const pool = getPool();
   await pool.query(
-    `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status`,
+    `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status,
+       limit_order, order_event, fee_charge, liquidation, vault_settlement`,
   );
   // Not in the list above: that TRUNCATE names Ponder's tables, and this one is the
   // API's own (src/indexSeries.ts). Guarded because a test file may run before any
@@ -106,5 +107,20 @@ export async function seedCandle(
     `INSERT INTO candle (id, pair_index, interval, bucket_start, open, high, low, close, volume)
      VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
     [`0-${interval}-${bucketStart}`, interval, bucketStart, ohlc.o, ohlc.h, ohlc.l, ohlc.c, ohlc.v],
+  );
+}
+
+export const TX_A = '0x00000000000000000000000000000000000000000000000000000000000000a1';
+export const TX_B = '0x00000000000000000000000000000000000000000000000000000000000000b2';
+
+export async function seedLimitOrder(
+  over: { index?: number; orderType?: string; placedAt?: number; trader?: string } = {},
+): Promise<void> {
+  const trader = over.trader ?? TRADER;
+  const index = over.index ?? 0;
+  await getPool().query(
+    `INSERT INTO limit_order (id, trader, pair_index, index, order_type, buy, collateral, leverage, trigger_price, tp, sl, placed_at, updated_at, placed_tx)
+     VALUES ($1, $2, 0, $3, $4, true, 50000000, 1000, '60000000000000000000000', '70000000000000000000000', 0, $5, $5, $6)`,
+    [`${trader}-0-${index}`, trader, index, over.orderType ?? 'LIMIT', over.placedAt ?? 1788882000, TX_A],
   );
 }

@@ -6,6 +6,7 @@ import { handleMarkets, handleMarket, handleCandles } from './routes/markets.js'
 import { handlePositions, handlePositionsHistory } from './routes/positions.js';
 import { handleOrders } from './routes/orders.js';
 import { handlePrice } from './routes/price.js';
+import { handleLimitOrders } from './routes/limitOrders.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 
@@ -18,6 +19,7 @@ router.get('/positions/:address', handlePositions);
 router.get('/positions/:address/history', handlePositionsHistory);
 router.get('/orders/:address', handleOrders);
 router.get('/price/:pairIndex', handlePrice);
+router.get('/limit-orders/:address', handleLimitOrders);
 
 export type App = { server: Server; wsManager: WsManager };
 
