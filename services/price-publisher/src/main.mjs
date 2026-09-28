@@ -91,7 +91,7 @@ async function main() {
     }
   }, config.bounds.markEmaSampleIntervalMs);
 
-  const server = createServerApp(engine);
+  const server = createServerApp(engine, { maxReportAgeS: config.maxReportAgeS, maxClockSkewS: config.maxClockSkewS });
   server.listen(config.port, config.host, () => {
     console.log(`[price-publisher] HTTP API listening on ${config.host}:${config.port}`);
   });

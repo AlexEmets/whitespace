@@ -7,6 +7,9 @@
  *                                                        i.e. nothing can be signed
  *   GET  /status                                     -> 200 { feeds: { <feed>: snapshot } }
  *   GET  /v2/report?feed=&timestamp=&orderType=       -> 200 { signedReport, signers, mark, ... }
+ *                                                     -> 400 { error, detail } when the
+ *                                                        timestamp is outside the signing
+ *                                                        window (see below)
  *                                                     -> 409 { error: reason } when the
  *                                                        do-not-sign gate refuses (degraded
  *                                                        opens, no data, no mark yet, etc.)
@@ -14,9 +17,36 @@
  * `timestamp` is passed straight through to the engine, verbatim — the caller (the
  * keeper) is responsible for supplying the exact value from the order's
  * PriceRequestedV2 log. This server never substitutes Date.now() for it.
+ *
+ * It is, however, only signed inside [now - maxReportAge, now + maxClockSkew]. A report
+ * is accepted on chain only within maxAge of its timestamp, so a legitimate request
+ * always falls in that window; anything outside it is either useless (too old) or a
+ * report that could be held and replayed later (future-dated).
  */
 
 import { createServer } from 'node:http';
+import { CONTRACT_REPORT_MAX_AGE_S } from '@whitespace/shared/bounds';
+
+export const DEFAULT_MAX_CLOCK_SKEW_S = 2;
+
+/**
+ * @param {number} timestamp seconds
+ * @param {number} nowMs
+ * @param {{ maxReportAgeS: number, maxClockSkewS: number }} window
+ * @returns {null | { error: string, detail: string }}
+ */
+export function checkReportTimestamp(timestamp, nowMs, { maxReportAgeS, maxClockSkewS }) {
+  const tsMs = timestamp * 1000;
+  if (tsMs > nowMs + maxClockSkewS * 1000) {
+    const ahead = Math.ceil((tsMs - nowMs) / 1000);
+    return { error: 'timestamp_in_future', detail: `timestamp ${timestamp} is ${ahead}s ahead of the publisher clock (max skew ${maxClockSkewS}s)` };
+  }
+  if (tsMs < nowMs - maxReportAgeS * 1000) {
+    const age = Math.floor((nowMs - tsMs) / 1000);
+    return { error: 'timestamp_too_old', detail: `timestamp ${timestamp} is ${age}s old (maxAge ${maxReportAgeS}s)` };
+  }
+  return null;
+}
 
 function sendJson(res, status, body) {
   const payload = JSON.stringify(body, (_key, value) => (typeof value === 'bigint' ? value.toString() : value));
@@ -26,8 +56,18 @@ function sendJson(res, status, body) {
 
 /**
  * @param {ReturnType<typeof import('./engine.mjs').createPublisherEngine>} engine
+ * @param {object} [opts]
+ * @param {number} [opts.maxReportAgeS] oldest timestamp signed, seconds before now
+ * @param {number} [opts.maxClockSkewS] newest timestamp signed, seconds after now
+ * @param {() => number} [opts.now] defaults to the engine's clock
  */
-export function createServerApp(engine) {
+export function createServerApp(engine, opts = {}) {
+  const window = {
+    maxReportAgeS: opts.maxReportAgeS ?? CONTRACT_REPORT_MAX_AGE_S,
+    maxClockSkewS: opts.maxClockSkewS ?? DEFAULT_MAX_CLOCK_SKEW_S,
+  };
+  const now = opts.now ?? engine.now ?? (() => Date.now());
+
   return createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
 
@@ -109,6 +149,10 @@ export function createServerApp(engine) {
       const timestamp = Number(timestampParam);
       if (!Number.isInteger(timestamp) || timestamp < 0) {
         return sendJson(res, 400, { error: 'timestamp must be a non-negative integer (uint32 seconds)' });
+      }
+      const outside = checkReportTimestamp(timestamp, now(), window);
+      if (outside) {
+        return sendJson(res, 400, outside);
       }
       const result = await engine.signReportFor(feed, timestamp, orderType);
       if (!result.ok) {

@@ -134,6 +134,7 @@ export function createPublisherEngine({
   }
 
   return {
+    now,
     markets: [...state.keys()],
     ingestTick,
     currentAggregate,

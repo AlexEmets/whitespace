@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { loadKeyFiles } from '@whitespace/shared/keys';
 import { MARKET_FEEDS } from '@whitespace/shared/markets';
 import { VENUE_IDS } from '@whitespace/shared/venues';
-import { PUBLISHER_BOUNDS, SIGNATURE_THRESHOLD_K, boundsForMarket } from '@whitespace/shared/bounds';
+import { CONTRACT_REPORT_MAX_AGE_S, PUBLISHER_BOUNDS, SIGNATURE_THRESHOLD_K, boundsForMarket } from '@whitespace/shared/bounds';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
 
@@ -26,6 +26,8 @@ function readDeployment() {
  *   verifierAddress: `0x${string}`,
  *   host: string,
  *   port: number,
+ *   maxReportAgeS: number,
+ *   maxClockSkewS: number,
  *   markets: string[],
  *   venues: string[],
  *   bounds: typeof PUBLISHER_BOUNDS,
@@ -53,6 +55,13 @@ export function loadConfig(env = process.env) {
   const host = env.PUBLISHER_HOST ?? '127.0.0.1';
   const port = Number(env.PUBLISHER_PORT ?? 8787);
 
+  // /v2/report signs only timestamps in [now - maxReportAgeS, now + maxClockSkewS].
+  const maxReportAgeS = Number(env.PUBLISHER_MAX_REPORT_AGE_S ?? CONTRACT_REPORT_MAX_AGE_S);
+  const maxClockSkewS = Number(env.PUBLISHER_MAX_CLOCK_SKEW_S ?? 2);
+  for (const [name, v] of [['PUBLISHER_MAX_REPORT_AGE_S', maxReportAgeS], ['PUBLISHER_MAX_CLOCK_SKEW_S', maxClockSkewS]]) {
+    if (!Number.isInteger(v) || v < 0) throw new Error(`loadConfig: ${name} must be a non-negative integer, got ${v}`);
+  }
+
   const markets = env.PUBLISHER_MARKETS ? env.PUBLISHER_MARKETS.split(',') : MARKET_FEEDS;
   const venues = env.PUBLISHER_VENUES ? env.PUBLISHER_VENUES.split(',') : VENUE_IDS;
 
@@ -77,6 +86,8 @@ export function loadConfig(env = process.env) {
     verifierAddress,
     host,
     port,
+    maxReportAgeS,
+    maxClockSkewS,
     markets,
     venues,
     bounds: PUBLISHER_BOUNDS,

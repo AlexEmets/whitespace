@@ -125,3 +125,68 @@ test('GET /v2/report 400s on a missing parameter, 404s on an unknown feed', asyn
     assert.equal(unknown.status, 404);
   });
 });
+
+/**
+ * The signing window. `/v2/report` used to sign any timestamp it was given, so anyone who
+ * could reach it could collect reports dated in the future and replay them later, or
+ * backdate one. A report is only useful to the chain within maxAge of its timestamp, so
+ * the publisher signs exactly that window: not older than now - maxAge, not later than
+ * now + a small clock skew.
+ */
+function healthyEngine() {
+  const engine = newEngine();
+  for (const venue of ['binance', 'bybit', 'okx']) {
+    engine.ingestTick('BTC/USD', { venue, bid: 65_000n * SCALE, ask: 65_001n * SCALE, ts: NOW });
+  }
+  engine.sampleMark('BTC/USD');
+  return engine;
+}
+
+const NOW_S = NOW / 1000;
+const reportAt = (base, ts) => fetch(`${base}/v2/report?feed=${encodeURIComponent('BTC/USD')}&timestamp=${ts}&orderType=MARKET_CLOSE`);
+
+test('GET /v2/report refuses a timestamp more than the clock skew in the future', async () => {
+  await withServer(healthyEngine(), async (base) => {
+    const res = await reportAt(base, NOW_S + 3);
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error, 'timestamp_in_future');
+    assert.match(body.detail, /3s ahead/);
+    assert.equal('signedReport' in body, false);
+  });
+});
+
+test('GET /v2/report still signs at exactly now + 2s (the skew allowance)', async () => {
+  await withServer(healthyEngine(), async (base) => {
+    assert.equal((await reportAt(base, NOW_S + 2)).status, 200);
+  });
+});
+
+test('GET /v2/report refuses a timestamp older than maxAge', async () => {
+  await withServer(healthyEngine(), async (base) => {
+    const res = await reportAt(base, NOW_S - 11);
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.equal(body.error, 'timestamp_too_old');
+    assert.match(body.detail, /11s old/);
+  });
+});
+
+test('GET /v2/report still signs at exactly now - maxAge', async () => {
+  await withServer(healthyEngine(), async (base) => {
+    assert.equal((await reportAt(base, NOW_S - 10)).status, 200);
+  });
+});
+
+test('the window follows the configured maxAge and skew', async () => {
+  const server = createServerApp(healthyEngine(), { maxReportAgeS: 30, maxClockSkewS: 0 });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  try {
+    assert.equal((await reportAt(base, NOW_S - 30)).status, 200);
+    assert.equal((await reportAt(base, NOW_S - 31)).status, 400);
+    assert.equal((await reportAt(base, NOW_S + 1)).status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
