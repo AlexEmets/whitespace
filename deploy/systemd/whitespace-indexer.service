@@ -16,7 +16,7 @@ WorkingDirectory=/home/whitespace/whitespace/services/indexer
 # is only in `.env`. systemd loading the file removes that ambiguity entirely.
 EnvironmentFile=/home/whitespace/whitespace/services/indexer/.env
 Environment=HOME=/home/whitespace
-ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder start
+ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder start --hostname 127.0.0.1
 Restart=always
 RestartSec=5
 # Measured 203 MB PSS at peak during historical backfill, which is the heaviest phase.
