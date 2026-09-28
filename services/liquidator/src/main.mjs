@@ -25,6 +25,7 @@ import { createHealthServerApp } from './healthServer.mjs';
 import { createDeadLetterQueue } from './deadLetter.mjs';
 import { createTxSender } from './txSender.mjs';
 import { watchOpenEvents, watchLiveness } from './watcher.mjs';
+import { createSweepLoop } from './sweepLoop.mjs';
 
 async function main() {
   const config = loadConfig();
@@ -96,23 +97,24 @@ async function main() {
 
   const stopWatchingLiveness = watchLiveness(publicClient, sequencerMonitor, positionTable, config.pollingIntervalMs);
 
-  const sweepInterval = setInterval(async () => {
-    metrics.setSequencerState(sequencerMonitor.state);
-    metrics.deadLetterDepth.set(deadLetter.size());
-    try {
+  const sweepLoop = createSweepLoop({
+    intervalMs: config.pollingIntervalMs,
+    sweep: async () => {
+      metrics.setSequencerState(sequencerMonitor.state);
+      metrics.deadLetterDepth.set(deadLetter.size());
       const results = await engine.evaluateAll(positionTable.list());
       const submitted = results.filter((r) => r.action === 'submitted');
       if (submitted.length > 0) {
         console.log(`[liquidator] submitted ${submitted.length} liquidation trigger(s)`);
       }
-    } catch (err) {
-      console.error('[liquidator] sweep error:', err.message);
-    }
-  }, config.pollingIntervalMs);
+    },
+    onError: (err) => console.error('[liquidator] sweep error:', err.message),
+  });
+  sweepLoop.start();
 
   const shutdown = () => {
     console.log('[liquidator] shutting down');
-    clearInterval(sweepInterval);
+    sweepLoop.stop();
     stopWatchingOpens();
     stopWatchingLiveness();
     healthServer.close();
