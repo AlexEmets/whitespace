@@ -243,3 +243,26 @@ CREATE TABLE vault_settlement (
     tx_hash text NOT NULL,
     PRIMARY KEY (id)
 );
+
+-- Added with partial-close PnL, captured the same way (pg_dump -t partial_close).
+CREATE TABLE partial_close (
+    order_id numeric(78,0) NOT NULL,
+    trade_id numeric(78,0) NOT NULL,
+    trader text NOT NULL,
+    pair_index integer NOT NULL,
+    index integer NOT NULL,
+    buy boolean NOT NULL,
+    collateral numeric(78,0) NOT NULL,
+    leverage integer NOT NULL,
+    open_price numeric(78,0) NOT NULL,
+    close_price numeric(78,0) NOT NULL,
+    close_reason text NOT NULL,
+    percent_profit numeric(78,0) NOT NULL,
+    usdc_sent_to_trader numeric(78,0) NOT NULL,
+    percentage_closed integer NOT NULL,
+    opened_at integer NOT NULL,
+    closed_at integer NOT NULL,
+    close_tx_hash text NOT NULL,
+    PRIMARY KEY (order_id)
+);
+CREATE INDEX partial_close_trader_index ON partial_close USING btree (trader);

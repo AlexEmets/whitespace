@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
-import { truncateAll, seedMarket, seedOpenPosition, seedClosedPosition, TRADER, OTHER_TRADER } from './seed.js';
+import { truncateAll, seedMarket, seedOpenPosition, seedClosedPosition, seedPartialClose, TRADER, OTHER_TRADER, TX_B } from './seed.js';
 
 describe('GET /positions/:address', () => {
   let server: TestServer;
@@ -102,6 +102,39 @@ describe('GET /positions/:address/history', () => {
     const [row] = await (await fetch(`${server.baseUrl}/positions/${TRADER}/history`)).json();
     expect(row.percentProfit).toBe('-0.030768');
     expect(Number(row.percentProfit) / Number('-0.000000000000030768')).toBeCloseTo(1e12, -3);
+  });
+
+  it('includes partial closes, newest first, each with its own realised PnL', async () => {
+    await seedClosedPosition(); // closed_at 1788881880
+    await seedPartialClose(); // closed_at 1788881878
+    const body = await (await fetch(`${server.baseUrl}/positions/${TRADER}/history`)).json();
+    expect(body.map((r: { closeOrderId: string; isPartial: boolean }) => [r.closeOrderId, r.isPartial])).toEqual([
+      ['3', false],
+      ['5', true],
+    ]);
+    expect(body[0]).toMatchObject({ percentageClosed: '100.00', realizedPnl: '-0.307372' });
+    expect(body[1]).toEqual({
+      pairIndex: 0,
+      index: 0,
+      buy: true,
+      collateral: '249.750000', // the part closed
+      leverage: '10.00',
+      openPrice: '65001.000000000000000000',
+      closePrice: '65700.000000000000000000',
+      tp: null,
+      sl: null,
+      tradeId: '2',
+      openedAt: 1788881876,
+      closedAt: 1788881878,
+      closeReason: 'close',
+      percentProfit: '41.041041',
+      usdcSentToTrader: '260.000000',
+      realizedPnl: '10.250000',
+      closeOrderId: '5',
+      closeTxHash: TX_B,
+      percentageClosed: '25.00',
+      isPartial: true,
+    });
   });
 
   it('history is scoped per-trader (filter proven both ways)', async () => {

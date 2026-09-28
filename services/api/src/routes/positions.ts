@@ -56,28 +56,47 @@ type ClosedPositionRow = {
   leverage: number;
   open_price: string;
   close_price: string;
-  tp: string;
-  sl: string;
+  tp: string | null;
+  sl: string | null;
   trade_id: string;
   opened_at: number;
   closed_at: number;
   close_reason: string;
   percent_profit: string;
   usdc_sent_to_trader: string;
+  close_order_id: string;
+  close_tx_hash: string;
+  percentage_closed: number;
+  is_partial: boolean;
 };
 
+// GET /positions/:address/history -> every close that realised PnL, newest first: full
+// closes from closed_position and partial closes from partial_close. A partially closed
+// trade therefore appears once per partial close (and once more if it is later closed in
+// full), all with the same tradeId; closeOrderId is the unique key. For a partial row,
+// `collateral` is the part closed and tp/sl are null (the trade's own tp/sl live on the
+// open position).
 export const handlePositionsHistory: Handler = async (_req, params): Promise<RouteResult> => {
   const trader = parseAddress(params.address);
   if (!trader) return badRequest('invalid address');
   const rows = await query<ClosedPositionRow>(
-    'SELECT * FROM closed_position WHERE trader = $1 ORDER BY closed_at DESC',
+    `SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
+            tp::text, sl::text, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
+            usdc_sent_to_trader::text, close_order_id::text, close_tx_hash, percentage_closed, false AS is_partial
+       FROM closed_position WHERE trader = $1
+     UNION ALL
+     SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
+            NULL, NULL, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
+            usdc_sent_to_trader::text, order_id::text, close_tx_hash, percentage_closed, true
+       FROM partial_close WHERE trader = $1
+     ORDER BY closed_at DESC, close_order_id DESC`,
     [trader],
   );
   return {
     code: 200,
     body: rows.map((r) => {
-      // realised pnl = what came back to the trader minus what they put in,
-      // both PRECISION_6 — exact bigint subtraction, no float.
+      // realised pnl = what came back to the trader minus the collateral that was closed,
+      // both PRECISION_6: exact bigint subtraction, no float.
       const realizedPnl = (BigInt(r.usdc_sent_to_trader) - BigInt(r.collateral)).toString();
       return {
         pairIndex: r.pair_index,
@@ -96,6 +115,10 @@ export const handlePositionsHistory: Handler = async (_req, params): Promise<Rou
         percentProfit: percent6(r.percent_profit), // percent, 6 dp
         usdcSentToTrader: collateral(r.usdc_sent_to_trader),
         realizedPnl: collateral(realizedPnl),
+        closeOrderId: fmtId(r.close_order_id),
+        closeTxHash: r.close_tx_hash,
+        percentageClosed: fmtLeverage(r.percentage_closed), // PRECISION_2 percent, "100.00" = full
+        isPartial: r.is_partial,
       };
     }),
   };
