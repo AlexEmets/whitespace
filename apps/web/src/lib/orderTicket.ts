@@ -16,6 +16,17 @@ export type SizeUnit = 'BASE' | 'USD';
 
 const E30 = 10n ** 30n;
 
+/**
+ * Truncates to `digits` fraction digits before display. `formatMoney` rounds half-up, and a
+ * size that rounds UP needs more margin than the balance it was derived from — 100% of the
+ * balance would then be refused as insufficient.
+ */
+function floorToDigits(value: bigint, decimals: number, digits: number): bigint {
+  if (digits >= decimals) return value;
+  const step = 10n ** BigInt(decimals - digits);
+  return value - (value % step);
+}
+
 export interface TicketInput {
   unit: SizeUnit;
   sizeInput: string;
@@ -92,10 +103,16 @@ export function sizeForPercentOfBalance(p: {
   const collateral = (p.balanceRaw * pct) / 100n;
   const notional = (collateral * p.leverageRaw) / 100n;
   if (p.unit === 'USD') {
-    return formatMoney(notional, COLLATERAL_DECIMALS, { fractionDigits: 2, grouping: false });
+    return formatMoney(floorToDigits(notional, COLLATERAL_DECIMALS, 2), COLLATERAL_DECIMALS, {
+      fractionDigits: 2,
+      grouping: false,
+    });
   }
   const size = baseSizeForNotional(notional, p.entryPrice);
-  return formatMoney(size, PRICE_DECIMALS_NUM, { fractionDigits: 6, grouping: false });
+  return formatMoney(floorToDigits(size, PRICE_DECIMALS_NUM, 6), PRICE_DECIMALS_NUM, {
+    fractionDigits: 6,
+    grouping: false,
+  });
 }
 
 /** The same order re-expressed in the other unit, for the unit toggle. */
@@ -104,8 +121,14 @@ export function convertSizeInput(t: TicketInput, to: SizeUnit): string {
   const ticket = computeTicket(t);
   if (!ticket || t.sizeInput.trim() === '') return '';
   return to === 'USD'
-    ? formatMoney(ticket.notionalRaw, COLLATERAL_DECIMALS, { fractionDigits: 2, grouping: false })
-    : formatMoney(ticket.sizeBaseRaw, PRICE_DECIMALS_NUM, { fractionDigits: 6, grouping: false });
+    ? formatMoney(floorToDigits(ticket.notionalRaw, COLLATERAL_DECIMALS, 2), COLLATERAL_DECIMALS, {
+        fractionDigits: 2,
+        grouping: false,
+      })
+    : formatMoney(floorToDigits(ticket.sizeBaseRaw, PRICE_DECIMALS_NUM, 6), PRICE_DECIMALS_NUM, {
+        fractionDigits: 6,
+        grouping: false,
+      });
 }
 
 /** Percent of the balance a ticket's margin uses, 0..100+ (for the slider). */

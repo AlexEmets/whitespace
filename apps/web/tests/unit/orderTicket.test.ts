@@ -65,6 +65,15 @@ describe('sizeForPercentOfBalance', () => {
     expect(sizeForPercentOfBalance({ ...p, percent: 0, unit: 'USD' })).toBe('');
     expect(sizeForPercentOfBalance({ ...p, balanceRaw: 0n, percent: 50, unit: 'USD' })).toBe('');
   });
+  it('truncates instead of rounding up, so Max at an awkward price still fits the balance', () => {
+    // 10,000 / 65,001 = 0.153843787... — half-up would show 0.153844 and need 1,000.0027 USDW
+    const awkward = { ...p, entryPrice: 65_001n * E18 };
+    const sizeInput = sizeForPercentOfBalance({ ...awkward, percent: 100, unit: 'BASE' });
+    expect(sizeInput).toBe('0.153843');
+    const t = computeTicket({ ...base, entryPrice: awkward.entryPrice, sizeInput })!;
+    expect(t.collateralRaw <= p.balanceRaw).toBe(true);
+  });
+
   it('round-trips: the chosen percent never needs more margin than the balance', () => {
     for (const percent of [1, 25, 33, 50, 75, 99, 100]) {
       const sizeInput = sizeForPercentOfBalance({ ...p, percent, unit: 'BASE' });
