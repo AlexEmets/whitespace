@@ -12,6 +12,9 @@
 .wrap {
   position: relative;
   width: 100%;
+  /* Fills the chart panel: the component measures this box and sizes the SVG to it. */
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .svg {
@@ -31,15 +34,15 @@
  * candle bodies and under the axis labels, which is the ordering the design implies.
  */
 .grid line {
-  stroke: rgba(232, 234, 237, 0.035);
+  stroke: rgba(255, 255, 255, 0.04);
   stroke-width: 1;
   shape-rendering: crispEdges;
 }
 
 .axis text {
-  fill: var(--fg-dim);
+  fill: var(--fg-muted);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   letter-spacing: 0.02em;
 }
 
@@ -71,7 +74,29 @@
   stroke: var(--accent);
   stroke-width: 1;
   stroke-dasharray: 3 3;
-  opacity: 0.75;
+  opacity: 0.55;
+}
+
+/* Line mode: the close series in the accent, with a faint wash beneath it. */
+.line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.lineArea {
+  fill: var(--accent);
+  opacity: 0.07;
+  stroke: none;
+}
+
+.lineDot {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 5px rgba(255, 195, 122, 0.6));
 }
 
 .markChip {
@@ -79,9 +104,9 @@
 }
 
 .markChipText {
-  fill: #07080a;
+  fill: var(--on-color);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 600;
 }
 
@@ -94,7 +119,7 @@
 }
 
 .crosshairChip {
-  fill: var(--bg-raised);
+  fill: var(--bg-panel);
   stroke: var(--fg-muted);
   stroke-width: 1;
 }
@@ -102,7 +127,7 @@
 .crosshairChipText {
   fill: var(--fg);
   font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 10px;
 }
 
 /*
@@ -117,7 +142,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   color: var(--fg-muted);
   pointer-events: none;
   line-height: 1.4;
@@ -142,7 +167,7 @@
 
 .empty {
   color: var(--fg-muted);
-  font-size: 0.75rem;
+  font-size: 0.9rem;
   margin: 0 0 0.5rem;
 }
 
@@ -153,7 +178,7 @@
  */
 .note {
   margin: 0.5rem 0 0;
-  font-size: 0.65rem;
+  font-size: 0.8rem;
   line-height: 1.5;
   color: var(--fg-dim);
 }

@@ -14,7 +14,12 @@ import styles from './PriceChart.module.css';
  * mockup's "1W", which is not one of the enum values GET /candles accepts. */
 const INTERVALS: CandleInterval[] = ['1m', '5m', '15m', '1h', '4h', '1d'];
 
+/** Height used until the panel has been measured (and in tests, where nothing lays out).
+ * In the terminal the chart fills whatever its panel leaves. */
 const CHART_HEIGHT = 340;
+/** Below this the measured height is not a real layout yet (a collapsed or unmounted
+ * panel); keep the default rather than drawing a chart a few pixels tall. */
+const MIN_MEASURED_HEIGHT = 160;
 /** Right gutter holds the price axis, bottom gutter the time axis. The plot is what is
  * left; everything below is expressed against it so a resize moves one number. */
 const PAD = { top: 10, right: 66, bottom: 24, left: 8 } as const;
@@ -186,10 +191,39 @@ export function domainWithMark(min: bigint, max: bigint, mark: bigint | null): {
   return { min: mark < min ? mark : min, max: mark > max ? mark : max };
 }
 
+export type ChartMode = 'candles' | 'line';
+
+/** Where the trader's candles/line choice is remembered between visits. */
+export const CHART_MODE_STORAGE_KEY = 'whitespace.chartMode';
+
+/**
+ * The line view: one path through each candle's close and the area under it, closed down
+ * to `baseY` (the bottom of the plot). Pure so the geometry can be tested without a DOM.
+ * Returns null for an empty series — there is no line to draw, not a zero-length one.
+ */
+export function closeLinePath(points: ReadonlyArray<{ x: number; y: number }>, baseY: number): { line: string; area: string } | null {
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (!first || !last) return null;
+  const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const area = `${line} L${last.x.toFixed(1)} ${baseY.toFixed(1)} L${first.x.toFixed(1)} ${baseY.toFixed(1)} Z`;
+  return { line, area };
+}
+
+function readStoredMode(): ChartMode {
+  try {
+    return window.localStorage.getItem(CHART_MODE_STORAGE_KEY) === 'line' ? 'line' : 'candles';
+  } catch {
+    // Storage can be blocked (private mode, sandboxed frames); the default is fine.
+    return 'candles';
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 
 interface Layout {
   width: number;
+  height: number;
   plotW: number;
   plotH: number;
 }
@@ -228,6 +262,20 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   // draw as one flat mark. The shortest interval shows real movement soonest.
   const [interval, setInterval] = useState<CandleInterval>('1m');
   const [logScale, setLogScale] = useState(false);
+  // Candles by default. The stored choice is applied after mount, not in the initializer,
+  // so the server render and the first client render agree.
+  const [mode, setModeState] = useState<ChartMode>('candles');
+  useEffect(() => {
+    setModeState(readStoredMode());
+  }, []);
+  const setMode = useCallback((next: ChartMode) => {
+    setModeState(next);
+    try {
+      window.localStorage.setItem(CHART_MODE_STORAGE_KEY, next);
+    } catch {
+      // Not remembered across visits; the switch itself still works.
+    }
+  }, []);
   const now = useMemo(() => Math.floor(Date.now() / 1000), []);
   const from = now - 60 * 60 * 24 * 2; // 2 days back
   const { candles, loading, error } = useCandles(pairIndex, interval, from, now);
@@ -245,12 +293,18 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   // the terminal grid gives this column, and pointer maths against a 1:1 coordinate space
   // needs no conversion beyond the bounding rect's origin.
   const [width, setWidth] = useState(880);
+  const [height, setHeight] = useState(CHART_HEIGHT);
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
     const measure = () => {
-      const w = el.getBoundingClientRect().width;
+      const rect = el.getBoundingClientRect();
+      const w = rect.width;
       if (w > 0) setWidth((prev) => (Math.abs(prev - w) < 0.5 ? prev : w));
+      // The wrap is a flex child that fills its panel, so its height is the space the
+      // chart has — not something the SVG inside it decides.
+      const h = rect.height;
+      if (h >= MIN_MEASURED_HEIGHT) setHeight((prev) => (Math.abs(prev - h) < 0.5 ? prev : Math.floor(h)));
     };
     measure();
     if (typeof ResizeObserver === 'undefined') {
@@ -265,10 +319,11 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   const layout: Layout = useMemo(
     () => ({
       width,
+      height,
       plotW: Math.max(40, width - PAD.left - PAD.right),
-      plotH: Math.max(40, CHART_HEIGHT - PAD.top - PAD.bottom),
+      plotH: Math.max(40, height - PAD.top - PAD.bottom),
     }),
-    [width],
+    [width, height],
   );
 
   /* ---- view ------------------------------------------------------------- */
@@ -445,6 +500,21 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     });
   }, [visibleCandles, scale, step, leadingSlots]);
 
+  const linePath = useMemo(
+    () =>
+      mode === 'line' && scale
+        ? closeLinePath(
+            geometry.map((c, i) => ({ x: c.x, y: scale.toY(priceToRaw(visibleCandles[i]!.c)) })),
+            PAD.top + layout.plotH,
+          )
+        : null,
+    [mode, scale, geometry, visibleCandles, layout.plotH],
+  );
+  const lastLinePoint =
+    linePath && scale && visibleCandles.length > 0
+      ? { x: geometry[geometry.length - 1]!.x, y: scale.toY(priceToRaw(visibleCandles[visibleCandles.length - 1]!.c)) }
+      : null;
+
   const yTicks = useMemo(() => (scale ? priceTicks(scale.min, scale.max) : []), [scale]);
   const xTicks = useMemo(() => timeTickIndices(visibleCandles.length, TIME_TICK_TARGET), [visibleCandles.length]);
 
@@ -479,8 +549,36 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
           ))}
         </div>
         <div className="group">
+          <div className="group mode-toggle" role="group" aria-label="Chart type">
+            <button
+              type="button"
+              className={mode === 'candles' ? 'active' : ''}
+              aria-pressed={mode === 'candles'}
+              onClick={() => setMode('candles')}
+              data-testid="chart-mode-candles"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <path d="M7 3v4M7 17v4M17 3v6M17 15v6" />
+                <rect x="4" y="7" width="6" height="10" rx="1" />
+                <rect x="14" y="9" width="6" height="6" rx="1" />
+              </svg>
+              Candles
+            </button>
+            <button
+              type="button"
+              className={mode === 'line' ? 'active' : ''}
+              aria-pressed={mode === 'line'}
+              onClick={() => setMode('line')}
+              data-testid="chart-mode-line"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M3 17l5-6 4 3 5-7 4 4" />
+              </svg>
+              Line
+            </button>
+          </div>
           <button type="button" className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)} data-testid="log-scale-toggle">
-            Log scale
+            Log
           </button>
         </div>
       </div>
@@ -507,8 +605,8 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
               <svg
                 ref={svgRef}
                 width={layout.width}
-                height={CHART_HEIGHT}
-                viewBox={`0 0 ${layout.width} ${CHART_HEIGHT}`}
+                height={layout.height}
+                viewBox={`0 0 ${layout.width} ${layout.height}`}
                 role="img"
                 aria-label={`Price chart, ${visibleCandles.length} of ${total} candles`}
                 className={styles.svg}
@@ -546,24 +644,36 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                   {xTicks.map((i) => {
                     const c = visibleCandles[i];
                     return c ? (
-                      <text key={`xl${c.t}`} x={xOfCandle(i)} y={CHART_HEIGHT - 8}>
+                      <text key={`xl${c.t}`} x={xOfCandle(i)} y={layout.height - 8}>
                         {formatAxisTime(c.t, interval)}
                       </text>
                     ) : null;
                   })}
                 </g>
 
-                {geometry.map((c) => (
-                  <g key={c.key} className={c.up ? styles.up : styles.down}>
-                    <line x1={c.x} x2={c.x} y1={c.wickTop} y2={c.wickBottom} />
-                    <rect x={c.x - c.bodyWidth / 2} y={c.bodyY} width={c.bodyWidth} height={c.bodyH} />
+                {mode === 'candles' ? (
+                  <g data-testid="chart-candles">
+                    {geometry.map((c) => (
+                      <g key={c.key} className={c.up ? styles.up : styles.down}>
+                        <line x1={c.x} x2={c.x} y1={c.wickTop} y2={c.wickBottom} />
+                        <rect x={c.x - c.bodyWidth / 2} y={c.bodyY} width={c.bodyWidth} height={c.bodyH} />
+                      </g>
+                    ))}
                   </g>
-                ))}
+                ) : null}
+
+                {mode === 'line' && linePath ? (
+                  <g data-testid="chart-line">
+                    <path className={styles.lineArea} d={linePath.area} />
+                    <path className={styles.line} d={linePath.line} />
+                    {lastLinePoint ? <circle className={styles.lineDot} cx={lastLinePoint.x} cy={lastLinePoint.y} r={3.5} /> : null}
+                  </g>
+                ) : null}
 
                 {markY !== null && price ? (
                   <g data-testid="mark-price-line">
                     <line className={styles.markLine} x1={PAD.left} x2={PAD.left + layout.plotW} y1={markY} y2={markY} />
-                    <rect className={styles.markChip} x={PAD.left + layout.plotW + 2} y={markY - 7} width={PAD.right - 6} height={14} rx={2} />
+                    <rect className={styles.markChip} x={PAD.left + layout.plotW + 2} y={markY - 7} width={PAD.right - 6} height={14} rx={5} />
                     <text className={styles.markChipText} x={PAD.left + layout.plotW + 6} y={markY + 3.5}>
                       {formatMoney(price.mark, PRICE_DECIMALS_NUM)}
                     </text>
@@ -591,7 +701,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                       y={scale.toY(priceToRaw(hovered.c)) - 7}
                       width={PAD.right - 6}
                       height={14}
-                      rx={2}
+                      rx={5}
                     />
                     <text
                       className={styles.crosshairChipText}
