@@ -57,7 +57,7 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
           {price ? formatMoney(price.index, PRICE_DECIMALS_NUM) : '—'}
         </span>
       </div>
-      <div className="stat-cell">
+      <div className="stat-cell stat-tertiary">
         Funding · 1h
         <span
           className={`stat-value${funding === null ? ' dash' : ''}`}
@@ -67,11 +67,11 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
           {funding === null ? '—' : `${formatMoney(funding, 18, { fractionDigits: 4, grouping: false, signDisplay: true })}%`}
         </span>
       </div>
-      <div className="stat-cell">
+      <div className="stat-cell stat-secondary">
         Open interest
         <span className="stat-value">{formatMoney(oiTotal, COLLATERAL_DECIMALS)}</span>
       </div>
-      <div className="stat-cell">
+      <div className="stat-cell stat-secondary">
         24h volume
         <span className="stat-value">{change ? formatMoney(change.volume, COLLATERAL_DECIMALS) : '—'}</span>
       </div>

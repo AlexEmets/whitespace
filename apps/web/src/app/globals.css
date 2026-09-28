@@ -1953,3 +1953,87 @@ table.data-table[data-testid='positions-table'] td:last-child {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---------- Narrower screens ---------- */
+
+/* Tabs scroll sideways rather than wrapping: a two-line tab bar moves every row below it. */
+.terminal-tabs .tab-bar {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.terminal-tabs .tab-bar button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* The market header sheds its least-used figures first, so the mark price never gets cut. */
+@media (max-width: 1360px) {
+  .market-header .stat-secondary {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .market-header {
+    gap: 1rem;
+  }
+
+  .market-header .last-price {
+    font-size: 1.5rem;
+  }
+}
+
+@media (max-width: 1100px) {
+  .market-header .stat-tertiary,
+  .nav-right .chain-health {
+    display: none;
+  }
+}
+
+/* Below this the three columns cannot all be usable at once: stack them, let the page
+   scroll, and turn the rail into a horizontal strip of markets. */
+@media (max-width: 1000px) {
+  .terminal-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 0;
+  }
+
+  .terminal-rail {
+    flex-direction: row;
+    gap: 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .terminal-rail .rail-header,
+  .terminal-rail .rail-spacer {
+    display: none;
+  }
+
+  .terminal-rail .rail-row {
+    flex: 0 0 180px;
+  }
+
+  .terminal-rail .rail-card {
+    flex: 0 0 220px;
+    margin: 0;
+  }
+
+  .chart-panel {
+    min-height: 420px;
+  }
+
+  .terminal-right {
+    overflow: visible;
+  }
+
+  .nav-header {
+    gap: 1rem;
+  }
+
+  .nav-links {
+    overflow-x: auto;
+  }
+}
