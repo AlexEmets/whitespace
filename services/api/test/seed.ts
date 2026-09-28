@@ -146,3 +146,16 @@ export async function seedOrderEvent(
     [id, over.trader ?? TRADER, over.kind ?? 'limit_placed', over.at ?? 1000, TX_A],
   );
 }
+
+export async function seedFee(
+  id: string,
+  kind: string,
+  amount: string,
+  over: { at?: number; tradeId?: number | null; trader?: string; pairIndex?: number | null } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO fee_charge (id, trader, trade_id, pair_index, kind, amount, at, block_number, tx_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 7285600, $8)`,
+    [id, over.trader ?? TRADER, over.tradeId === undefined ? 2 : over.tradeId, over.pairIndex === undefined ? 0 : over.pairIndex, kind, amount, over.at ?? 1000, TX_A],
+  );
+}
