@@ -9,6 +9,7 @@ import { priceUpKeepAbi } from './abis/priceUpKeep.js';
 import { pairsStorageAbi } from './abis/pairsStorage.js';
 import { tradingStorageAbi } from './abis/tradingStorage.js';
 import { vaultAbi } from './abis/vault.js';
+import { parsePollingInterval } from './src/lib/pollingInterval.js';
 
 // Whitechain testnet 1874 is an OP Stack rollup — see
 // docs/superpowers/specs/2026-09-08-whitechain-perp-dex-design.md §2.2.
@@ -25,6 +26,8 @@ const PRIMARY_RPC = 'https://rpc.testnet.whitechain.io';
 // be added purely via config once one exists, without a code change. Until
 // then this `fallback()` wraps a single transport, which is a no-op for
 // failover but keeps the mechanism real rather than faked.
+const pollingIntervalMs = parsePollingInterval(process.env.PONDER_POLLING_INTERVAL_MS);
+
 const rpcUrls = (process.env.PONDER_RPC_URLS_1874 ?? PRIMARY_RPC)
   .split(',')
   .map((u) => u.trim())
@@ -62,6 +65,9 @@ export default createConfig({
     whitechain1874: {
       id: CHAIN_ID,
       rpc: fallback(rpcUrls.map((url) => http(url))),
+      // Ponder's 1 s default doubles the request rate on a 1 s chain for no gain here, and the
+      // public RPC rate-limits by IP: the indexer, keeper and both automation bots share one.
+      pollingInterval: pollingIntervalMs,
     },
   },
   contracts: {
