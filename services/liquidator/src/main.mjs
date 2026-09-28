@@ -20,7 +20,7 @@ import { createSequencerMonitor } from './sequencerLiveness.mjs';
 import { createAutomationEngine } from './automationEngine.mjs';
 import { createLiquidatorMetrics } from './metrics.mjs';
 import { createHealthServerApp } from './healthServer.mjs';
-import { createDeadLetterQueue } from './deadLetter.mjs';
+import { createDeadLetterStore } from '@whitespace/txsender';
 import { createTxSender } from './txSender.mjs';
 import { watchLiveness } from './watcher.mjs';
 import { createSweepLoop } from './sweepLoop.mjs';
@@ -43,7 +43,7 @@ async function main() {
 
   const metrics = createLiquidatorMetrics();
   const sequencerMonitor = createSequencerMonitor();
-  const deadLetter = createDeadLetterQueue({ filePath: config.deadLetterFilePath ?? undefined });
+  const deadLetter = createDeadLetterStore({ filePath: config.deadLetterFilePath ?? undefined });
   const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 2 });
   pool.on('error', (err) => logError('postgres pool error:', err.message));
 
@@ -57,8 +57,7 @@ async function main() {
   });
   const candidates = createCandidateSource({ query: pgQuery(pool), schema: config.databaseSchema });
 
-  // The only way this service sends a transaction. packages/txsender replaces the
-  // implementation behind this one function at merge; nothing else changes.
+  // The only way this service sends a transaction: the shared serial-nonce sender.
   const txSender = createTxSender({
     publicClient,
     walletClient,
@@ -66,6 +65,7 @@ async function main() {
     tradesUpKeepAddress: config.tradesUpKeepAddress,
     deadLetter,
     maxRetries: config.maxRetries,
+    registry: metrics.registry,
   });
   const sendPerformUpkeep = (payload) => txSender.sendPerformUpkeep(payload);
 
