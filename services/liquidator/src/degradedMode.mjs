@@ -37,19 +37,6 @@ export function isDegraded(healthyVenueCount, minHealthyVenues = MIN_HEALTHY_VEN
 }
 
 /**
- * @param {object} p
- * @param {number} p.healthyVenueCount
- * @param {number} [p.minHealthyVenues]
- * @returns {{ ok: true } | { ok: false, reason: string }}
- */
-export function canSubmitLiquidation({ healthyVenueCount, minHealthyVenues = MIN_HEALTHY_VENUES }) {
-  if (isDegraded(healthyVenueCount, minHealthyVenues)) {
-    return { ok: false, reason: 'degraded_liquidations_suppressed' };
-  }
-  return { ok: true };
-}
-
-/**
  * Per-kind gate for the automation bot (docs/decisions/phase-6-liquidator.md §11).
  *
  *            sequencer STALLED   RECOVERING            degraded market

@@ -1,14 +1,50 @@
 /**
- * Live implementations of the reader functions services/liquidator/src/liquidatorEngine.mjs
- * needs, wired to real viem `readContract` calls and the price-publisher's HTTP API. Not
- * unit-tested here (network) — the decision logic these feed is fully tested against
- * mocks in test/liquidatorEngine.test.mjs; this module is the thin, deliberately dumb
- * translation from "the contract's own view" to plain JS values.
+ * Live readers the automation engine needs: contract views via viem `readContract`, and
+ * the price-publisher's `/status` for the prices a report will carry. Deliberately dumb
+ * translation from "the contract's own view" to plain JS values; every decision lives in
+ * automationEngine.mjs / triggerRules.mjs.
+ *
+ * viem decodes uint8..uint48 as `number` and wider ints as `bigint`. Everything that
+ * feeds bigint maths is normalised with BigInt() here — `getOpenTrade().leverage` is a
+ * uint32, so comparing it to `0n` without normalising never matches.
  */
 
-import { TRADING_STORAGE_ABI, PAIR_INFOS_ABI, PAIRS_STORAGE_ABI } from './abi.mjs';
+import { TRADING_STORAGE_ABI, PAIR_INFOS_ABI, PAIRS_STORAGE_ABI, TRADING_ABI, OpenOrderType } from './abi.mjs';
 import { getMarketByFeedId } from '@whitespace/shared/markets';
 import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
+
+const OPEN_ORDER_TYPE_NAME = { [OpenOrderType.LIMIT]: 'LIMIT', [OpenOrderType.STOP]: 'STOP' };
+
+/**
+ * The prices a report for `feed` would carry right now, exactly as
+ * services/price-publisher engine.signReportFor builds them: price = mark,
+ * bid/ask = aggregated index quote, each side falling back to the mark when missing.
+ * @param {{ mark?: string|null, indexBid?: string|null, indexAsk?: string|null,
+ *           healthyCount?: number, minHealthyVenues?: number } | undefined} snap
+ */
+export function quoteFromStatus(snap) {
+  if (!snap || snap.mark === null || snap.mark === undefined) return null;
+  const price = BigInt(snap.mark);
+  return {
+    price,
+    bid: snap.indexBid === null || snap.indexBid === undefined ? price : BigInt(snap.indexBid),
+    ask: snap.indexAsk === null || snap.indexAsk === undefined ? price : BigInt(snap.indexAsk),
+    healthyVenueCount: snap.healthyCount ?? 0,
+    // Older publishers omit it; the global minimum can only be stricter than the truth.
+    minHealthyVenues: snap.minHealthyVenues ?? MIN_HEALTHY_VENUES,
+  };
+}
+
+/**
+ * executeAutomationOrder returns PENDING_TRIGGER while
+ * `triggerBlock != 0 && block.number - triggerBlock < triggerTimeout`
+ * (TradingLib.checkNoPendingTrigger). Our tx lands in the next block at the earliest.
+ * @param {bigint} triggerBlock @param {bigint} headBlock @param {bigint} triggerTimeout
+ */
+export function isTriggerPending(triggerBlock, headBlock, triggerTimeout) {
+  if (triggerBlock === 0n) return false;
+  return headBlock + 1n - triggerBlock < triggerTimeout;
+}
 
 /**
  * @param {object} opts
@@ -16,6 +52,7 @@ import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
  * @param {`0x${string}`} opts.tradingStorageAddress
  * @param {`0x${string}`} opts.pairInfosAddress
  * @param {`0x${string}`} opts.pairsStorageAddress
+ * @param {`0x${string}`} opts.tradingAddress
  * @param {string} opts.publisherBaseUrl
  * @param {typeof fetch} [opts.fetchImpl]
  */
@@ -24,126 +61,149 @@ export function createChainReader({
   tradingStorageAddress,
   pairInfosAddress,
   pairsStorageAddress,
+  tradingAddress,
   publisherBaseUrl,
   fetchImpl = fetch,
 }) {
   const feedCache = new Map(); // pairIndex -> feed name
+  const read = (address, abi, functionName, args = []) => publicClient.readContract({ address, abi, functionName, args });
+  const storage = (fn, args) => read(tradingStorageAddress, TRADING_STORAGE_ABI, fn, args);
+  const infos = (fn, args) => read(pairInfosAddress, PAIR_INFOS_ABI, fn, args);
+  const pairs = (fn, args) => read(pairsStorageAddress, PAIRS_STORAGE_ABI, fn, args);
 
   async function resolveFeed(pairIndex) {
     if (feedCache.has(pairIndex)) return feedCache.get(pairIndex);
-    const feedId = await publicClient.readContract({
-      address: pairsStorageAddress,
-      abi: PAIRS_STORAGE_ABI,
-      functionName: 'pairFeed',
-      args: [pairIndex],
-    });
+    const feedId = await pairs('pairFeed', [pairIndex]);
     const market = getMarketByFeedId(feedId);
     if (!market) throw new Error(`resolveFeed: pairIndex ${pairIndex} feed ${feedId} is not in @whitespace/shared/markets`);
     feedCache.set(pairIndex, market.feed);
     return market.feed;
   }
 
-  /**
-   * @param {`0x${string}`} trader
-   * @param {number} pairIndex
-   * @param {number} index
-   */
-  async function readTrade(trader, pairIndex, index) {
-    const trade = await publicClient.readContract({
-      address: tradingStorageAddress,
-      abi: TRADING_STORAGE_ABI,
-      functionName: 'getOpenTrade',
-      args: [trader, pairIndex, index],
-    });
-    if (trade.leverage === 0n) return null; // slot not open -- see liquidatorEngine.mjs
-
-    const [tradeInfo, rolloverFee, fundingFeeResult] = await Promise.all([
-      publicClient.readContract({
-        address: tradingStorageAddress,
-        abi: TRADING_STORAGE_ABI,
-        functionName: 'getOpenTradeInfo',
-        args: [trader, pairIndex, index],
-      }),
-      publicClient.readContract({
-        address: pairInfosAddress,
-        abi: PAIR_INFOS_ABI,
-        functionName: 'getTradeRolloverFee',
-        args: [trader, pairIndex, index, trade.buy, trade.collateral, trade.leverage],
-      }),
-      publicClient.readContract({
-        address: pairInfosAddress,
-        abi: PAIR_INFOS_ABI,
-        functionName: 'getTradeFundingFee',
-        args: [trader, pairIndex, index, trade.buy, trade.collateral, trade.leverage],
-      }),
-    ]);
-
+  /** One /status fetch per sweep; quotes for any pair resolve against it. */
+  async function readPriceSnapshot() {
+    const res = await fetchImpl(new URL('/status', publisherBaseUrl));
+    if (!res.ok) throw new Error(`publisher /status returned ${res.status}`);
+    const { feeds } = await res.json();
     return {
-      collateral: trade.collateral,
-      leverage: trade.leverage,
-      openPrice: trade.openPrice,
-      buy: trade.buy,
-      isDayTrade: trade.isDayTrade,
-      initialLeverage: tradeInfo.initialLeverage,
-      rolloverFee,
-      fundingFee: fundingFeeResult[0],
+      async quoteFor(pairIndex) {
+        const feed = await resolveFeed(pairIndex);
+        const quote = quoteFromStatus(feeds?.[feed]);
+        if (!quote) throw new Error(`no mark price available for ${feed}`);
+        return quote;
+      },
     };
   }
 
-  /** TradingCallbacksLib.getEffectiveMaxLeverage, mirrored via two view calls instead of
-   * replayed off-chain (both are cheap, ungoverned-by-fee-accrual reads). */
-  async function readMaxLeverage(pairIndex, isDayTrade) {
-    const [pairMax, overnightMax] = await Promise.all([
-      publicClient.readContract({ address: pairsStorageAddress, abi: PAIRS_STORAGE_ABI, functionName: 'pairMaxLeverage', args: [pairIndex] }),
-      publicClient.readContract({ address: pairsStorageAddress, abi: PAIRS_STORAGE_ABI, functionName: 'pairOvernightMaxLeverage', args: [pairIndex] }),
+  /** Live trade + exact fee snapshot, or null when the slot is not open. */
+  async function readTrade(trader, pairIndex, index) {
+    const trade = await storage('getOpenTrade', [trader, pairIndex, index]);
+    const leverage = BigInt(trade.leverage);
+    if (leverage === 0n) return null;
+    const collateral = BigInt(trade.collateral);
+
+    const [info, rolloverFee, funding] = await Promise.all([
+      storage('getOpenTradeInfo', [trader, pairIndex, index]),
+      infos('getTradeRolloverFee', [trader, pairIndex, index, trade.buy, collateral, Number(leverage)]),
+      infos('getTradeFundingFee', [trader, pairIndex, index, trade.buy, collateral, Number(leverage)]),
     ]);
-    return isDayTrade ? pairMax : overnightMax > 0n ? overnightMax : pairMax;
+
+    return {
+      tradeId: BigInt(info.tradeId),
+      collateral,
+      leverage,
+      openPrice: BigInt(trade.openPrice),
+      tp: BigInt(trade.tp),
+      sl: BigInt(trade.sl),
+      buy: trade.buy,
+      isDayTrade: trade.isDayTrade,
+      initialLeverage: BigInt(info.initialLeverage),
+      createdAt: Number(info.createdAt),
+      tpLastUpdated: Number(info.tpLastUpdated),
+      slLastUpdated: Number(info.slLastUpdated),
+      rolloverFee: BigInt(rolloverFee),
+      fundingFee: BigInt(funding[0]),
+    };
+  }
+
+  /** Live resting LIMIT/STOP entry, or null when the slot holds none. */
+  async function readLimitOrder(trader, pairIndex, index) {
+    if (!(await storage('hasOpenLimitOrder', [trader, pairIndex, index]))) return null;
+    const o = await storage('getOpenLimitOrder', [trader, pairIndex, index]);
+    const orderType = OPEN_ORDER_TYPE_NAME[Number(o.orderType)];
+    if (!orderType) throw new Error(`readLimitOrder: unexpected orderType ${o.orderType}`);
+    return {
+      orderType,
+      buy: o.buy,
+      isDayTrade: o.isDayTrade,
+      targetPrice: BigInt(o.targetPrice),
+      tp: BigInt(o.tp),
+      sl: BigInt(o.sl),
+      collateral: BigInt(o.collateral),
+      leverage: BigInt(o.leverage),
+      lastUpdated: Number(o.lastUpdated),
+    };
+  }
+
+  /** Inputs to calculatePostFeeCollateral for this order (OstiumTradingCallbacks.sol:424, :443-446). */
+  async function readOpenFees(trader, pairIndex, index) {
+    const [opening, oracleFee, bf] = await Promise.all([
+      infos('pairOpeningFees', [pairIndex]),
+      pairs('pairOracleFee', [pairIndex]),
+      storage('getBuilderData', [trader, pairIndex, BigInt(index)]),
+    ]);
+    return {
+      takerFeeP: BigInt(opening[1]),
+      oracleFee: BigInt(oracleFee),
+      builder: bf.builder,
+      builderFee: BigInt(bf.builderFee),
+    };
+  }
+
+  /** Dynamic-spread params + state for TradingCallbacksLib.getDynamicTradePriceImpact. */
+  async function readImpact(pairIndex) {
+    const [params, state] = await Promise.all([infos('pairDynamicSpreadParams', [pairIndex]), infos('pairDynamicSpreadState', [pairIndex])]);
+    return {
+      netVolThreshold: BigInt(params[0]),
+      decayRate: BigInt(params[1]),
+      priceImpactK: BigInt(params[2]),
+      buyVolume: BigInt(state[0]),
+      sellVolume: BigInt(state[1]),
+      lastUpdateTimestamp: BigInt(state[2]),
+    };
+  }
+
+  /** TradingCallbacksLib.getEffectiveMaxLeverage via its two view inputs. */
+  async function readMaxLeverage(pairIndex, isDayTrade) {
+    const [pairMax, overnightMax] = await Promise.all([pairs('pairMaxLeverage', [pairIndex]), pairs('pairOvernightMaxLeverage', [pairIndex])]);
+    const max = BigInt(pairMax);
+    const overnight = BigInt(overnightMax);
+    return isDayTrade ? max : overnight > 0n ? overnight : max;
   }
 
   async function readLiqMarginThresholdP() {
-    const value = await publicClient.readContract({ address: pairInfosAddress, abi: PAIR_INFOS_ABI, functionName: 'liqMarginThresholdP' });
-    return BigInt(value);
+    return BigInt(await infos('liqMarginThresholdP'));
   }
 
-  async function fetchStatus() {
-    const res = await fetchImpl(new URL('/status', publisherBaseUrl));
-    if (!res.ok) throw new Error(`publisher /status returned ${res.status}`);
-    return res.json();
+  /** @param {number} limitOrder IOstiumTradingStorage.LimitOrder */
+  async function readTriggerPending(trader, pairIndex, index, limitOrder) {
+    const [triggerBlock, head, timeout] = await Promise.all([
+      storage('orderTriggerBlock', [trader, pairIndex, index, limitOrder]),
+      publicClient.getBlockNumber(),
+      read(tradingAddress, TRADING_ABI, 'triggerTimeout'),
+    ]);
+    return isTriggerPending(BigInt(triggerBlock), BigInt(head), BigInt(timeout));
   }
 
-  /** The trusted index/mark price — same basis the publisher will sign into a report
-   * for this feed (services/price-publisher/src/engine.mjs's `mark`, an EMA of the
-   * index; see design spec §5.2). */
-  async function readIndexPrice(pairIndex) {
-    const feed = await resolveFeed(pairIndex);
-    const { feeds } = await fetchStatus();
-    const snap = feeds[feed];
-    if (!snap || snap.mark === null || snap.mark === undefined) {
-      throw new Error(`readIndexPrice: no mark price available for ${feed}`);
-    }
-    return BigInt(snap.mark);
-  }
-
-  /**
-   * Both halves of the degradation verdict for a pair: how many sources are healthy, and
-   * how many that market requires. The threshold comes from the publisher rather than from
-   * this service's own copy of MIN_HEALTHY_VENUES, because the publisher is the only place
-   * that knows a market's MARKET_BOUNDS_OVERRIDES entry — a liquidator judging a
-   * two-source market against a hardcoded 3 would suppress every liquidation on it forever
-   * while the publisher happily signed its prices.
-   *
-   * Falls back to the global minimum when the publisher omits the field, which keeps this
-   * safe against an older publisher: the fallback can only ever be stricter than the truth.
-   */
-  async function readVenueHealth(pairIndex) {
-    const feed = await resolveFeed(pairIndex);
-    const { feeds } = await fetchStatus();
-    const snap = feeds[feed];
-    return {
-      healthyVenueCount: snap?.healthyCount ?? 0,
-      minHealthyVenues: snap?.minHealthyVenues ?? MIN_HEALTHY_VENUES,
-    };
-  }
-
-  return { readTrade, readMaxLeverage, readLiqMarginThresholdP, readIndexPrice, readVenueHealth, resolveFeed };
+  return {
+    resolveFeed,
+    readPriceSnapshot,
+    readTrade,
+    readLimitOrder,
+    readOpenFees,
+    readImpact,
+    readMaxLeverage,
+    readLiqMarginThresholdP,
+    readTriggerPending,
+  };
 }

@@ -92,7 +92,7 @@ export function createSequencerMonitor({
       lastBlockSeenAtMs = nowMs;
     } else if (blockNumber < lastBlockNumber) {
       // A block number that went backward is a reorg signal, not a liveness signal on
-      // its own; the position table's own reorg handling (positionTable.mjs) is
+      // its own; the per-candidate live re-read before any trigger (automationEngine.mjs) is
       // responsible for not acting on orphaned state. This module only tracks whether
       // *some* block is arriving, so it neither advances nor stalls on this sample.
     } else {
