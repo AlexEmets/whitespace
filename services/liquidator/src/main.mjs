@@ -1,128 +1,143 @@
 /**
- * Live entrypoint: watches OstiumTradingCallbacks for newly opened trades to build a
- * candidate position table, polls the chain for liveness/reorg detection, and on a
- * timer sweeps every candidate through the exact margin engine, submitting a LIQ
- * trigger for anything found below maintenance margin. Not exercised by the unit test
- * suite — run manually with `pnpm --filter @whitespace/liquidator start`, or
- * `node src/main.mjs` from this directory.
+ * Automation bot entrypoint (services/liquidator): liquidations, TP, SL and LIMIT/STOP
+ * entries through OstiumTradesUpKeep.performUpkeep. See
+ * docs/decisions/phase-6-liquidator.md §11.
  *
- * REQUIRES `tradesUpKeepAddress` to be configured. As of this writing that is NOT
- * possible against live 1874: `OstiumTradesUpKeep` is not deployed and not registered
- * in the registry (see src/config.mjs and docs/decisions/phase-6-liquidator.md). This
- * entrypoint still starts and runs its full detection/metrics loop without it —
- * everything up to "submit a trigger" works and is observable on /metrics — but
- * `submitLiquidation` calls will fail loudly (not silently) until that address exists.
+ * Process-supervisor friendly: configuration is environment only (so a unit file can use
+ * `EnvironmentFile=` or `node --env-file=...`), logs go to stdout/stderr with the instance
+ * name as prefix, SIGTERM/SIGINT drain the in-flight sweep and exit 0, and a fatal startup
+ * error exits 1 so `Restart=on-failure` applies.
+ *
+ *   node --env-file=/etc/whitespace/automation-bot-1.env services/liquidator/src/main.mjs
  */
 
-import { loadConfig, loadForwarderKey } from './config.mjs';
-import { createClients } from './rpc.mjs';
+import pg from 'pg';
+import { loadConfig, describeConfig, loadForwarderKey } from './config.mjs';
+import { createClients, createEndpointProbes, endpointLabel } from './rpc.mjs';
 import { createChainReader } from './chainReader.mjs';
-import { createPositionTable } from './positionTable.mjs';
+import { createCandidateSource, pgQuery } from './candidateSource.mjs';
 import { createSequencerMonitor } from './sequencerLiveness.mjs';
-import { createLiquidatorEngine } from './liquidatorEngine.mjs';
+import { createAutomationEngine } from './automationEngine.mjs';
 import { createLiquidatorMetrics } from './metrics.mjs';
 import { createHealthServerApp } from './healthServer.mjs';
 import { createDeadLetterQueue } from './deadLetter.mjs';
 import { createTxSender } from './txSender.mjs';
-import { watchOpenEvents, watchLiveness } from './watcher.mjs';
+import { watchLiveness } from './watcher.mjs';
+import { createSweepLoop } from './sweepLoop.mjs';
+import { createShutdown } from './lifecycle.mjs';
 
 async function main() {
   const config = loadConfig();
-  console.log(`[liquidator] chainId=${config.chainId}`);
-  console.log(`[liquidator] tradesUpKeep=${config.tradesUpKeepAddress ?? '(not configured -- see docs/decisions/phase-6-liquidator.md)'}`);
-  console.log(`[liquidator] publisher=${config.publisherBaseUrl}`);
+  const tag = `[automation:${config.instanceName}]`;
+  const log = (...a) => console.log(tag, ...a);
+  const logError = (...a) => console.error(tag, ...a);
+
+  log('config', JSON.stringify(describeConfig(config)));
 
   const forwarderKey = loadForwarderKey(config.forwarderKeyPath); // never logged
   const { publicClient, walletClient, account } = createClients({
     rpcUrls: config.rpcUrls,
     forwarderPrivateKey: forwarderKey.privateKey,
   });
-  console.log(`[liquidator] forwarder address=${account.address}`);
+  log(`forwarder=${account.address}`);
 
   const metrics = createLiquidatorMetrics();
-  const positionTable = createPositionTable();
   const sequencerMonitor = createSequencerMonitor();
-  const deadLetter = createDeadLetterQueue({ filePath: config.deadLetterFilePath });
+  const deadLetter = createDeadLetterQueue({ filePath: config.deadLetterFilePath ?? undefined });
+  const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 2 });
+  pool.on('error', (err) => logError('postgres pool error:', err.message));
 
   const chainReader = createChainReader({
     publicClient,
     tradingStorageAddress: config.tradingStorageAddress,
     pairInfosAddress: config.pairInfosAddress,
     pairsStorageAddress: config.pairsStorageAddress,
+    tradingAddress: config.tradingAddress,
     publisherBaseUrl: config.publisherBaseUrl,
   });
+  const candidates = createCandidateSource({ query: pgQuery(pool), schema: config.databaseSchema });
 
-  const txSender = config.tradesUpKeepAddress
-    ? createTxSender({
-        publicClient,
-        walletClient,
-        account,
-        tradesUpKeepAddress: config.tradesUpKeepAddress,
-        deadLetter,
-        maxRetries: config.maxRetries,
-      })
-    : null;
+  // The only way this service sends a transaction. packages/txsender replaces the
+  // implementation behind this one function at merge; nothing else changes.
+  const txSender = createTxSender({
+    publicClient,
+    walletClient,
+    account,
+    tradesUpKeepAddress: config.tradesUpKeepAddress,
+    deadLetter,
+    maxRetries: config.maxRetries,
+  });
+  const sendPerformUpkeep = (payload) => txSender.sendPerformUpkeep(payload);
 
-  const engine = createLiquidatorEngine({
+  const engine = createAutomationEngine({
+    listCandidates: candidates.list,
+    readPriceSnapshot: chainReader.readPriceSnapshot,
     readTrade: chainReader.readTrade,
+    readLimitOrder: chainReader.readLimitOrder,
+    readOpenFees: chainReader.readOpenFees,
+    readImpact: chainReader.readImpact,
     readMaxLeverage: chainReader.readMaxLeverage,
     readLiqMarginThresholdP: chainReader.readLiqMarginThresholdP,
-    readIndexPrice: chainReader.readIndexPrice,
-    readVenueHealth: chainReader.readVenueHealth,
+    readTriggerPending: chainReader.readTriggerPending,
     sequencerMonitor,
-    submitLiquidation: async (candidate) => {
-      if (!txSender) {
-        return { ok: false, reason: 'tradesUpKeep_not_configured' };
-      }
-      return txSender.submitLiquidation(candidate, Math.floor(Date.now() / 1000));
-    },
+    sendPerformUpkeep,
+    maxBatchSize: config.maxBatchSize,
+    cooldownMs: config.triggerCooldownMs,
+    liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });
 
   const healthServer = createHealthServerApp(metrics);
-  healthServer.listen(config.metricsPort, () => {
-    console.log(`[liquidator] health/metrics on :${config.metricsPort}`);
+  healthServer.listen(config.metricsPort, config.metricsHost, () => log(`health/metrics on ${config.metricsHost}:${config.metricsPort}`));
+
+  const stopLiveness = watchLiveness({
+    endpoints: createEndpointProbes(config.rpcUrls),
+    sequencerMonitor,
+    intervalMs: config.pollingIntervalMs,
+    onEndpointResult: (url, ok) => metrics.setRpcHealth(endpointLabel(url), ok),
   });
 
-  const stopWatchingOpens = watchOpenEvents(
-    publicClient,
-    config.callbacksAddress,
-    (event) => {
-      console.log(`[liquidator] candidate discovered trader=${event.trader} pairIndex=${event.pairIndex} index=${event.index}`);
-      positionTable.upsertFromOpen(event);
-    },
-    (err) => console.error('[liquidator] watcher error:', err.message),
-  );
-
-  const stopWatchingLiveness = watchLiveness(publicClient, sequencerMonitor, positionTable, config.pollingIntervalMs);
-
-  const sweepInterval = setInterval(async () => {
-    metrics.setSequencerState(sequencerMonitor.state);
-    metrics.deadLetterDepth.set(deadLetter.size());
-    try {
-      const results = await engine.evaluateAll(positionTable.list());
-      const submitted = results.filter((r) => r.action === 'submitted');
-      if (submitted.length > 0) {
-        console.log(`[liquidator] submitted ${submitted.length} liquidation trigger(s)`);
+  let warnedNoLimitTable = false;
+  const loop = createSweepLoop({
+    intervalMs: config.pollingIntervalMs,
+    sweep: async () => {
+      metrics.setSequencerState(sequencerMonitor.state);
+      metrics.deadLetterDepth.set(deadLetter.size());
+      const { results, sent, error } = await engine.sweep();
+      if (error) logError('sweep:', error);
+      if (metrics.limitOrderTableAvailable.value() === 0 && !warnedNoLimitTable) {
+        warnedNoLimitTable = true;
+        logError('indexer has no limit_order table yet: LIMIT/STOP entries are not automated until it does');
       }
-    } catch (err) {
-      console.error('[liquidator] sweep error:', err.message);
-    }
-  }, config.pollingIntervalMs);
+      for (const r of results) {
+        if (r.action === 'error') logError(`candidate ${r.candidate.trader}/${r.candidate.pairIndex}/${r.candidate.index}:`, r.reason);
+      }
+      for (const s of sent) {
+        log(`performUpkeep ${s.ok ? 'ok' : 'FAILED'} [${s.keys.join(', ')}]${s.hash ? ` ${s.hash}` : ''}${s.reason ? ` ${s.reason}` : ''}`);
+      }
+    },
+    onError: (err) => logError('sweep failed:', err?.message ?? err),
+  });
+  loop.start();
 
-  const shutdown = () => {
-    console.log('[liquidator] shutting down');
-    clearInterval(sweepInterval);
-    stopWatchingOpens();
-    stopWatchingLiveness();
-    healthServer.close();
-    process.exit(0);
+  const shutdown = createShutdown({
+    loop,
+    stoppers: [stopLiveness],
+    closers: [() => new Promise((r) => healthServer.close(r)), () => pool.end()],
+    log,
+  });
+  const onSignal = (signal) => {
+    log(`${signal}: shutting down`);
+    shutdown().then(({ timedOut }) => {
+      if (timedOut) logError('in-flight sweep did not finish within the grace period');
+      process.exit(0);
+    });
   };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
 }
 
 main().catch((err) => {
-  console.error('[liquidator] fatal:', err);
+  console.error('[automation] fatal:', err?.message ?? err);
   process.exit(1);
 });

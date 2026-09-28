@@ -19,7 +19,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
  * @param {string} [opts.filePath] if set, persisted as JSON after every add/remove
  */
 export function createDeadLetterQueue({ filePath } = {}) {
-  /** @type {{ trader: string, pairIndex: number, index: number, reason: string, attempts: number, at: number }[]} */
+  /** @type {{ trades: { trader: string, pairIndex: number, index: number, limitOrder: number }[], timestamp: number, reason: string, attempts: number, at: number }[]} */
   let items = [];
 
   if (filePath && existsSync(filePath)) {
@@ -35,7 +35,7 @@ export function createDeadLetterQueue({ filePath } = {}) {
   }
 
   return {
-    /** @param {{ trader: string, pairIndex: number, index: number, reason: string, attempts: number }} entry */
+    /** @param {{ trades: { trader: string, pairIndex: number, index: number, limitOrder: number }[], timestamp: number, reason: string, attempts: number }} entry */
     add(entry) {
       items.push({ ...entry, at: Date.now() });
       persist();

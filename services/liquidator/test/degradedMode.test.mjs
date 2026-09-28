@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isDegraded, canSubmitLiquidation } from '../src/degradedMode.mjs';
+import { isDegraded, canTrigger } from '../src/degradedMode.mjs';
 import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
 
 test('isDegraded is true below MIN_HEALTHY_VENUES and false at/above it', () => {
@@ -10,18 +10,48 @@ test('isDegraded is true below MIN_HEALTHY_VENUES and false at/above it', () => 
   assert.equal(isDegraded(0), true);
 });
 
-test('canSubmitLiquidation suppresses liquidation while degraded, defaulting to not-liquidate', () => {
-  const result = canSubmitLiquidation({ healthyVenueCount: 2 });
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, 'degraded_liquidations_suppressed');
+test('isDegraded honors a caller-supplied per-market minimum', () => {
+  assert.equal(isDegraded(3, 4), true);
+  assert.equal(isDegraded(2, 2), false);
 });
 
-test('canSubmitLiquidation allows liquidation once healthy venue count meets the minimum', () => {
-  const result = canSubmitLiquidation({ healthyVenueCount: MIN_HEALTHY_VENUES });
-  assert.equal(result.ok, true);
+// Every (kind, sequencer state, degraded) combination, including the opt-in to liquidate
+// while degraded. `null` = allowed.
+const TABLE = [
+  // kind    state         degraded  liqWhenDegraded  -> reason
+  ['LIQ', 'LIVE', false, false, null],
+  ['LIQ', 'LIVE', true, false, 'degraded_liquidations_suppressed'],
+  ['LIQ', 'LIVE', true, true, null],
+  ['LIQ', 'RECOVERING', false, false, 'sequencer_recovering'],
+  ['LIQ', 'RECOVERING', true, true, 'sequencer_recovering'],
+  ['LIQ', 'STALLED', false, false, 'sequencer_stalled'],
+  ['SL', 'LIVE', false, false, null],
+  ['SL', 'LIVE', true, false, null],
+  ['SL', 'RECOVERING', true, false, null],
+  ['SL', 'STALLED', false, false, 'sequencer_stalled'],
+  ['TP', 'LIVE', true, false, null],
+  ['TP', 'RECOVERING', false, false, null],
+  ['TP', 'STALLED', false, false, 'sequencer_stalled'],
+  ['OPEN', 'LIVE', false, false, null],
+  ['OPEN', 'LIVE', true, false, 'degraded_opens_blocked'],
+  ['OPEN', 'LIVE', true, true, 'degraded_opens_blocked'],
+  ['OPEN', 'RECOVERING', false, false, null],
+  ['OPEN', 'RECOVERING', true, false, 'degraded_opens_blocked'],
+  ['OPEN', 'STALLED', false, false, 'sequencer_stalled'],
+];
+
+for (const [kind, sequencerState, degraded, liquidateWhenDegraded, reason] of TABLE) {
+  test(`canTrigger ${kind} / ${sequencerState} / degraded=${degraded} / liqWhenDegraded=${liquidateWhenDegraded} -> ${reason ?? 'ok'}`, () => {
+    const r = canTrigger({ kind, sequencerState, degraded, liquidateWhenDegraded });
+    if (reason === null) assert.deepEqual(r, { ok: true });
+    else assert.deepEqual(r, { ok: false, reason });
+  });
+}
+
+test('canTrigger defaults to NOT liquidating while degraded', () => {
+  assert.equal(canTrigger({ kind: 'LIQ', sequencerState: 'LIVE', degraded: true }).ok, false);
 });
 
-test('canSubmitLiquidation honors a caller-supplied minimum override', () => {
-  assert.equal(canSubmitLiquidation({ healthyVenueCount: 3, minHealthyVenues: 4 }).ok, false);
-  assert.equal(canSubmitLiquidation({ healthyVenueCount: 4, minHealthyVenues: 4 }).ok, true);
+test('canTrigger rejects an unknown kind', () => {
+  assert.throws(() => canTrigger({ kind: 'CLOSE_DAY_TRADE', sequencerState: 'LIVE', degraded: false }), /unknown kind/);
 });

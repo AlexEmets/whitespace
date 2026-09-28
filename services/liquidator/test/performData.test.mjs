@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeAbiParameters } from 'viem';
-import { encodeLiquidationPerformData } from '../src/performData.mjs';
+import { encodePerformData } from '../src/performData.mjs';
 import { LimitOrder } from '../src/abi.mjs';
 
 const TRADER = '0x1111111111111111111111111111111111111111';
@@ -16,9 +16,11 @@ const SIMPLIFIED_TRADE_ID_ARRAY = {
   ],
 };
 
-test('encodes one candidate as a single-element SimplifiedTradeId[] with LimitOrder.LIQ, round-trips exactly', () => {
-  const performData = encodeLiquidationPerformData([{ trader: TRADER, pairIndex: 0, index: 3 }], 1_757_325_600);
-  const [trades, timestamp] = decodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], performData);
+const decode = (data) => decodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], data);
+
+test('encodes one trigger as a single-element SimplifiedTradeId[], round-trips exactly', () => {
+  const performData = encodePerformData([{ trader: TRADER, pairIndex: 0, index: 3, limitOrder: LimitOrder.LIQ }], 1_757_325_600);
+  const [trades, timestamp] = decode(performData);
 
   assert.equal(trades.length, 1);
   assert.equal(trades[0].trader.toLowerCase(), TRADER);
@@ -28,22 +30,32 @@ test('encodes one candidate as a single-element SimplifiedTradeId[] with LimitOr
   assert.equal(timestamp, 1_757_325_600n);
 });
 
-test('encodes multiple candidates in one performData payload, preserving order', () => {
-  const candidates = [
-    { trader: TRADER, pairIndex: 0, index: 0 },
-    { trader: TRADER, pairIndex: 1, index: 2 },
-  ];
-  const performData = encodeLiquidationPerformData(candidates, 100);
-  const [trades] = decodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], performData);
+test('encodes a mixed batch of every automation kind in one payload, preserving order', () => {
+  const kinds = [LimitOrder.TP, LimitOrder.SL, LimitOrder.LIQ, LimitOrder.OPEN];
+  const performData = encodePerformData(
+    kinds.map((limitOrder, i) => ({ trader: TRADER, pairIndex: i, index: i + 1, limitOrder })),
+    100,
+  );
+  const [trades] = decode(performData);
 
-  assert.equal(trades.length, 2);
-  assert.equal(trades[0].pairId, 0n);
-  assert.equal(trades[1].pairId, 1n);
-  assert.equal(trades[1].index, 2n);
+  assert.deepEqual(
+    trades.map((t) => [t.pairId, t.index, t.limitOrder]),
+    [
+      [0n, 1n, 0],
+      [1n, 2n, 1],
+      [2n, 3n, 2],
+      [3n, 4n, 3],
+    ],
+  );
 });
 
-test('encodes an empty candidate list without throwing', () => {
-  const performData = encodeLiquidationPerformData([], 100);
-  const [trades] = decodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], performData);
+test('refuses kinds the bot never triggers (REMOVE_COLLATERAL and PENDING_CLOSE would revert the whole batch)', () => {
+  for (const limitOrder of [LimitOrder.CLOSE_DAY_TRADE, LimitOrder.REMOVE_COLLATERAL, LimitOrder.PENDING_CLOSE, 99, undefined]) {
+    assert.throws(() => encodePerformData([{ trader: TRADER, pairIndex: 0, index: 0, limitOrder }], 1), /unsupported limitOrder/);
+  }
+});
+
+test('encodes an empty list without throwing', () => {
+  const [trades] = decode(encodePerformData([], 100));
   assert.equal(trades.length, 0);
 });

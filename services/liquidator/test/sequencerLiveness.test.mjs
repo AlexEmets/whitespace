@@ -96,3 +96,47 @@ test('a block number moving backward (reorg signal) does not by itself flip LIVE
   const state = mon.observe({ nowMs: 2_000, blockNumber: 999n }); // reorg to a lower number
   assert.equal(state, SequencerState.LIVE);
 });
+
+// A failed liveness poll is "no new block observed". Without this, a total RPC outage
+// leaves the monitor at its last state forever — LIVE — because nothing ever advances
+// the gap clock.
+test('observeFailure after a seen block counts as no new block: STALLED once the gap reaches the threshold', () => {
+  const mon = createSequencerMonitor({ stallThresholdMs: STALL_MS, recoveryWindowMs: RECOVERY_MS });
+  mon.observe({ nowMs: 0, blockNumber: 1000n });
+  mon.observeFailure({ nowMs: STALL_MS - 1 });
+  assert.equal(mon.state, SequencerState.LIVE, 'must not stall one ms early');
+  mon.observeFailure({ nowMs: STALL_MS });
+  assert.equal(mon.state, SequencerState.STALLED);
+  assert.equal(mon.canLiquidate(), false);
+});
+
+test('observeFailure with no block ever seen starts the gap clock at the first failure', () => {
+  const mon = createSequencerMonitor({ stallThresholdMs: STALL_MS, recoveryWindowMs: RECOVERY_MS });
+  mon.observeFailure({ nowMs: 5_000 });
+  assert.equal(mon.state, SequencerState.LIVE);
+  mon.observeFailure({ nowMs: 5_000 + STALL_MS - 1 });
+  assert.equal(mon.state, SequencerState.LIVE);
+  mon.observeFailure({ nowMs: 5_000 + STALL_MS });
+  assert.equal(mon.state, SequencerState.STALLED);
+});
+
+test('the first block after a startup outage enters RECOVERING, not LIVE', () => {
+  const mon = createSequencerMonitor({ stallThresholdMs: STALL_MS, recoveryWindowMs: RECOVERY_MS });
+  mon.observeFailure({ nowMs: 0 });
+  mon.observeFailure({ nowMs: STALL_MS });
+  assert.equal(mon.state, SequencerState.STALLED);
+  mon.observe({ nowMs: STALL_MS + 1, blockNumber: 1000n });
+  assert.equal(mon.state, SequencerState.RECOVERING);
+  mon.observe({ nowMs: STALL_MS + 1 + RECOVERY_MS, blockNumber: 1001n });
+  assert.equal(mon.state, SequencerState.LIVE);
+});
+
+test('failures interleaved with advancing blocks never stall (a flaky endpoint is not an outage)', () => {
+  const mon = createSequencerMonitor({ stallThresholdMs: STALL_MS, recoveryWindowMs: RECOVERY_MS });
+  let block = 1000n;
+  for (let t = 0; t <= 4 * STALL_MS; t += 10_000) {
+    if ((t / 10_000) % 2 === 0) mon.observe({ nowMs: t, blockNumber: block++ });
+    else mon.observeFailure({ nowMs: t });
+  }
+  assert.equal(mon.state, SequencerState.LIVE);
+});

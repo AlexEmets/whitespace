@@ -37,14 +37,40 @@ export function isDegraded(healthyVenueCount, minHealthyVenues = MIN_HEALTHY_VEN
 }
 
 /**
+ * Per-kind gate for the automation bot (docs/decisions/phase-6-liquidator.md §11).
+ *
+ *            sequencer STALLED   RECOVERING            degraded market
+ *   LIQ      blocked             blocked (window)      blocked unless liquidateWhenDegraded
+ *   SL, TP   blocked             allowed               allowed  (the trader's own close order;
+ *                                                      the publisher signs LIMIT_CLOSE)
+ *   OPEN     blocked             allowed               blocked  (the publisher refuses to
+ *                                                      sign LIMIT_OPEN while degraded)
+ *
+ * STALLED blocks everything because nothing we send can land. The recovery window only
+ * protects traders from being liquidated for a move they could not react to; it has no
+ * reason to hold back an order the trader placed themselves.
+ *
  * @param {object} p
- * @param {number} p.healthyVenueCount
- * @param {number} [p.minHealthyVenues]
+ * @param {'LIQ'|'SL'|'TP'|'OPEN'} p.kind
+ * @param {'LIVE'|'STALLED'|'RECOVERING'} p.sequencerState
+ * @param {boolean} p.degraded
+ * @param {boolean} [p.liquidateWhenDegraded]
  * @returns {{ ok: true } | { ok: false, reason: string }}
  */
-export function canSubmitLiquidation({ healthyVenueCount, minHealthyVenues = MIN_HEALTHY_VENUES }) {
-  if (isDegraded(healthyVenueCount, minHealthyVenues)) {
-    return { ok: false, reason: 'degraded_liquidations_suppressed' };
+export function canTrigger({ kind, sequencerState, degraded, liquidateWhenDegraded = false }) {
+  if (sequencerState === 'STALLED') return { ok: false, reason: 'sequencer_stalled' };
+  switch (kind) {
+    case 'LIQ':
+      if (sequencerState !== 'LIVE') return { ok: false, reason: 'sequencer_recovering' };
+      if (degraded && !liquidateWhenDegraded) return { ok: false, reason: 'degraded_liquidations_suppressed' };
+      return { ok: true };
+    case 'SL':
+    case 'TP':
+      return { ok: true };
+    case 'OPEN':
+      if (degraded) return { ok: false, reason: 'degraded_opens_blocked' };
+      return { ok: true };
+    default:
+      throw new Error(`canTrigger: unknown kind ${kind}`);
   }
-  return { ok: true };
 }

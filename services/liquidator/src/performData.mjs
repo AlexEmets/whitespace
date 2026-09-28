@@ -28,19 +28,23 @@ const SIMPLIFIED_TRADE_ID_ARRAY = {
   ],
 };
 
+const VALID_LIMIT_ORDERS = new Set([LimitOrder.TP, LimitOrder.SL, LimitOrder.LIQ, LimitOrder.OPEN]);
+
 /**
- * @param {{ trader: `0x${string}`, pairIndex: number, index: number }[]} candidates
+ * One performUpkeep payload: many triggers of any automation kind, one shared timestamp.
+ * Only TP/SL/LIQ/OPEN are accepted: executeAutomationOrder reverts WrongParams on
+ * REMOVE_COLLATERAL / PENDING_CLOSE (OstiumTrading.sol:574-579), and a revert of one
+ * entry reverts the whole batch.
+ *
+ * @param {{ trader: `0x${string}`, pairIndex: number, index: number, limitOrder: number }[]} trades
  * @param {number} timestamp uint32-range seconds; passed straight through, never
- *   substituted with Date.now() here (the caller decides the timestamp — see
- *   src/liquidatorLoop.mjs / main.mjs for where that decision is made and why).
+ *   substituted with Date.now() here (the caller decides the timestamp).
  * @returns {`0x${string}`}
  */
-export function encodeLiquidationPerformData(candidates, timestamp) {
-  const trades = candidates.map((c) => ({
-    trader: c.trader,
-    pairId: BigInt(c.pairIndex),
-    index: BigInt(c.index),
-    limitOrder: LimitOrder.LIQ,
-  }));
-  return encodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], [trades, BigInt(timestamp)]);
+export function encodePerformData(trades, timestamp) {
+  const encoded = trades.map((t) => {
+    if (!VALID_LIMIT_ORDERS.has(t.limitOrder)) throw new Error(`encodePerformData: unsupported limitOrder ${t.limitOrder}`);
+    return { trader: t.trader, pairId: BigInt(t.pairIndex), index: BigInt(t.index), limitOrder: t.limitOrder };
+  });
+  return encodeAbiParameters([SIMPLIFIED_TRADE_ID_ARRAY, { type: 'uint256' }], [encoded, BigInt(timestamp)]);
 }

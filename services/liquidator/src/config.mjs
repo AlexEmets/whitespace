@@ -1,23 +1,17 @@
 /**
- * Liquidator configuration. Mirrors services/keeper/src/config.mjs's shape (env
- * overridable, defaults read from deployments/1874.json).
+ * Automation bot configuration: env first, then deployments/1874.json, then defaults.
  *
- * IMPORTANT GAP, not something this module can paper over: `deployments/1874.json` has
- * no `tradesUpKeep` address. `contracts/script/Deploy.s.sol` never deploys
- * `OstiumTradesUpKeep`, and `OstiumTrading.executeAutomationOrder` — the only entry
- * point into the LIQ/TP/SL/limit-open automation path — is gated `onlyTradesUpKeep`
- * (`registry.getContractAddress('tradesUpKeep')`, which reverts `NotFound` while
- * unregistered). Concretely: there is currently no way for ANY address, liquidator or
- * otherwise, to trigger an on-chain liquidation on testnet 1874, independent of
- * anything this service does. `tradesUpKeepAddress` is therefore left undefined unless
- * explicitly configured; code paths that need it fail loudly and specifically rather
- * than silently no-op. See docs/decisions/phase-6-liquidator.md for the full writeup
- * and what deploying/registering it would take.
+ * Two instances run side by side with no coordination (design spec §1, §4): each gets its
+ * own env file with its own LIQUIDATOR_INSTANCE_NAME, LIQUIDATOR_FORWARDER_KEY_PATH,
+ * LIQUIDATOR_METRICS_PORT and LIQUIDATOR_DEAD_LETTER_PATH. They read the same indexer
+ * database and race on chain; the loser's trigger comes back PENDING_TRIGGER / NO_TRADE,
+ * a status rather than a revert, so a lost race costs gas and nothing else.
  */
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadKeyFile } from '@whitespace/shared/keys';
+import { DEFAULT_MAX_BATCH_SIZE, DEFAULT_COOLDOWN_MS } from './automationEngine.mjs';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
 
@@ -29,67 +23,79 @@ function readDeployment() {
   }
 }
 
-/**
- * @returns {{
- *   chainId: number,
- *   tradingStorageAddress: `0x${string}`,
- *   pairInfosAddress: `0x${string}`,
- *   pairsStorageAddress: `0x${string}`,
- *   callbacksAddress: `0x${string}`,
- *   tradesUpKeepAddress: `0x${string}`|undefined,
- *   rpcUrls: string[],
- *   publisherBaseUrl: string,
- *   forwarderKeyPath: string,
- *   pollingIntervalMs: number,
- *   maxRetries: number,
- *   deadLetterFilePath: string|null,
- *   metricsPort: number,
- * }}
- */
-export function loadConfig(env = process.env) {
-  const deployment = readDeployment();
+function positiveInt(env, key, fallback) {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) throw new Error(`loadConfig: ${key} must be a positive integer, got ${JSON.stringify(raw)}`);
+  return n;
+}
 
+function bool(env, key, fallback) {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return fallback;
+  if (/^(1|true|yes)$/i.test(raw)) return true;
+  if (/^(0|false|no)$/i.test(raw)) return false;
+  throw new Error(`loadConfig: ${key} must be true or false, got ${JSON.stringify(raw)}`);
+}
+
+/**
+ * @param {Record<string, string|undefined>} [env]
+ * @param {{ deployment?: any }} [opts] injectable for tests
+ */
+export function loadConfig(env = process.env, { deployment = readDeployment() } = {}) {
   const chainId = Number(env.LIQUIDATOR_CHAIN_ID ?? deployment?.chainId ?? 1874);
 
   function requireAddress(envKey, deploymentKey) {
-    const value = env[envKey] ?? deployment?.contracts?.[deploymentKey];
-    if (!value) {
-      throw new Error(`loadConfig: no ${deploymentKey} address (set ${envKey} or deployments/1874.json)`);
-    }
+    const value = env[envKey] || deployment?.contracts?.[deploymentKey];
+    if (!value) throw new Error(`loadConfig: no ${deploymentKey} address (set ${envKey} or deployments/1874.json)`);
     return value;
   }
 
-  const tradingStorageAddress = requireAddress('LIQUIDATOR_TRADING_STORAGE_ADDRESS', 'tradingStorage');
-  const pairInfosAddress = requireAddress('LIQUIDATOR_PAIR_INFOS_ADDRESS', 'pairInfos');
-  const pairsStorageAddress = requireAddress('LIQUIDATOR_PAIRS_STORAGE_ADDRESS', 'pairsStorage');
-  const callbacksAddress = requireAddress('LIQUIDATOR_CALLBACKS_ADDRESS', 'callbacks');
-  // Deliberately NOT requireAddress: see the file header. Absent until TradesUpKeep is
-  // deployed and registered.
-  const tradesUpKeepAddress = env.LIQUIDATOR_TRADES_UPKEEP_ADDRESS ?? deployment?.contracts?.tradesUpKeep ?? undefined;
+  const databaseUrl = env.DATABASE_URL;
+  if (!databaseUrl) throw new Error('loadConfig: DATABASE_URL is required (the indexer Postgres the candidates are read from)');
 
-  const rpcUrls = env.LIQUIDATOR_RPC_URLS ? env.LIQUIDATOR_RPC_URLS.split(',') : ['https://rpc.testnet.whitechain.io'];
-  const publisherBaseUrl = env.LIQUIDATOR_PUBLISHER_URL ?? 'http://127.0.0.1:8787';
-  const forwarderKeyPath = env.LIQUIDATOR_FORWARDER_KEY_PATH ?? `${env.HOME}/.whitespace-keys/liquidator.json`;
-  const pollingIntervalMs = Number(env.LIQUIDATOR_POLLING_INTERVAL_MS ?? 2_000);
-  const maxRetries = Number(env.LIQUIDATOR_MAX_RETRIES ?? 3);
-  const deadLetterFilePath = env.LIQUIDATOR_DEAD_LETTER_PATH ?? null;
-  const metricsPort = Number(env.LIQUIDATOR_METRICS_PORT ?? 9464);
+  if (!env.LIQUIDATOR_FORWARDER_KEY_PATH) {
+    throw new Error('loadConfig: LIQUIDATOR_FORWARDER_KEY_PATH is required (each instance signs with its own forwarder key)');
+  }
 
   return {
     chainId,
-    tradingStorageAddress,
-    pairInfosAddress,
-    pairsStorageAddress,
-    callbacksAddress,
-    tradesUpKeepAddress,
-    rpcUrls,
-    publisherBaseUrl,
-    forwarderKeyPath,
-    pollingIntervalMs,
-    maxRetries,
-    deadLetterFilePath,
-    metricsPort,
+    instanceName: env.LIQUIDATOR_INSTANCE_NAME || 'automation-bot',
+    tradingStorageAddress: requireAddress('LIQUIDATOR_TRADING_STORAGE_ADDRESS', 'tradingStorage'),
+    pairInfosAddress: requireAddress('LIQUIDATOR_PAIR_INFOS_ADDRESS', 'pairInfos'),
+    pairsStorageAddress: requireAddress('LIQUIDATOR_PAIRS_STORAGE_ADDRESS', 'pairsStorage'),
+    tradingAddress: requireAddress('LIQUIDATOR_TRADING_ADDRESS', 'trading'),
+    tradesUpKeepAddress: requireAddress('LIQUIDATOR_TRADES_UPKEEP_ADDRESS', 'tradesUpKeep'),
+    databaseUrl,
+    databaseSchema: env.DATABASE_SCHEMA || 'public',
+    rpcUrls: env.LIQUIDATOR_RPC_URLS ? env.LIQUIDATOR_RPC_URLS.split(',').map((s) => s.trim()).filter(Boolean) : ['https://rpc.testnet.whitechain.io'],
+    publisherBaseUrl: env.LIQUIDATOR_PUBLISHER_URL || 'http://127.0.0.1:8787',
+    forwarderKeyPath: env.LIQUIDATOR_FORWARDER_KEY_PATH,
+    pollingIntervalMs: positiveInt(env, 'LIQUIDATOR_POLLING_INTERVAL_MS', 2_000),
+    maxRetries: positiveInt(env, 'LIQUIDATOR_MAX_RETRIES', 3),
+    maxBatchSize: positiveInt(env, 'LIQUIDATOR_MAX_BATCH_SIZE', DEFAULT_MAX_BATCH_SIZE),
+    triggerCooldownMs: positiveInt(env, 'LIQUIDATOR_TRIGGER_COOLDOWN_MS', DEFAULT_COOLDOWN_MS),
+    liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', false),
+    deadLetterFilePath: env.LIQUIDATOR_DEAD_LETTER_PATH || null,
+    metricsPort: positiveInt(env, 'LIQUIDATOR_METRICS_PORT', 9464),
+    metricsHost: env.LIQUIDATOR_METRICS_HOST || '127.0.0.1',
   };
+}
+
+/**
+ * What is safe to print at startup: everything except the database password.
+ * @param {ReturnType<typeof loadConfig>} config
+ */
+export function describeConfig(config) {
+  let db = 'invalid DATABASE_URL';
+  try {
+    const u = new URL(config.databaseUrl);
+    db = `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    /* keep the placeholder */
+  }
+  return { ...config, databaseUrl: db };
 }
 
 /** @param {string} path */

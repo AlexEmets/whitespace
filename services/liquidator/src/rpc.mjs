@@ -35,3 +35,31 @@ export function createClients({ rpcUrls, forwarderPrivateKey, chain = whitechain
   const walletClient = createWalletClient({ chain, transport, account });
   return { publicClient, walletClient, account };
 }
+
+/**
+ * A metrics-safe label for an RPC URL: scheme + host only. Provider URLs often carry an
+ * API key in the path or query, which must not end up on a /metrics page.
+ * @param {string} url
+ */
+export function endpointLabel(url) {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return 'invalid-url';
+  }
+}
+
+/**
+ * One single-endpoint client per URL, for liveness probing and per-endpoint health
+ * (the fallback transport above hides which endpoint answered).
+ * @param {string[]} rpcUrls
+ * @param {import('viem').Chain} [chain]
+ * @returns {{ url: string, getBlockNumber: () => Promise<bigint> }[]}
+ */
+export function createEndpointProbes(rpcUrls, chain = whitechainTestnet1874) {
+  return rpcUrls.map((url) => {
+    const client = createPublicClient({ chain, transport: http(url, { retryCount: 0 }) });
+    return { url, getBlockNumber: () => client.getBlockNumber({ cacheTime: 0 }) };
+  });
+}

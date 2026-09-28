@@ -1,5 +1,11 @@
 # Phase 6 decisions — liquidator and monitoring
 
+> **2026-09-28 update:** `services/liquidator` is now the automation bot for liquidations,
+> TP, SL and LIMIT/STOP entries. See **§11**. It replaces the log-discovered position
+> table in §5 and the LIQ-only engine in §1. The redeploy deploys `OstiumTradesUpKeep`
+> with two forwarders, which closes the gap in §2.6. §2–§4 (margin maths, recovery window,
+> degraded-mode reasoning) still apply.
+
 Status: **margin engine, decision logic and monitoring implemented and unit-tested;
 never run against live RPC and no on-chain transaction was sent.** Nothing under
 `contracts/`, `services/keeper/`, `services/price-publisher/`, `packages/reporter/` or
@@ -443,3 +449,157 @@ local-loopback-only I/O (`healthServer.test.mjs`, matching
    spec's own §5.3 wording). Worked around with a direct, log-based, swappable candidate
    source; not a blocker, but means this phase's "position table" is not literally what
    §5.3 describes until phase 4 lands.
+
+---
+
+## 11. The automation bot (2026-09-28, design spec `2026-09-28-testnet-perfect-design.md` §4, §6, §9.3)
+
+`OstiumTradesUpKeep.performUpkeep` is the only way into `OstiumTrading.executeAutomationOrder`,
+and that one entry point serves LIQ, TP, SL and resting LIMIT/STOP entries. A bot that only
+liquidated would leave the other three order types unexecuted, so `services/liquidator` now
+triggers all four.
+
+### 11.1 Shape of one sweep
+
+```
+indexer Postgres  --(position, limit_order; every sweep)-->  candidates
+publisher /status --(once per sweep)-->                      price, bid, ask, venue health
+per candidate (isolated: one failing read skips that candidate only):
+    cooldown?  -> skip without chain reads where possible
+    re-read the slot from chain (getOpenTrade / getOpenLimitOrder); gone -> lost race
+    decide with the contract's own rule on the CHAIN values (triggerRules.mjs)
+    gate per kind (degradedMode.canTrigger)
+    skip if the contract would return BACKDATED / NO_TP / NO_SL / PENDING_TRIGGER
+dedupe by (trader, pair, index, kind) -> batches of <= LIQUIDATOR_MAX_BATCH_SIZE -> sendPerformUpkeep
+```
+
+| Module | Role |
+|---|---|
+| `candidateSource.mjs` | `SELECT` from `position` and `limit_order` (spec §9.1). No state kept between sweeps, so a restart sees everything. A missing `limit_order` table (indexer not yet upgraded) is reported (`liquidator_limit_order_table_available 0`, one log line) and liquidations carry on. Any other DB error fails the sweep rather than acting on a partial view. |
+| `chainReader.mjs` | Contract views + one publisher `/status` per sweep. Normalises viem's `number`-typed small ints to `bigint`. |
+| `priceImpact.mjs` | Transcription of `TradingCallbacksLib.getDynamicTradePriceImpact` and helpers (same as `apps/web/src/lib/priceImpact.ts`), needed because TP and LIMIT compare the fill price after impact. |
+| `triggerRules.mjs` | The hit conditions, below. Pure. |
+| `automationEngine.mjs` | The sweep: re-read, decide, gate, dedupe, batch, cooldown, batch isolation, metrics. |
+| `sweepLoop.mjs` | Single-flight scheduler: the next sweep starts `LIQUIDATOR_POLLING_INTERVAL_MS` after the previous one ends. |
+| `txSender.mjs` | The only sender, behind one function `sendPerformUpkeep({ trades, timestamp })`. `packages/txsender` replaces it at merge. |
+| `main.mjs`, `lifecycle.mjs`, `config.mjs` | Env-only config, SIGTERM drains the in-flight sweep, exit 1 on a fatal start. |
+
+### 11.2 Trigger rules (what the bot fires, and on which price)
+
+The report carries `price` = publisher mark and `bid`/`ask` = the aggregated index quote
+(each falling back to the mark), exactly as `services/price-publisher` `engine.signReportFor`
+builds it. Paths are `contracts/src/vendor/ostium/`.
+
+| Kind | Hit when | Price compared | Source |
+|---|---|---|---|
+| LIQ | `tradeValue < liqMarginValue` (strict) | `price` | `OstiumTradingCallbacks.sol:534-546`, `lib/TradingCallbacksLib.sol:411-414` |
+| SL long / short | `sl > 0 && price <= sl` / `price >= sl` | `price` | callbacks `:534-535` (isMarketPrice), lib `:419-422` |
+| TP long / short | `tp > 0 && fill >= tp` / `fill <= tp` | fill after impact, closing (`isOpen=false`): the **bid** for a long, the **ask** for a short when `priceImpactK == 0` | lib `:278-279`, `:415-418` |
+| LIMIT buy / sell | `fill <= target` / `fill >= target` | fill after impact, opening, sized on `calculatePostFeeCollateral`: the **ask** for a buy, the **bid** for a sell when `priceImpactK == 0` | callbacks `:443-450`, lib `:364-365` |
+| STOP buy / sell | `price >= target` / `price <= target` | `price` | lib `:364-366` |
+
+Also mirrored so the bot does not waste a trigger:
+
+- a hit entry whose fill already crosses its own TP/SL is cancelled `TP_REACHED`/`SL_REACHED` (lib `:370-378`): not triggered;
+- any of price/bid/ask `<= 0` is `MARKET_CLOSED` (callbacks `:414-418`, `:521-523`): not triggered;
+- `priceTimestamp < createdAt`, `< tpLastUpdated` (TP), `< slLastUpdated` (SL), `< lastUpdated` (entry) returns `BACKDATED_EXECUTION` / `NO_TP` / `NO_SL` (`OstiumTrading.sol:585-619`): skipped until the next second;
+- `orderTriggerBlock != 0 && block - triggerBlock < triggerTimeout` returns `PENDING_TRIGGER` (`OstiumTrading.sol:621-623`, `TradingLib.checkNoPendingTrigger`): skipped.
+
+Per position at most one close kind fires, in LIQ > SL > TP order. The callback turns any
+close of a liquidatable trade into a liquidation (callbacks `:546`, `:583-584`), so when LIQ
+is hit but gated, SL and TP on that trade are held back too. Otherwise they would be a way
+round the degraded-mode and recovery-window rules.
+
+`contracts/test/integration/AutomationTriggerRules.t.sol` pins the price choice against the
+real contracts. Each case delivers a report in which the mark and the bid/ask sit on opposite
+sides of the trigger: TP long on the bid, SL long on the mark, LIMIT buy on the ask, STOP buy
+on the mark.
+
+**Where this can still disagree with the contract.** When `priceImpactK > 0` (the redeploy
+sets it), the fill price depends on side volume decayed to the callback's `block.timestamp`,
+a few blocks after the bot decides. The bot decays to its own clock. Near the boundary the
+result can differ by the decay over those seconds. The contract decides again at execution,
+so the worst case is a `NOT_HIT` that costs gas and a cooldown, never a wrong execution. The
+same holds for fees and price moving between decision and callback (§2.4).
+
+### 11.3 Gates per kind
+
+| Kind | Sequencer STALLED | RECOVERING (1 h window, §3) | Degraded market |
+|---|---|---|---|
+| LIQ | blocked | blocked | **blocked** (default, §4). `LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED=true` allows it |
+| SL, TP | blocked | allowed | allowed: the trader's own close order, and the publisher signs `LIMIT_CLOSE` while degraded |
+| LIMIT / STOP | blocked | allowed | **blocked**: the publisher refuses to sign `LIMIT_OPEN` while degraded, so a trigger would only freeze the order until the timeout |
+
+STALLED blocks everything because nothing sent can land. The recovery window exists so a
+trader is not liquidated for a move they could not react to. It has no reason to hold back an
+order the trader placed themselves.
+
+**Contradiction to decide.** Design spec §2 item 8 says "Degraded mode: opens blocked, closes
+**and liquidations flow**". §4 of this document decided the opposite for liquidations, and the
+bot follows §4 by default. `LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED` switches to the spec's
+behaviour without a code change. Someone has to pick one before acceptance item 8 is run.
+
+### 11.4 Batching, dedupe, cooldown, two instances
+
+- **Batch.** All triggers from one sweep go into as few `performUpkeep` calls as
+  `LIQUIDATOR_MAX_BATCH_SIZE` (default 20) allows, with one shared timestamp (the sweep's
+  wall-clock second). A non-`SUCCESS` status for one entry does not revert the batch. A
+  revert does (for example `WrongParams`, a delisted pair or `done`). After a failed multi-trigger batch, its triggers go out one
+  per transaction until each succeeds, so one poisoned trigger cannot block the rest.
+- **Dedupe** on `(trader, pair, index, kind)` within a sweep.
+- **Cooldown.** Once sent (success or failure) a key is not re-sent for
+  `LIQUIDATOR_TRIGGER_COOLDOWN_MS` (default 30 s ≈ `triggerTimeout` 30 blocks). A `NOT_HIT`
+  callback clears the on-chain trigger at once, so without the cooldown a position sitting on
+  its boundary would be re-triggered every sweep. The cooldown is also the operational
+  mitigation for the renewable trigger freeze (L-3, spec §4): the bot only triggers what its
+  engine says is hit, and never faster than once per window.
+- **Two instances** with two forwarder keys, same DB, no coordination. The loser of a race
+  gets `PENDING_TRIGGER` / `NO_TRADE` / `NO_LIMIT`, which are statuses and not reverts
+  (`Liquidation.t.sol` `test_twoLiquidatorsOnTheSamePositionDoNotDoubleSettle`). Before
+  sending, each instance reads `orderTriggerBlock`, so it usually sees the other instance's
+  pending trigger and skips. Per-instance env: `LIQUIDATOR_INSTANCE_NAME`,
+  `LIQUIDATOR_FORWARDER_KEY_PATH`, `LIQUIDATOR_METRICS_PORT`, `LIQUIDATOR_DEAD_LETTER_PATH`
+  (`services/liquidator/.env.example`).
+
+Run under a supervisor with
+`node --env-file=/etc/whitespace/automation-bot-N.env services/liquidator/src/main.mjs`
+(or `EnvironmentFile=`). SIGTERM stops scheduling, waits up to 20 s for an in-flight sweep
+(which may be mid-send), closes the metrics server and the pool, and exits 0.
+
+### 11.5 Bugs fixed on the way (each with a test that failed first)
+
+| Bug | Fix |
+|---|---|
+| `setInterval(async …)` let a slow sweep overlap the next one: same candidates, same nonce | `sweepLoop.mjs`: single flight, next sweep scheduled after the previous ends |
+| `readMaxLeverage(pairIndex, false)` hardcoded overnight | uses the trade's `isDayTrade` (callbacks `:537` resolves it the same way) |
+| `watchLiveness` swallowed RPC errors, so a total outage stayed LIVE forever | a failed poll is "no new block" (`observeFailure`); a startup outage stalls from the first failure, and the first block after it enters RECOVERING |
+| `liquidator_oracle_staleness_ms`, `liquidator_rpc_healthy` declared, never set | staleness = age of the last good `/status`; every RPC endpoint probed separately, labelled by scheme+host only (provider URLs carry keys) |
+| One reader exception aborted the whole sweep | per-candidate isolation |
+| `positionTable.remove` never called | the table is gone; candidates come from the DB every sweep |
+| `readTrade` compared viem's `number` leverage to `0n`, so an empty slot was never recognised as closed | every numeric view result is normalised to `bigint` |
+
+### 11.6 Metrics
+
+`liquidator_positions_tracked`, `liquidator_limit_orders_tracked`,
+`liquidator_limit_order_table_available`, `liquidator_positions_below_maintenance`,
+`liquidator_triggers_{attempted,sent,failed}_total{kind}`, `liquidator_batches_total{ok}`,
+`liquidator_lost_race_total{kind}`, `liquidator_suppressed_{degraded,sequencer}_total{kind}`,
+`liquidator_candidate_errors_total`, `liquidator_sweep_errors_total{stage}`,
+`liquidator_oracle_staleness_ms`, `liquidator_sequencer_state`,
+`liquidator_rpc_healthy{endpoint}`, `liquidator_dead_letter_depth`. Served on
+`LIQUIDATOR_METRICS_HOST:LIQUIDATOR_METRICS_PORT` (default `127.0.0.1:9464`).
+
+### 11.7 Not done / known limits
+
+- **Not run against a live chain or a live indexer.** Unit tests mock the chain. The SQL runs
+  against in-process Postgres (PGlite) with Ponder-shaped tables. `limit_order` is coded
+  against the spec §9.1 column contract, which is being built in parallel. The trigger price
+  choice is pinned on the real contracts by the forge test above.
+- **RPC cost.** Every open position is re-read from chain every sweep: `getOpenTrade`, the
+  info and two fee views, plus the per-pair reads that are memoised per sweep. That is fine at
+  testnet scale. At larger scale, prefilter on the DB values and re-read only near-trigger
+  candidates.
+- **Transaction sending** is still the old `txSender.mjs`. It does not advance its cached
+  nonce after a mined revert, and it retries a deterministic revert with a gas bump.
+  `packages/txsender` (being built in parallel) replaces it behind `sendPerformUpkeep`.
+- The degraded-mode liquidation contradiction in §11.3 needs a decision.

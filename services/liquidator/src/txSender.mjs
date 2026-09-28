@@ -16,7 +16,7 @@
 
 import { encodeFunctionData } from 'viem';
 import { TRADES_UPKEEP_ABI } from './abi.mjs';
-import { encodeLiquidationPerformData } from './performData.mjs';
+import { encodePerformData } from './performData.mjs';
 
 export const GAS_BUMP_NUMERATOR = 12n;
 export const GAS_BUMP_DENOMINATOR = 10n;
@@ -47,14 +47,17 @@ export function createTxSender({ publicClient, walletClient, account, tradesUpKe
   }
 
   /**
-   * @param {{ trader: `0x${string}`, pairIndex: number, index: number }} candidate
-   * @param {number} timestamp
+   * The bot's whole view of transaction sending: one performUpkeep with a batch of
+   * triggers. Resolves {ok, hash} or {ok:false, reason}; never throws for a send failure.
+   * Kept this narrow on purpose so packages/txsender can replace this module at merge.
+   *
+   * @param {{ trades: { trader: `0x${string}`, pairIndex: number, index: number, limitOrder: number }[], timestamp: number }} payload
    */
-  async function submitLiquidation(candidate, timestamp) {
+  async function sendPerformUpkeep({ trades, timestamp }) {
     if (cachedNonce === null) await refreshNonce();
 
     let gasPrice = await publicClient.getGasPrice();
-    const performData = encodeLiquidationPerformData([candidate], timestamp);
+    const performData = encodePerformData(trades, timestamp);
     const data = encodeFunctionData({ abi: TRADES_UPKEEP_ABI, functionName: 'performUpkeep', args: [performData] });
 
     let lastError;
@@ -86,9 +89,8 @@ export function createTxSender({ publicClient, walletClient, account, tradesUpKe
     }
 
     deadLetter.add({
-      trader: candidate.trader,
-      pairIndex: candidate.pairIndex,
-      index: candidate.index,
+      trades: trades.map(({ trader, pairIndex, index, limitOrder }) => ({ trader, pairIndex, index, limitOrder })),
+      timestamp,
       reason: lastError?.message ?? 'unknown',
       attempts: maxRetries + 1,
     });
@@ -96,7 +98,7 @@ export function createTxSender({ publicClient, walletClient, account, tradesUpKe
   }
 
   return {
-    submitLiquidation,
+    sendPerformUpkeep,
     refreshNonce,
     get nonce() {
       return cachedNonce;
