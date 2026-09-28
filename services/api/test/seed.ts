@@ -17,7 +17,8 @@ export async function truncateAll(): Promise<void> {
   const pool = getPool();
   await pool.query(
     `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status,
-       limit_order, order_event, fee_charge, liquidation, vault_settlement, partial_close`,
+       limit_order, order_event, fee_charge, liquidation, vault_settlement, partial_close,
+       points_event, wallet_points, points_daily, wallet_streak, wallet_lp`,
   );
   // Not in the list above: that TRUNCATE names Ponder's tables, and this one is the
   // API's own (src/indexSeries.ts). Guarded because a test file may run before any
@@ -118,6 +119,57 @@ export async function seedCandle(
     `INSERT INTO candle (id, pair_index, interval, bucket_start, open, high, low, close, volume)
      VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
     [`0-${interval}-${bucketStart}`, interval, bucketStart, ohlc.o, ohlc.h, ohlc.l, ohlc.c, ohlc.v],
+  );
+}
+
+/** A wallet_points aggregate row (points at 6 dp, as raw base units). */
+export async function seedWalletPoints(
+  over: { trader?: string; missions?: string; time?: string; streak?: string; lp?: string; updatedAt?: number } = {},
+): Promise<void> {
+  const missions = over.missions ?? '0';
+  const time = over.time ?? '0';
+  const streak = over.streak ?? '0';
+  const lp = over.lp ?? '0';
+  const total = (BigInt(missions) + BigInt(time) + BigInt(streak) + BigInt(lp)).toString();
+  await getPool().query(
+    `INSERT INTO wallet_points (trader, missions_raw, time_raw, streak_raw, lp_raw, total_raw, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [over.trader ?? TRADER, missions, time, streak, lp, total, over.updatedAt ?? 1788881880],
+  );
+}
+
+/** A wallet_streak state row. */
+export async function seedWalletStreak(
+  over: { trader?: string; lastQualifiedDay?: number; currentLength?: number; longest?: number } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO wallet_streak (trader, last_qualified_day, current_length, longest, updated_at)
+     VALUES ($1, $2, $3, $4, 1788881880)`,
+    [over.trader ?? TRADER, over.lastQualifiedDay ?? 20705, over.currentLength ?? 1, over.longest ?? 1],
+  );
+}
+
+/** A wallet_lp balance-state row (USDW assets at 6 dp). */
+export async function seedWalletLp(
+  over: { owner?: string; balanceRaw?: string; lastAccrualAt?: number } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO wallet_lp (owner, balance_raw, last_accrual_at) VALUES ($1, $2, $3)`,
+    [over.owner ?? TRADER, over.balanceRaw ?? '8500000000', over.lastAccrualAt ?? 1788881880],
+  );
+}
+
+/** A ledger row for an unlocked mission. */
+export async function seedMissionEvent(
+  missionId: string,
+  over: { trader?: string; pointsRaw?: string; at?: number } = {},
+): Promise<void> {
+  const trader = over.trader ?? TRADER;
+  const raw = over.pointsRaw ?? '50000000';
+  await getPool().query(
+    `INSERT INTO points_event (id, trader, component, points_raw, requested_raw, day_index, ref_id, at, tx_hash)
+     VALUES ($1, $2, 'mission', $3, $3, 20705, $4, $5, $6)`,
+    [`mission-${trader}-${missionId}`, trader, raw, missionId, over.at ?? 1788881880, TX_A],
   );
 }
 

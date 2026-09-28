@@ -128,5 +128,34 @@ export type VaultSettlement = {
   txHash: string;
 };
 
+/** GET /points/:address — a wallet's season-one points, one row of wallet_points plus its
+ * streak state and the missions it has unlocked. Every points figure is a 6-decimal string. */
+export type PointsSummary = {
+  address: string;
+  missions: string; // 6 dp
+  time: string; // 6 dp
+  streak: string; // 6 dp
+  lp: string; // 6 dp
+  total: string; // 6 dp
+  rank: number | null; // leaderboard position; null if the wallet has earned nothing
+  streakDays: number; // current consecutive-day run
+  streakLongest: number;
+  completedMissions: string[]; // mission ids already unlocked
+  updatedAt: number | null; // unix seconds of the last award; null if none
+  lpBalance: string; // 6 dp USDW currently tracked in the pool
+  lpSince: number | null; // unix seconds the LP balance last changed; anchors the live accrual
+};
+
+/** One row of GET /points/leaderboard, ranked by total points descending. */
+export type LeaderboardEntry = {
+  rank: number;
+  address: string;
+  missions: string; // 6 dp
+  time: string; // 6 dp
+  streak: string; // 6 dp
+  lp: string; // 6 dp
+  total: string; // 6 dp
+};
+
 /** Every 400 this API returns. */
 export type ApiError = { error: string };

@@ -35,6 +35,12 @@ export function id(raw: string | bigint | null): string | null {
   return money(raw, 0);
 }
 
+/** A season-one points value. Points carry 6 decimals (POINTS_DECIMALS in
+ * @whitespace/shared/points), the same scale as USDW, so raw 1_240_000 is "1.240000". */
+export function points(raw: string | bigint | null): string | null {
+  return money(raw, 6);
+}
+
 /** percentProfit as the contract defines it: a signed PERCENT with 6 decimals
  * (OstiumPairInfos.getTradeValuePure divides collateral * percentProfit by 1e6 * 100), so
  * raw -30768 is "-0.030768" (%). Not a PRECISION_18 value. */

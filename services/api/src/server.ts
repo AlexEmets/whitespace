@@ -11,6 +11,7 @@ import { handleFees } from './routes/fees.js';
 import { handlePnl } from './routes/pnl.js';
 import { handleVaultSettlements } from './routes/vault.js';
 import { handleFaucetWbt } from './routes/faucet.js';
+import { handlePoints, handleLeaderboard } from './routes/points.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 import { ensureFaucetSchema } from './faucet.js';
@@ -29,6 +30,9 @@ router.get('/limit-orders/:address', handleLimitOrders);
 router.get('/fees/:address', handleFees);
 router.get('/pnl/:address', handlePnl);
 router.get('/vault/settlements', handleVaultSettlements);
+// Leaderboard before the :address route, or ":address" would capture "leaderboard".
+router.get('/points/leaderboard', handleLeaderboard);
+router.get('/points/:address', handlePoints);
 // The one write in this read API: a funded server wallet sends native WBT so a fresh,
 // gasless wallet can afford its first transaction (see src/faucet.ts).
 router.post('/faucet/wbt', handleFaucetWbt);

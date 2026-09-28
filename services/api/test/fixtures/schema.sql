@@ -266,3 +266,58 @@ CREATE TABLE partial_close (
     PRIMARY KEY (order_id)
 );
 CREATE INDEX partial_close_trader_index ON partial_close USING btree (trader);
+
+-- Season-one points tables (ponder.schema.ts). Added following Ponder's deterministic column
+-- mapping (bigint -> numeric(78,0), hex/text -> text, integer -> integer), matching the rest
+-- of this mirror; regenerate with the same pg_dump session when the schema next changes.
+CREATE TABLE points_event (
+    id text NOT NULL,
+    trader text NOT NULL,
+    component text NOT NULL,
+    points_raw numeric(78,0) NOT NULL,
+    requested_raw numeric(78,0) NOT NULL,
+    day_index integer NOT NULL,
+    ref_id text NOT NULL,
+    at integer NOT NULL,
+    tx_hash text NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE INDEX points_event_trader_index ON points_event USING btree (trader);
+CREATE INDEX points_event_trader_component_day_index ON points_event USING btree (trader, component, day_index);
+
+CREATE TABLE wallet_points (
+    trader text NOT NULL,
+    missions_raw numeric(78,0) NOT NULL,
+    time_raw numeric(78,0) NOT NULL,
+    streak_raw numeric(78,0) NOT NULL,
+    lp_raw numeric(78,0) NOT NULL,
+    total_raw numeric(78,0) NOT NULL,
+    updated_at integer NOT NULL,
+    PRIMARY KEY (trader)
+);
+CREATE INDEX wallet_points_total_index ON wallet_points USING btree (total_raw);
+
+CREATE TABLE points_daily (
+    id text NOT NULL,
+    trader text NOT NULL,
+    component text NOT NULL,
+    day_index integer NOT NULL,
+    accrued_raw numeric(78,0) NOT NULL,
+    PRIMARY KEY (id)
+);
+
+CREATE TABLE wallet_streak (
+    trader text NOT NULL,
+    last_qualified_day integer NOT NULL,
+    current_length integer NOT NULL,
+    longest integer NOT NULL,
+    updated_at integer NOT NULL,
+    PRIMARY KEY (trader)
+);
+
+CREATE TABLE wallet_lp (
+    owner text NOT NULL,
+    balance_raw numeric(78,0) NOT NULL,
+    last_accrual_at integer NOT NULL,
+    PRIMARY KEY (owner)
+);
