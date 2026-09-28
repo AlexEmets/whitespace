@@ -221,6 +221,10 @@ export interface PointsSummary {
   streakLongest: number;
   completedMissions: string[];
   updatedAt: number | null;
+  /** USDW currently tracked in the pool (6 dp), and the unix second it last changed — the
+   * anchor the live LP counter accrues from. */
+  lpBalance: string;
+  lpSince: number | null;
 }
 
 /** GET /points/leaderboard — one ranked wallet. */

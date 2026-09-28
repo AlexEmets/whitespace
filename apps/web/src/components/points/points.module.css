@@ -1,131 +1,520 @@
 /*
- * /points-specific styling. The page shell, tiles, tables and the four states all come
- * from components/portfolio/accountPage.module.css — what lives here is only the two
- * things this page has that no other page does: the "not issued" tile treatment, and the
- * standing notice that explains it.
+ * /points — the season-one points dashboard. The page shell (head, states) comes from
+ * components/portfolio/accountPage.module.css; what lives here is the dashboard itself: the
+ * summary band, the four component cards, and the two live counters. Every colour, radius
+ * and family is read from the Eclipse tokens in globals.css — this file declares no palette.
  */
 
-/*
- * terminal_design.pdf puts a POINTS block in the order panel: an epoch countdown, a
- * 128,904 total, "Rank 214 · referral 25% of taker fees". Every one of those four numbers
- * is invented — there is no points service, no epoch schedule, no rank, and the referral
- * programme was cut from scope.
- *
- * The tiles keep the mockup's shape and drop its numbers. Rendering "Not issued" at the
- * same size and in the same slot as the fabricated total is deliberate: an empty frame
- * reads as a page that failed to load, whereas a filled frame that states its own absence
- * reads as a decision. The dimmed value colour and the dashed rule are what mark it as
- * "no value here" without shrinking it into a footnote.
- */
-.voidTile {
-  border-style: dashed;
-}
-
-.voidValue {
-  color: var(--fg-muted);
-  font-size: 1.9rem;
-  font-weight: 300;
-  line-height: 1.25;
-  letter-spacing: 0.01em;
-}
-
-/* The standing notice. Accent-tinted rather than the warning/degraded red: nothing is
-   broken and nothing is at risk — this is a policy statement, and colouring it like an
-   incident would be its own small dishonesty. */
-.notice {
-  margin: 0;
-  border: 1px solid var(--accent-ring);
-  border-radius: var(--radius-lg);
-  background: var(--accent-dim);
-  padding: 1.6rem 1.7rem;
-}
-
-.noticeEyebrow {
-  color: var(--accent);
-  font-size: 0.8rem;
-  margin-bottom: 0.7rem;
-}
-
-.noticeHead {
-  font-size: 1.4rem;
-  font-weight: 300;
-  margin: 0 0 0.8rem;
-  line-height: 1.4;
-}
-
-.noticeBody {
-  color: var(--fg-muted);
-  font-size: 0.98rem;
-  font-weight: 300;
-  line-height: 1.8;
-  max-width: 62em;
-  margin: 0;
-}
-
-.noticeList {
-  list-style: none;
-  margin: 1.1rem 0 0;
-  padding: 0;
+/* ---------- summary band ---------- */
+.summary {
   display: grid;
-  gap: 0.55rem;
-  max-width: 62em;
-}
-
-.noticeList li {
-  color: var(--fg-muted);
-  font-size: 0.95rem;
-  font-weight: 300;
-  line-height: 1.7;
-  padding-left: 1.4rem;
-  position: relative;
-}
-
-/* A rule rather than a bullet: the rest of the interface is drawn in 1px lines, and a
-   round bullet is the one shape this design language never uses. */
-.noticeList li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.62em;
-  width: 0.7rem;
-  height: 1px;
-  background: var(--accent);
-}
-
-.noticeList li strong {
-  color: var(--fg);
-  font-weight: 400;
-}
-
-.feeGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: 1.5fr 1fr 1fr 1fr;
   gap: 8px;
+  margin-bottom: 8px;
 }
-
-.feeCell {
-  padding: 1.1rem 1.2rem;
+.sumTile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1.4rem 1.55rem;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
 }
-
-.feeLabel {
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-  margin-bottom: 0.5rem;
-}
-
-.feeValue {
-  font-size: 1.4rem;
-  font-weight: 300;
-  font-variant-numeric: tabular-nums;
-}
-
-.feeNote {
+.sumLabel {
   font-family: var(--font-sans);
   color: var(--fg-muted);
   font-size: 0.85rem;
+}
+.sumValue {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 300;
-  line-height: 1.6;
-  margin-top: 0.55rem;
+  letter-spacing: -0.02em;
+  font-size: 1.85rem;
+}
+.total .sumValue {
+  font-size: clamp(2.4rem, 6vw, 3.4rem);
+  line-height: 1;
+  color: var(--accent);
+}
+.unit {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  margin-left: 0.45rem;
+  letter-spacing: 0;
+}
+.sumSub {
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+}
+.sumSub .gain {
+  font-family: var(--font-mono);
+  color: var(--long);
+}
+.accentValue {
+  color: var(--accent);
+}
+
+/* tier meter inside its tile */
+.tierTrack {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.tierFill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--corona-rim));
+}
+.tierRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: var(--fg-dim);
+}
+
+/* ---------- card grid ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  min-width: 0;
+  padding: 1.5rem 1.6rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+.idx {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 0.9rem;
+  padding-top: 0.15rem;
+  min-width: 1.5rem;
+}
+.titles {
+  flex: 1;
+  min-width: 0;
+}
+.cardTitle {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+.what {
+  color: var(--fg-muted);
+  font-size: 0.84rem;
+  margin-top: 0.15rem;
+}
+.chip {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.24rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--fg-muted);
+}
+.chipLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--long);
+  border-color: rgba(94, 234, 212, 0.35);
+  background: var(--long-dim);
+}
+.liveDot {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: var(--long);
+  animation: pointsPulse 2s ease-out infinite;
+}
+@keyframes pointsPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(94, 234, 212, 0);
+  }
+}
+
+.seasonRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.seasonNum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.9rem;
+  font-weight: 300;
+}
+.numLive {
+  color: var(--accent);
+}
+.frac {
+  color: var(--fg-muted);
+}
+.cap {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--fg-dim);
+  text-align: right;
+}
+
+/* ---------- missions ---------- */
+.missionsTop {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+.ring {
+  position: relative;
+  width: 84px;
+  height: 84px;
+  flex: none;
+}
+.ring svg {
+  transform: rotate(-90deg);
+}
+.ringTrack {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+.ringFill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.ringCenter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.ringCenter b {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 400;
+}
+.ringCenter small {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--fg-dim);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.mLead .mPtsBig {
+  font-family: var(--font-mono);
+  font-size: 1.9rem;
+  font-weight: 300;
+}
+.mLead .mLbl {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+}
+
+.mlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 176px;
+  overflow-y: auto;
+}
+.mItem {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.42rem 0.15rem;
+  font-family: var(--font-sans);
+  font-size: 0.86rem;
+}
+.mItem + .mItem {
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+.mBox {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  border: 1px solid var(--fg-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+}
+.mItemDone .mBox {
+  border-color: transparent;
+  background: var(--long-dim);
+  color: var(--long);
+}
+.mName {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mItemDone .mName {
+  color: var(--fg);
+}
+.mPts {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  flex: none;
+}
+.mItemDone .mPts {
+  color: var(--long);
+}
+
+/* ---------- time in market ---------- */
+.posline {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+}
+.side {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex: none;
+}
+.sideLong {
+  background: var(--long);
+}
+.sideShort {
+  background: var(--short);
+}
+.posSym {
+  font-weight: 500;
+}
+.posFig {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.posMuted {
+  color: var(--fg-muted);
+}
+.posClock {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+.formula {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border);
+}
+.formula b {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+/* ---------- cap meter ---------- */
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.meterRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+.meterRow .figNow {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+.meterTrack {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+.meterFill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+.meterFull .meterFill {
+  background: var(--short);
+}
+
+/* ---------- streak ---------- */
+.streakTop {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+.flame {
+  width: 3.4rem;
+  height: 3.4rem;
+  flex: none;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 65%, var(--accent-dim), transparent 70%);
+  border: 1px solid var(--accent-ring);
+  color: var(--accent);
+}
+.sLead .sNum {
+  font-family: var(--font-mono);
+  font-size: 1.9rem;
+  font-weight: 300;
+}
+.sLead .sNum b {
+  color: var(--accent);
+  font-weight: 300;
+}
+.sLead .sLbl {
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+}
+.mult {
+  margin-left: auto;
+  text-align: right;
+}
+.multVal {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--accent);
+  font-weight: 300;
+}
+.multLbl {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  color: var(--fg-dim);
+}
+.dots {
+  display: flex;
+  gap: 0.4rem;
+}
+.dot {
+  flex: 1;
+  height: 2.4rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--fg-dim);
+  position: relative;
+}
+.dotOn {
+  background: var(--accent-dim);
+  border-color: var(--accent-ring);
+  color: var(--accent);
+}
+.dotToday {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---------- anti-farm guard line ---------- */
+.guard {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+.guard svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--fg-muted);
+}
+.guard b {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+/* ---------- footnote ---------- */
+.note {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  margin-top: 8px;
+  padding: 1.1rem 1.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+  line-height: 1.65;
+}
+.note svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--fg-muted);
+}
+.note b {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+@media (max-width: 900px) {
+  .summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .total {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .liveDot,
+  .ringFill,
+  .meterFill {
+    animation: none;
+    transition: none;
+  }
 }
