@@ -10,8 +10,10 @@ import { handleLimitOrders } from './routes/limitOrders.js';
 import { handleFees } from './routes/fees.js';
 import { handlePnl } from './routes/pnl.js';
 import { handleVaultSettlements } from './routes/vault.js';
+import { handleFaucetWbt } from './routes/faucet.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
+import { ensureFaucetSchema } from './faucet.js';
 
 const router = new Router();
 router.get('/health', handleHealth);
@@ -27,6 +29,9 @@ router.get('/limit-orders/:address', handleLimitOrders);
 router.get('/fees/:address', handleFees);
 router.get('/pnl/:address', handlePnl);
 router.get('/vault/settlements', handleVaultSettlements);
+// The one write in this read API: a funded server wallet sends native WBT so a fresh,
+// gasless wallet can afford its first transaction (see src/faucet.ts).
+router.post('/faucet/wbt', handleFaucetWbt);
 
 export type App = { server: Server; wsManager: WsManager };
 
@@ -58,7 +63,7 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
     // Tells caches that the response body depends on the request's Origin, so a response
     // built for one allowed origin is never replayed to another.
     vary: 'Origin',
-    'access-control-allow-methods': 'GET, OPTIONS',
+    'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': 'content-type',
     'access-control-max-age': '600',
   };
@@ -109,6 +114,7 @@ if (isMain) {
   // the test suite calls many times per run and which must not start background timers
   // or reach for a publisher that is not there.
   await ensureIndexSeriesSchema();
+  await ensureFaucetSchema();
   const recorder = startIndexRecorder();
   const stop = () => {
     recorder.stop();

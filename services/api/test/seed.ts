@@ -31,6 +31,15 @@ export async function truncateAll(): Promise<void> {
       END IF;
     END $$;
   `);
+  // Same story for the faucet's own cooldown ledger (src/faucet.ts): its own schema, guarded
+  // so a file that runs before the schema is bootstrapped does not error here.
+  await pool.query(`
+    DO $$ BEGIN
+      IF to_regclass('api_faucet.faucet_claims') IS NOT NULL THEN
+        TRUNCATE api_faucet.faucet_claims;
+      END IF;
+    END $$;
+  `);
 }
 
 /** An index-series candle, as the recorder would have written it. */

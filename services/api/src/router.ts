@@ -32,6 +32,11 @@ export class Router {
     this.routes.push({ method: 'GET', pattern, paramNames, handler });
   }
 
+  post(path: string, handler: Handler): void {
+    const { pattern, paramNames } = compile(path);
+    this.routes.push({ method: 'POST', pattern, paramNames, handler });
+  }
+
   match(method: string, pathname: string): { handler: Handler; params: Record<string, string> } | null {
     for (const route of this.routes) {
       if (route.method !== method) continue;

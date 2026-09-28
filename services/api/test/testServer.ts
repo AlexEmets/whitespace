@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { createApp, type App } from '../src/server.js';
 import { resetPool } from '../src/db.js';
 import { ensureIndexSeriesSchema } from '../src/indexSeries.js';
+import { ensureFaucetSchema } from '../src/faucet.js';
 
 export type TestServer = {
   app: App;
@@ -18,6 +19,9 @@ export async function startTestServer(opts: { wsPollIntervalMs?: number } = {}):
   // than seeding rows means the suite exercises the empty-series fallback to the
   // indexer's on-chain candles, which is what a fresh deployment actually does.
   await ensureIndexSeriesSchema();
+  // The faucet keeps its cooldown ledger in its own schema, created at boot by the real
+  // entrypoint; tests need it present for the same reason the index series is created here.
+  await ensureFaucetSchema();
   const app = createApp({ wsPollIntervalMs: opts.wsPollIntervalMs ?? 50 });
   await new Promise<void>((resolve) => app.server.listen(0, resolve));
   const { port } = app.server.address() as AddressInfo;
