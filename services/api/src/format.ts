@@ -35,7 +35,9 @@ export function id(raw: string | bigint | null): string | null {
   return money(raw, 0);
 }
 
-/** Signed PRECISION_18 value (e.g. percentProfit), same rules as price. */
-export function signed18(raw: string | bigint | null): string | null {
-  return money(raw, SCALE.PRICE);
+/** percentProfit as the contract defines it: a signed PERCENT with 6 decimals
+ * (OstiumPairInfos.getTradeValuePure divides collateral * percentProfit by 1e6 * 100), so
+ * raw -30768 is "-0.030768" (%). Not a PRECISION_18 value. */
+export function percent6(raw: string | bigint | null): string | null {
+  return money(raw, 6);
 }

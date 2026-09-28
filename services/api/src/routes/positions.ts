@@ -1,5 +1,5 @@
 import { query } from '../db.js';
-import { price, collateral, leverage as fmtLeverage, id as fmtId, signed18 } from '../format.js';
+import { price, collateral, leverage as fmtLeverage, id as fmtId, percent6 } from '../format.js';
 import type { RouteResult, Handler } from '../router.js';
 
 type PositionRow = {
@@ -89,7 +89,7 @@ export const handlePositionsHistory: Handler = async (_req, params): Promise<Rou
         openedAt: r.opened_at,
         closedAt: r.closed_at,
         closeReason: r.close_reason,
-        percentProfit: signed18(r.percent_profit),
+        percentProfit: percent6(r.percent_profit), // percent, 6 dp
         usdcSentToTrader: collateral(r.usdc_sent_to_trader),
         realizedPnl: collateral(realizedPnl),
       };
