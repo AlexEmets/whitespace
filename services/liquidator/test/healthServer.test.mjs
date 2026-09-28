@@ -27,12 +27,12 @@ test('GET /health returns 200 { ok: true }', async () => {
 
 test('GET /metrics returns Prometheus text exposition including a known counter', async () => {
   await withServer(async (base, metrics) => {
-    metrics.liquidationsAttempted.inc(2);
+    metrics.triggersAttempted.inc(2, { kind: 'LIQ' });
     const res = await fetch(new URL('/metrics', base));
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/plain/);
     const text = await res.text();
-    assert.match(text, /liquidator_liquidations_attempted_total 2/);
+    assert.match(text, /liquidator_triggers_attempted_total\{kind="LIQ"\} 2/);
   });
 });
 
