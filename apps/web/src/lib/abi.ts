@@ -19,6 +19,16 @@ export const TRADING_ABI = parseAbi([
   'function openTradeMarketTimeout(uint256 _order)',
   'function closeTradeMarketTimeout(uint256 _order, bool retry)',
   'function marketOrdersTimeout() view returns (uint16)',
+  'function triggerTimeout() view returns (uint16)',
+  // Position management (IOstiumTrading.sol): TP/SL and isolated-margin edits.
+  'function updateTp(uint16 pairIndex, uint8 index, uint192 newTp)',
+  'function updateSl(uint16 pairIndex, uint8 index, uint192 newSl)',
+  'function topUpCollateral(uint16 pairIndex, uint8 index, uint256 topUpAmount)',
+  'function removeCollateral(uint16 pairIndex, uint8 index, uint256 removeAmount)',
+  // Resting LIMIT/STOP entries.
+  'function updateOpenLimitOrder(uint16 pairIndex, uint8 index, uint192 price, uint192 tp, uint192 sl)',
+  'function cancelOpenLimitOrder(uint16 pairIndex, uint8 index)',
+  'event OpenLimitPlacedV2(address indexed trader, uint16 indexed pairIndex, uint8 index, (uint256 collateral,uint192 openPrice,uint192 tp,uint192 sl,address trader,uint32 leverage,uint16 pairIndex,uint8 index,bool buy,bool isDayTrade) trade, uint8 orderType, (address builder,uint32 builderFee) builderFee)',
   'event MarketOpenOrderInitiated(uint256 indexed orderId, address indexed trader, uint16 indexed pairIndex)',
   'event MarketCloseOrderInitiatedV2(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint16 pairIndex, uint16 closePercentage)',
 ]);
@@ -92,11 +102,18 @@ export const PAIR_INFOS_ABI = parseAbi([
 
 export const PAIRS_STORAGE_ABI = parseAbi(['function pairOracleFee(uint16 pairIndex) view returns (uint64)']);
 
-/** IOstiumTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. This UI only submits
- * MARKET orders — LIMIT/STOP exist on-chain but their management UI (place, list,
- * cancel resting limit orders) is out of scope for the phase-5 completion gate; TWAP
- * does not exist in the contracts at all (see IOstiumTradingStorage.OpenOrderType). */
+/** IOstiumTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. TWAP does not exist in the
+ * contracts. A LIMIT entry fills at a better price than its trigger (long: at or below it),
+ * a STOP entry once the price breaks through it (long: at or above it). */
 export const OPEN_ORDER_TYPE_MARKET = 0;
+export const OPEN_ORDER_TYPE_LIMIT = 1;
+export const OPEN_ORDER_TYPE_STOP = 2;
+export type OpenOrderKind = 'MARKET' | 'LIMIT' | 'STOP';
+export const OPEN_ORDER_TYPE: Record<OpenOrderKind, number> = {
+  MARKET: OPEN_ORDER_TYPE_MARKET,
+  LIMIT: OPEN_ORDER_TYPE_LIMIT,
+  STOP: OPEN_ORDER_TYPE_STOP,
+};
 
 /**
  * IOstiumTradingCallbacks.CancelReason, transcribed from
