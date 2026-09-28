@@ -9,10 +9,9 @@ import { COLLATERAL_DECIMALS } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { collateralToRaw, formatMoney } from '@/lib/money';
 import { estimateUnrealisedPnl } from '@/lib/pnl';
-import styles from '../OrderPanel.module.css';
 
 /**
- * The account block under the order panel, as Variational places it: what the wallet holds,
+ * The account card at the foot of the terminal rail: what the wallet holds,
  * what is locked as isolated margin, the open positions' unrealised PnL at the current marks,
  * and their sum. Every figure is USDW; a market with no mark yet is left out of UPnL rather
  * than valued at its entry.
@@ -40,26 +39,29 @@ export function AccountSummary() {
   const portfolio = erc20.balance + margin + upnl;
 
   return (
-    <dl className={styles.summary} data-testid="account-summary">
-      <div>
-        <dt>Portfolio value</dt>
-        <dd data-testid="account-portfolio">{formatMoney(portfolio, COLLATERAL_DECIMALS)} USDW{complete ? '' : '*'}</dd>
+    <div className="rail-card" data-testid="account-summary">
+      <div className="rail-card-title">
+        <span>Account</span>
       </div>
-      <div>
-        <dt>Wallet</dt>
-        <dd data-testid="account-wallet">{formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</dd>
+      <div className="rail-card-row">
+        <span>Portfolio</span>
+        <span data-testid="account-portfolio">{formatMoney(portfolio, COLLATERAL_DECIMALS)} USDW{complete ? '' : '*'}</span>
       </div>
-      <div>
-        <dt>Isolated margin</dt>
-        <dd data-testid="account-margin">{formatMoney(margin, COLLATERAL_DECIMALS)} USDW</dd>
+      <div className="rail-card-row">
+        <span>Wallet</span>
+        <span data-testid="account-wallet">{formatMoney(erc20.balance, COLLATERAL_DECIMALS)} USDW</span>
       </div>
-      <div>
-        <dt>Unrealised PnL</dt>
-        <dd data-testid="account-upnl" className={upnl >= 0n ? styles.long : styles.short}>
+      <div className="rail-card-row">
+        <span>In margin</span>
+        <span data-testid="account-margin">{formatMoney(margin, COLLATERAL_DECIMALS)} USDW</span>
+      </div>
+      <div className="rail-card-row">
+        <span>uPnL</span>
+        <span data-testid="account-upnl" className={upnl >= 0n ? 'pos' : 'neg'}>
           {formatMoney(upnl, COLLATERAL_DECIMALS, { signDisplay: true })} USDW{complete ? '' : '*'}
-        </dd>
+        </span>
       </div>
-      {complete ? null : <p className="dash">* a market has no mark yet and is left out.</p>}
-    </dl>
+      {complete ? null : <p className="dash" style={{ margin: 0, fontSize: '0.78rem' }}>* a market has no mark yet and is left out.</p>}
+    </div>
   );
 }

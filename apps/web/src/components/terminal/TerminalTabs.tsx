@@ -52,7 +52,7 @@ export function TerminalTabs() {
     : {};
 
   return (
-    <div className="terminal-tabs" data-testid="terminal-tabs">
+    <div className="terminal-tabs panel" data-testid="terminal-tabs">
       <div className="tab-bar">
         {TABS.map((t) => (
           <button key={t} type="button" className={tab === t ? 'active' : ''} onClick={() => setTab(t)} data-testid={`tab-${t}`}>

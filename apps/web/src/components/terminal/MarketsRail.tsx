@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { useMarkets } from '@/hooks/useMarkets';
 import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
@@ -58,17 +59,31 @@ function RailRow({
 }
 
 /** Left markets rail. Rendered directly from `/markets` — as many rows as the API
- * returns, never padded toward a fuller-looking list. */
-export function MarketsRail({ pairIndex, onSelect }: { pairIndex: number | null; onSelect: (pairIndex: number) => void }) {
+ * returns, never padded toward a fuller-looking list. `children` are pinned to the foot of
+ * the rail (the terminal puts the oracle and account cards there). */
+export function MarketsRail({
+  pairIndex,
+  onSelect,
+  children,
+}: {
+  pairIndex: number | null;
+  onSelect: (pairIndex: number) => void;
+  children?: ReactNode;
+}) {
   const { markets, loading } = useMarkets();
 
   return (
-    <div className="terminal-rail" data-testid="markets-rail">
-      <div className="rail-header mono-upper">Markets {markets.length}</div>
-      {loading ? <p style={{ padding: '0.6rem 0.9rem', color: 'var(--fg-muted)' }}>Loading…</p> : null}
+    <aside className="terminal-rail panel" data-testid="markets-rail">
+      <div className="rail-header">
+        <span>Markets</span>
+        <span>{markets.length}</span>
+      </div>
+      {loading ? <p style={{ margin: '0.4rem 10px', color: 'var(--fg-muted)' }}>Loading…</p> : null}
       {markets.map((m) => (
         <RailRow key={m.pairIndex} pairIndex={m.pairIndex} from={m.from} to={m.to} active={m.pairIndex === pairIndex} onSelect={() => onSelect(m.pairIndex)} />
       ))}
-    </div>
+      <div className="rail-spacer" />
+      {children}
+    </aside>
   );
 }
