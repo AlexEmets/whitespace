@@ -34,6 +34,11 @@ import { PRICE_UPKEEP_ABI } from './abi.mjs';
  */
 const MAX_BLOCK_RANGE = 9_000;
 
+/** Orders handled at once within one window. Sends still serialise in the tx queue;
+ * this bounds how many report fetches (each of which may retry until its deadline) run
+ * side by side, so one slow order cannot hold up the rest of its window. */
+export const DEFAULT_CONCURRENCY = 4;
+
 const PRICE_REQUESTED_EVENT = PRICE_UPKEEP_ABI.find(
   (entry) => entry.type === 'event' && entry.name === 'PriceRequestedV2',
 );
@@ -55,16 +60,41 @@ export function toPriceRequestedEvent(log) {
 }
 
 /**
+ * Runs `fn` over `items` with at most `limit` in flight, resolving when all are done.
+ * @template T
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T) => Promise<void>} fn
+ */
+async function forEachBounded(items, limit, fn) {
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const item = items[next++];
+      await fn(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
+/**
  * @param {import('viem').PublicClient} publicClient
  * @param {`0x${string}`} priceUpKeepAddress
- * @param {(event: ReturnType<typeof toPriceRequestedEvent>) => void} onEvent
+ * @param {(event: ReturnType<typeof toPriceRequestedEvent>) => void|Promise<void>} onEvent
+ *   awaited: the watcher does not read the next window until every order in this one
+ *   has been handled (or has failed, which goes to `onError`)
  * @param {(err: Error) => void} [onError]
+ * @param {{ pollIntervalMs?: number, maxBlockRange?: number, maxChunksPerTick?: number, concurrency?: number }} [opts]
  * @returns {() => void} unwatch
  */
 export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, onError = () => {}, opts = {}) {
   const pollIntervalMs = opts.pollIntervalMs ?? 1_500;
   const maxRange = BigInt(opts.maxBlockRange ?? MAX_BLOCK_RANGE);
   const maxChunksPerTick = opts.maxChunksPerTick ?? 20;
+  const concurrency = opts.concurrency ?? DEFAULT_CONCURRENCY;
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error(`watchPriceRequested: concurrency must be a positive integer, got ${concurrency}`);
+  }
 
   let stopped = false;
   /** Next block to scan. Null until the first tick establishes the head. */
@@ -89,15 +119,15 @@ export function watchPriceRequested(publicClient, priceUpKeepAddress, onEvent, o
           fromBlock: cursor,
           toBlock: to,
         });
-        for (const log of logs) {
+        await forEachBounded(logs, concurrency, async (log) => {
           try {
-            onEvent(toPriceRequestedEvent(log));
+            await onEvent(toPriceRequestedEvent(log));
           } catch (err) {
             onError(err);
           }
-        }
-        // Advance only after the window has actually been read, so a failure re-reads the
-        // same window instead of skipping orders.
+        });
+        // Advance only after the window has been read AND every order in it handled, so
+        // a failure re-reads the same window instead of skipping orders.
         cursor = to + 1n;
         chunks += 1;
       }
