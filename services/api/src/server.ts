@@ -8,6 +8,7 @@ import { handleOrders, handleOrdersHistory } from './routes/orders.js';
 import { handlePrice } from './routes/price.js';
 import { handleLimitOrders } from './routes/limitOrders.js';
 import { handleFees } from './routes/fees.js';
+import { handlePnl } from './routes/pnl.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 
@@ -23,6 +24,7 @@ router.get('/orders/:address/history', handleOrdersHistory);
 router.get('/price/:pairIndex', handlePrice);
 router.get('/limit-orders/:address', handleLimitOrders);
 router.get('/fees/:address', handleFees);
+router.get('/pnl/:address', handlePnl);
 
 export type App = { server: Server; wsManager: WsManager };
 
