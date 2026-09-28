@@ -17,6 +17,7 @@ import {
   type Resolution,
 } from '../lib/positions.js';
 import { onTradeFee, onFeesChargedV2, onOracleFeeBondCharged } from '../lib/fees.js';
+import { awardMission } from '../lib/points.js';
 
 function resolution(event: { block: { timestamp: bigint }; transaction: { hash: `0x${string}` } }): Resolution {
   return { at: Number(event.block.timestamp), txHash: event.transaction.hash };
@@ -62,6 +63,14 @@ ponder.on('TradingCallbacks:MarketOpenExecuted', async ({ event, context }) => {
   const notional = quoteNotional(t.collateral, t.leverage);
   await adjustOpenInterest(context.db, t.pairIndex, t.buy, notional, 'MarketOpenExecuted->market.OI');
   await recordTick(context.db, t.pairIndex, openedAt, t.openPrice, notional);
+
+  // Points: the first market trade a wallet ever executes is a one-time mission.
+  await awardMission(context.db, {
+    trader: t.trader,
+    missionId: 'first_market_trade',
+    at: openedAt,
+    txHash: event.transaction.hash,
+  });
 });
 
 ponder.on('TradingCallbacks:LimitOpenExecuted', async ({ event, context }) => {

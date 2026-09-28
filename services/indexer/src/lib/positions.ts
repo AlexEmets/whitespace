@@ -2,6 +2,7 @@ import { order, position, closedPosition, market, liquidation, partialClose } fr
 import { updateIfExists, findOrWarn } from './db.js';
 import { limitOrderLabel, cancelReasonLabel } from './enums.js';
 import { recordTick, quoteNotional } from './candleTick.js';
+import { accrueTimeInMarket, updateStreak, awardMission } from './points.js';
 
 // Handler logic for everything that changes or ends an open position, kept here (not in
 // src/handlers, which cannot load outside Ponder's runtime) so test/positions.test.ts can
@@ -30,6 +31,27 @@ type PositionRow = {
 };
 
 export type Resolution = { at: number; txHash: `0x${string}` };
+
+/** Points awarded whenever a hold ends: time-in-market on the realised notional, and the
+ * day-streak if the position lived past the qualifying threshold. Shared by the market and
+ * limit close paths. */
+async function awardHoldPoints(
+  db: Db,
+  pos: PositionRow,
+  closeOrderId: bigint,
+  closedNotional: bigint,
+  r: Resolution,
+): Promise<void> {
+  await accrueTimeInMarket(db, {
+    trader: pos.trader,
+    closeOrderId,
+    notionalRaw: closedNotional,
+    openedAt: pos.openedAt,
+    closedAt: r.at,
+    txHash: r.txHash,
+  });
+  await updateStreak(db, { trader: pos.trader, heldSeconds: r.at - pos.openedAt, closedAt: r.at, txHash: r.txHash });
+}
 
 export async function adjustOpenInterest(
   db: Db,
@@ -176,6 +198,16 @@ export async function onMarketCloseExecuted(
       })
       .onConflictDoNothing();
   }
+
+  // Points: the realised part earns time-in-market and may extend the day-streak; a partial
+  // close and surviving a liquidation are each one-time missions.
+  await awardHoldPoints(db, pos, orderId, closedNotional, r);
+  if (percentageClosed < FULL_CLOSE_PCT) {
+    await awardMission(db, { trader: pos.trader, missionId: 'partial_close', at: r.at, txHash: r.txHash });
+  }
+  if (liquidated) {
+    await awardMission(db, { trader: pos.trader, missionId: 'survive_liquidation', at: r.at, txHash: r.txHash });
+  }
 }
 
 // LimitCloseExecuted (TP/SL/LIQ) is always a full close. The contract reports orderType
@@ -202,13 +234,14 @@ export async function onLimitCloseExecuted(
   await adjustOpenInterest(db, pos.pairIndex, pos.buy, -notional, 'LimitCloseExecuted->market.OI');
   await recordTick(db, pos.pairIndex, r.at, price, notional);
 
+  const closeReason = limitOrderLabel(orderType); // 'liq' for liquidations, 'tp', 'sl', ...
   await writeClosed(
     db,
     tradeId,
     pos,
     {
       closePrice: price,
-      closeReason: limitOrderLabel(orderType), // 'liq' for liquidations, 'tp', 'sl', ...
+      closeReason,
       percentProfit,
       usdcSentToTrader,
       percentageClosed: 10000,
@@ -216,6 +249,19 @@ export async function onLimitCloseExecuted(
     },
     r,
   );
+
+  // Points: a full hold's time-in-market and day-streak, plus the one-time mission for the
+  // trigger that closed it (take-profit, stop-loss, or surviving a liquidation).
+  await awardHoldPoints(db, pos, orderId, notional, r);
+  const missionForReason: Record<string, string> = {
+    tp: 'take_profit_hit',
+    sl: 'stop_loss_hit',
+    liq: 'survive_liquidation',
+  };
+  const missionId = missionForReason[closeReason];
+  if (missionId) {
+    await awardMission(db, { trader: pos.trader, missionId, at: r.at, txHash: r.txHash });
+  }
 }
 
 /** VaultLiqFeeCharged: remember that this close order liquidated the trade. */
@@ -239,12 +285,18 @@ export async function onVaultLiqFeeCharged(
 
 // --- Mid-life changes ---------------------------------------------------------------
 
-export async function onTpUpdated(db: Db, args: { tradeId: bigint; newTp: bigint }): Promise<void> {
-  await updateIfExists(db, position, { tradeId: args.tradeId }, { tp: args.newTp }, 'TpUpdated');
+export async function onTpUpdated(db: Db, args: { tradeId: bigint; newTp: bigint }, meta: Resolution): Promise<void> {
+  const pos = await findOrWarn<{ trader: `0x${string}` }>(db, position, { tradeId: args.tradeId }, 'TpUpdated');
+  if (!pos) return;
+  await db.update(position, { tradeId: args.tradeId }).set({ tp: args.newTp });
+  await awardMission(db, { trader: pos.trader, missionId: 'edit_tp_sl', at: meta.at, txHash: meta.txHash });
 }
 
-export async function onSlUpdated(db: Db, args: { tradeId: bigint; newSl: bigint }): Promise<void> {
-  await updateIfExists(db, position, { tradeId: args.tradeId }, { sl: args.newSl }, 'SlUpdated');
+export async function onSlUpdated(db: Db, args: { tradeId: bigint; newSl: bigint }, meta: Resolution): Promise<void> {
+  const pos = await findOrWarn<{ trader: `0x${string}` }>(db, position, { tradeId: args.tradeId }, 'SlUpdated');
+  if (!pos) return;
+  await db.update(position, { tradeId: args.tradeId }).set({ sl: args.newSl });
+  await awardMission(db, { trader: pos.trader, missionId: 'edit_tp_sl', at: meta.at, txHash: meta.txHash });
 }
 
 /** topUpAmount is the amount actually taken — the contract adjusts it when rounding the
@@ -252,17 +304,19 @@ export async function onSlUpdated(db: Db, args: { tradeId: bigint; newSl: bigint
 export async function onTopUpCollateral(
   db: Db,
   args: { tradeId: bigint; topUpAmount: bigint; newLeverage: number },
+  meta: Resolution,
 ): Promise<void> {
-  await updateIfExists(
+  const pos = await findOrWarn<{ trader: `0x${string}`; collateral: bigint }>(
     db,
     position,
     { tradeId: args.tradeId },
-    (row: { collateral: bigint }) => ({
-      collateral: row.collateral + args.topUpAmount,
-      leverage: args.newLeverage,
-    }),
     'TopUpCollateralExecuted',
   );
+  if (!pos) return;
+  await db
+    .update(position, { tradeId: args.tradeId })
+    .set({ collateral: pos.collateral + args.topUpAmount, leverage: args.newLeverage });
+  await awardMission(db, { trader: pos.trader, missionId: 'margin_edit', at: meta.at, txHash: meta.txHash });
 }
 
 export async function onRemoveCollateralExecuted(
@@ -272,13 +326,15 @@ export async function onRemoveCollateralExecuted(
 ): Promise<void> {
   const { orderId, tradeId, removeAmount, leverage, tp, sl } = args;
   await markExecuted(db, orderId, r, 'RemoveCollateralExecuted->order');
-  await updateIfExists(
+  const pos = await findOrWarn<{ trader: `0x${string}`; collateral: bigint }>(
     db,
     position,
     { tradeId },
-    (row: { collateral: bigint }) => ({ collateral: row.collateral - removeAmount, leverage, tp, sl }),
     'RemoveCollateralExecuted->position',
   );
+  if (!pos) return;
+  await db.update(position, { tradeId }).set({ collateral: pos.collateral - removeAmount, leverage, tp, sl });
+  await awardMission(db, { trader: pos.trader, missionId: 'margin_edit', at: r.at, txHash: r.txHash });
 }
 
 /** RemoveCollateralRejected (from the callbacks, reason = CancelReason). The position is

@@ -1,6 +1,7 @@
 import { limitOrder, orderEvent } from '../../ponder.schema.js';
 import { openOrderTypeLabel } from './enums.js';
 import { logId, type EventMeta } from './event.js';
+import { awardMission } from './points.js';
 
 export type { EventMeta };
 
@@ -158,6 +159,15 @@ export async function onLimitOpenExecuted(
     orderId: args.orderId,
     tradeId,
   });
+
+  // Points: filling a resting LIMIT and triggering a resting STOP are distinct one-time
+  // missions. The resting row carries which one it was; a fill of an order placed before the
+  // indexed range has no row and so cannot be attributed.
+  if (existing?.orderType === 'LIMIT') {
+    await awardMission(db, { trader, missionId: 'limit_filled', at: meta.timestamp, txHash: meta.txHash });
+  } else if (existing?.orderType === 'STOP') {
+    await awardMission(db, { trader, missionId: 'stop_triggered', at: meta.timestamp, txHash: meta.txHash });
+  }
 }
 
 /** AutomationOpenOrderInitiated carries only the slot. Copy what the resting order says

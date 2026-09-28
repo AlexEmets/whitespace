@@ -161,13 +161,13 @@ describe('position lifecycle', () => {
   });
 
   it('TpUpdated and SlUpdated overwrite only their own field', async () => {
-    await onTpUpdated(ctx.db, { tradeId: 2n, newTp: 1n });
-    await onSlUpdated(ctx.db, { tradeId: 2n, newSl: 0n });
+    await onTpUpdated(ctx.db, { tradeId: 2n, newTp: 1n }, R);
+    await onSlUpdated(ctx.db, { tradeId: 2n, newSl: 0n }, R);
     expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ tp: 1n, sl: 0n, collateral: 100_000_000n, leverage: 1000 });
   });
 
   it('TopUpCollateralExecuted adds the amount actually taken and sets the new leverage', async () => {
-    await onTopUpCollateral(ctx.db, { tradeId: 2n, topUpAmount: 25_000_000n, newLeverage: 800 });
+    await onTopUpCollateral(ctx.db, { tradeId: 2n, topUpAmount: 25_000_000n, newLeverage: 800 }, R);
     expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ collateral: 125_000_000n, leverage: 800 });
   });
 
@@ -204,8 +204,8 @@ describe('position lifecycle', () => {
   });
 
   it('mid-life updates for an unknown trade do not throw', async () => {
-    await onTpUpdated(ctx.db, { tradeId: 9n, newTp: 1n });
-    await onTopUpCollateral(ctx.db, { tradeId: 9n, topUpAmount: 1n, newLeverage: 1 });
+    await onTpUpdated(ctx.db, { tradeId: 9n, newTp: 1n }, R);
+    await onTopUpCollateral(ctx.db, { tradeId: 9n, topUpAmount: 1n, newLeverage: 1 }, R);
     await onBondChargedToPosition(ctx.db, { tradeId: 9n, collateral: 1n, leverage: 1, tp: 0n, sl: 0n });
     expect(ctx.get(position, { tradeId: 2n })).toMatchObject({ collateral: 100_000_000n });
   });

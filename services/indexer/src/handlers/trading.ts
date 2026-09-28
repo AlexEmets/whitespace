@@ -157,15 +157,15 @@ ponder.on('Trading:MarketCloseTimeoutExecutedV2', async ({ event, context }) => 
 // --- Position updates that don't open/close a trade -------------------------
 
 ponder.on('Trading:TpUpdated', async ({ event, context }) => {
-  await onTpUpdated(context.db, event.args);
+  await onTpUpdated(context.db, event.args, { at: Number(event.block.timestamp), txHash: event.transaction.hash });
 });
 
 ponder.on('Trading:SlUpdated', async ({ event, context }) => {
-  await onSlUpdated(context.db, event.args);
+  await onSlUpdated(context.db, event.args, { at: Number(event.block.timestamp), txHash: event.transaction.hash });
 });
 
 ponder.on('Trading:TopUpCollateralExecuted', async ({ event, context }) => {
-  await onTopUpCollateral(context.db, event.args);
+  await onTopUpCollateral(context.db, event.args, { at: Number(event.block.timestamp), txHash: event.transaction.hash });
 });
 
 // --- Collateral removal (its own sub-flow, own orderId) ---------------------
