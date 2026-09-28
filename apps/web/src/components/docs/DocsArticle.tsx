@@ -185,8 +185,9 @@ export function DocsArticle() {
                 cancelled with <code>EXPOSURE_LIMITS</code>.
               </LI>
               <LI>
-                <strong>There is no depth to read.</strong> No bids, no asks, no book to infer intent from. The depth
-                panel in the terminal says so rather than drawing a plausible-looking ladder.
+                <strong>There is no depth to read.</strong> No resting bids or asks, no book to infer intent from. The
+                order panel instead shows the vault&rsquo;s two-sided quote for the size you enter — Buy at the ask, Sell
+                at the bid, after size-dependent impact — which is exactly the price the contract will fill at.
               </LI>
               <LI>
                 <strong>LPs absorb trader PnL.</strong> If you are an LP, you are the house — fees, spread and funding

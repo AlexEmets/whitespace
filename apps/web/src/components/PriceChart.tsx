@@ -199,9 +199,8 @@ interface Layout {
  * `price:<pairIndex>` WS channel (REST-polled fallback).
  *
  * Live, zoomable, pannable, with a crosshair readout. Interval selection and the log
- * scale toggle are both genuine, wired features; DEPTH/INDICATORS have no backing
- * implementation and are rendered disabled rather than omitted (matching the mockup's
- * intended affordance without pretending they work).
+ * scale toggle are both genuine, wired features. There is no depth view (a vault has no
+ * book) and no indicator library, so neither is offered as a disabled button.
  *
  * WHAT THE MOCKUP HAS THAT THIS DOES NOT. terminal_design.pdf draws a dashed horizontal
  * line at a position's liquidation price. At the time this was written the app had no
@@ -480,12 +479,6 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
           ))}
         </div>
         <div className="group">
-          <button type="button" disabled title="Not implemented">
-            Depth
-          </button>
-          <button type="button" disabled title="Not implemented">
-            Indicators
-          </button>
           <button type="button" className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)} data-testid="log-scale-toggle">
             Log scale
           </button>
