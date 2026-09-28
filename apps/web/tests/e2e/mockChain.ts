@@ -413,6 +413,8 @@ export function createMockChain(state: TestState) {
         return { number: numberToHex(blockCounter), hash: numberToHex(blockCounter + 1000), timestamp: numberToHex(Math.floor(Date.now() / 1000)) };
       case 'eth_gasPrice':
         return '0x3b9aca00';
+      case 'eth_estimateGas':
+        return '0x30d40'; // 200,000; the app pads it (lib/gas.ts)
       case 'eth_getTransactionCount':
         return numberToHex(receiptCounter);
       case 'eth_call':

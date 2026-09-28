@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
+import { padGas } from '@/lib/gas';
 import { confirmTx } from '@/lib/tx';
 
 type TradingWrite =
@@ -53,7 +54,7 @@ export function useTradingActions() {
         // The union above pins each function to its own argument tuple.
         args: call.args as never,
       });
-      const hash = await writeContractAsync(request);
+      const hash = await writeContractAsync(await padGas(publicClient, request as never));
       return await confirmTx(publicClient, hash, ACTION_LABEL[call.functionName]);
     } finally {
       setPending(null);

@@ -5,6 +5,7 @@ import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { OPEN_ORDER_TYPE, TRADING_ABI, type OpenOrderKind } from '@/lib/abi';
 import { slippageForSubmission } from '@/lib/orderRules';
 import { TRADING_ADDRESS } from '@/lib/deployment';
+import { padGas } from '@/lib/gas';
 import { confirmTx } from '@/lib/tx';
 
 export interface OpenTradeParams {
@@ -45,7 +46,8 @@ export function useOpenTrade() {
     if (!publicClient) throw new Error('useOpenTrade: no public client');
     const kind = params.kind ?? 'MARKET';
 
-    const hash = await writeContractAsync({
+    const request = {
+      account: address as Address,
       address: TRADING_ADDRESS,
       abi: TRADING_ABI,
       functionName: 'openTrade',
@@ -72,7 +74,8 @@ export function useOpenTrade() {
         // The contract requires 0 for LIMIT/STOP and (0, 100e2) for MARKET (openTrade).
         slippageForSubmission(kind, params.slippageBps),
       ],
-    });
+    } as const;
+    const hash = await writeContractAsync(await padGas(publicClient, request as never));
 
     const receipt = await confirmTx(publicClient, hash, kind === 'MARKET' ? 'open the position' : 'place the order');
     if (kind !== 'MARKET') {
