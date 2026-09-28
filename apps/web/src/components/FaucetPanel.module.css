@@ -10,7 +10,7 @@
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius);
   /* The internal rules run edge to edge; without this they poke through the rounded
      corners. */
   overflow: hidden;
@@ -35,7 +35,7 @@
   letter-spacing: 0.1em;
   color: var(--fg-muted);
   border: 1px solid var(--border);
-  border-radius: 2px;
+  border-radius: 6px;
 }
 
 .balanceRow {
@@ -131,7 +131,7 @@
   color: var(--bg);
   background: var(--long);
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: filter 140ms ease;
 }

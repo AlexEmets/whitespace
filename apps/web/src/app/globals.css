@@ -1,73 +1,73 @@
+/*
+ * Eclipse — the approved redesign (design canvas board "C3 v2 · Eclipse").
+ *
+ * A near-black ground, translucent panels with hairline borders and 16px corners, one
+ * warm accent (the amber of the eclipse corona) and two side colours. Every colour, radius
+ * and family the app uses is declared here once; CSS modules read these properties rather
+ * than re-declaring a palette of their own, so a panel on /portfolio and a panel in the
+ * terminal cannot drift apart.
+ */
 :root {
   color-scheme: dark;
-  --bg: #08090b;
-  --bg-raised: #0e1013;
-  --bg-panel: #101318;
-  --border: #1e2229;
-  --fg: #e8eaed;
-  --fg-muted: #7a8290;
-  --fg-dim: #4c525c;
-  --long: #2bd9a0;
-  --long-dim: rgba(43, 217, 160, 0.12);
-  --short: #ff5c5c;
-  --short-dim: rgba(255, 92, 92, 0.12);
-  --warning: #e0a730;
-  --accent: #5b7bff;
-  /* `--font-jetbrains-mono` is defined by next/font in src/app/layout.tsx (self-hosted,
-     metric-matched fallback included). It is listed ahead of — not instead of — the
-     original stack, so the page still renders in a real monospace if the font asset is
-     unavailable. The inner var() fallback matters: without it, rendering a component
-     outside the root layout (unit tests, Storybook-style harnesses) would leave the
-     custom property invalid and drop the entire family declaration, not just this entry. */
-  --font-mono: var(--font-jetbrains-mono, 'JetBrains Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas,
-    'Courier New', monospace;
 
-  /* The proportional face, loaded alongside the mono in src/app/layout.tsx. The split is
-     by what the text *is*, not by where it sits: `--font-sans` carries headings, prose
-     and link text; `--font-mono` keeps every figure, data table, small uppercase label,
-     the wordmark and the ticker. docs/design/pages.pdf and the faucet mockup are set
-     this way; the two older mockups (landing, terminal) were monospace throughout, which
-     is why everything used to inherit `--font-mono` from `body`.
-     The inner var() fallback is there for the same reason as the mono one above: a
-     component rendered outside the root layout would otherwise invalidate the property
-     and drop the whole declaration. */
-  --font-sans: var(--font-schibsted-grotesk, 'Schibsted Grotesk'), ui-sans-serif, system-ui, -apple-system,
-    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --bg: #030305;
+  /* Opaque surfaces, for the places a translucent panel cannot work: dialogs that float
+     over content, sticky rows, disabled controls. */
+  --bg-raised: #0d0d12;
+  --bg-panel: #09090d;
+  /* The panel fill. Translucent on purpose: the corona glow behind the header shows
+     through the top of the terminal, which is what makes the page read as one surface. */
+  --panel: rgba(255, 255, 255, 0.018);
+  --panel-strong: rgba(255, 255, 255, 0.035);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
 
-  /* Landing hero art (landing_design.pdf): the brand sphere is drawn purely with radial
-     gradients, so its two body tones, its diffuse top-left highlight and the ambient
-     bloom live here with the rest of the palette instead of being inlined in the
-     gradients. `--hero-grid`/`--hero-dot` are the ruled backdrop behind it. */
-  --sphere-lit: #1a1f4a;
-  --sphere-shadow: #0d0f28;
-  --sphere-highlight: rgba(140, 158, 235, 0.3);
-  --sphere-bloom: rgba(91, 123, 255, 0.16);
-  --hero-grid: rgba(232, 234, 237, 0.035);
-  --hero-dot: rgba(232, 234, 237, 0.28);
+  --fg: #ededf2;
+  --fg-muted: #8e8fa3;
+  --fg-dim: #5a5b6c;
+
+  --long: #5eead4;
+  --long-dim: rgba(94, 234, 212, 0.1);
+  --short: #ff7a6b;
+  --short-dim: rgba(255, 122, 107, 0.1);
+  --accent: #ffc37a;
+  --accent-dim: rgba(255, 195, 122, 0.1);
+  --accent-ring: rgba(255, 195, 122, 0.24);
+  --warning: #ffc37a;
+  /* Text set on a long/short/accent fill. One dark ink for all three keeps the filled
+     controls reading as a family. */
+  --on-color: #06100e;
+
+  --corona: rgba(255, 214, 160, 0.75);
+  --corona-glow: rgba(255, 195, 122, 0.4);
+  --corona-halo: rgba(255, 150, 80, 0.12);
+
+  --radius-lg: 16px;
+  --radius: 12px;
+  --radius-sm: 8px;
+
+  /* `--font-azeret-mono` / `--font-geologica` are defined by next/font in
+     src/app/layout.tsx. The inner var() fallbacks matter: a component rendered outside
+     the root layout (unit tests) would otherwise leave the custom property invalid and
+     drop the entire family declaration, not just this entry. */
+  --font-mono: var(--font-azeret-mono, 'Azeret Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: var(--font-geologica, 'Geologica'), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --header-h: 56px;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Monospace stays the *inherited* default and prose opts into `--font-sans` below, rather
-   than the other way round. Both directions produce the interface the September mockups
-   draw; they differ entirely in how they fail.
+/*
+ * Monospace stays the *inherited* default and chrome opts into the sans below. The two
+ * directions fail differently: a missed opt-in leaves a label in monospace — visible on
+ * sight, harmless — while a missed opt-out would ship a misaligned column of prices.
+ * /docs also relies on monospace for its hand-aligned `.formula` blocks and `ch` widths.
  *
- * An audit of every rule in this app found ~100 that carry a figure, a data-table cell or
- * a small uppercase label, against roughly a quarter as many that carry prose. Worse, ten
- * of them make monospace *load-bearing for layout*, not just for looks: the `.formula`
- * blocks in /docs are `white-space: pre` with hand-padded `=` columns, nine `max-width`
- * values in that file are in `ch` (which resolves against the element's own font), the
- * price-axis chips in PriceChart are drawn into a hard-coded 66px SVG gutter, and the
- * money columns in /portfolio are `white-space: nowrap`.
- *
- * So: a missed opt-in leaves a paragraph in monospace — visible on sight, harmless. A
- * missed opt-out would ship a silently misaligned column of prices in a trading UI. The
- * default belongs on the safe side of that asymmetry, and new code inherits it.
- *
- * 13px stays the root size. Every size here is expressed in rem, so moving it would
- * rescale the entire interface — the terminal included — for one page's measure. */
+ * 13px stays the root size; everything is in rem, so moving it would rescale the app.
+ */
 html,
 body {
   margin: 0;
@@ -75,10 +75,12 @@ body {
   color: var(--fg);
   font-family: var(--font-mono);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* The prose opt-in. Headings and running text on every page; anything that is a figure,
-   a table, a label or a control keeps the inherited monospace without saying so. */
+/* The sans opt-in: headings, prose, labels and every control's caption. Figures inside a
+   control (a side button's price, a rail row's mark) put the mono back explicitly. */
 h1,
 h2,
 h3,
@@ -86,64 +88,160 @@ h4,
 p,
 li,
 blockquote,
-dd {
+dd,
+dt,
+th,
+label,
+button,
+nav {
   font-family: var(--font-sans);
+}
+
+input,
+select,
+textarea {
+  font-family: var(--font-mono);
 }
 
 a {
   color: inherit;
 }
 
-button,
-input,
-select {
+::selection {
+  background: var(--accent-ring);
+}
+
+/* Thin, dark scrollbars: the terminal scrolls inside its panels, and the platform's
+   light gutters would cut bright stripes through them. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.mono {
   font-family: var(--font-mono);
 }
 
-/* Declares the family it is named after, rather than relying on inheritance. Several of
-   its users are `<h2>`/`<p>`, which the prose opt-in above would otherwise pull into the
-   sans — and a class called `mono-upper` that renders proportional is a trap. Class beats
-   element, so this wins wherever both apply. */
+/* Small uppercase eyebrow. Declares its family rather than inheriting it: several users
+   are headings, which the sans opt-in above would otherwise pull into Geologica. */
 .mono-upper {
   font-family: var(--font-mono);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
+}
+
+/* The one surface every section of the app is built from. */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* ---------- Page shell ---------- */
+
+/* Content sits above the corona; the corona sits above the page background. */
+.page-root {
+  position: relative;
+  z-index: 1;
+}
+
+/* The eclipse: a disc of page-black with a lit rim, mostly above the viewport so only its
+   lower arc and glow show behind the header. Pure CSS — no asset, nothing to re-export
+   when the palette moves. */
+.eclipse-backdrop {
+  position: absolute;
+  z-index: 0;
+  top: -268px;
+  left: 50%;
+  width: 330px;
+  height: 330px;
+  margin-left: -165px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--corona),
+    0 0 34px 6px var(--corona-glow),
+    0 0 140px 40px var(--corona-halo);
+  pointer-events: none;
+  animation: corona-breathe 7s ease-in-out infinite;
+}
+
+@keyframes corona-breathe {
+  0%,
+  100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eclipse-backdrop {
+    animation: none;
+  }
 }
 
 /* ---------- Nav header (shared across all pages) ---------- */
 
 .nav-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.9rem 1.5rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
   position: sticky;
   top: 0;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  height: var(--header-h);
+  padding: 0 18px;
+  background: rgba(3, 3, 5, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .nav-header .wordmark {
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 1.2rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
   text-decoration: none;
   color: var(--fg);
 }
 
+/* The brand mark: the same eclipse, at 17px. */
+.nav-header .wordmark-mark {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1.5px rgba(255, 214, 160, 0.95),
+    0 0 10px 2px rgba(255, 195, 122, 0.45);
+}
+
 .nav-links {
   display: flex;
-  gap: 1.5rem;
-  margin-left: 2.5rem;
+  gap: 1.7rem;
   flex: 1;
 }
 
 .nav-links a {
   text-decoration: none;
   color: var(--fg-muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.08em;
+  font-size: 1rem;
+  transition: color 0.12s ease;
 }
 
 .nav-links a.active,
@@ -151,48 +249,95 @@ select {
   color: var(--fg);
 }
 
-/* Six destinations since FAUCET was added, against a header that also carries the chain
-   readout and the wallet chip. Tighten the gap before anything is forced to wrap — a nav
-   that wraps to a second line moves the whole terminal down. */
 @media (max-width: 1100px) {
   .nav-links {
     gap: 1rem;
-    margin-left: 1.5rem;
   }
 }
 
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  font-size: 0.72rem;
+  gap: 0.9rem;
+  font-size: 0.85rem;
   color: var(--fg-muted);
-  letter-spacing: 0.04em;
+}
+
+.nav-right .chain-health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.nav-right .chain-health strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+
+.nav-right .live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--long);
+  animation: live-pulse 2s ease-out infinite;
+}
+
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(94, 234, 212, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 7px rgba(94, 234, 212, 0);
+  }
+}
+
+.wallet-connect {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 
 .nav-right .connect-btn {
-  background: var(--accent);
-  color: white;
+  height: 34px;
+  padding: 0 18px;
   border: none;
-  padding: 0.45rem 1rem;
-  border-radius: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-color);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  transition: opacity 0.12s ease;
+}
+
+.nav-right .connect-btn:hover {
+  opacity: 0.88;
+}
+
+.nav-right .connect-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }
 
 .nav-right .wallet-chip {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  border: 1px solid var(--border);
-  padding: 0.35rem 0.7rem;
-  border-radius: 3px;
+  gap: 0.6rem;
+  height: 34px;
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg);
 }
 
-/* The connected wallet's own EIP-6963 logo and name. Naming the wallet in the chip is
-   the readable half of the picker: it is how a trader running both MetaMask and Trust
-   can tell at a glance which one actually signed in. */
+/* The connected wallet's own EIP-6963 logo and name: how a trader running two wallets
+   tells at a glance which one signed in. */
 .nav-right .wallet-chip-icon {
   width: 14px;
   height: 14px;
@@ -201,13 +346,28 @@ select {
 }
 
 .nav-right .wallet-chip-name {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
 }
 
-/* The header is already crowded by the chain/health readout, so the wallet's name is the
-   first thing to go when the viewport narrows — the icon still identifies it. */
+.nav-right .wallet-chip button {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--fg-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.nav-right .wallet-chip button:hover {
+  color: var(--fg);
+}
+
 @media (max-width: 1100px) {
-  .nav-right .wallet-chip-name {
+  .nav-right .wallet-chip-name,
+  .nav-right .chain-health .latency {
     display: none;
   }
 }
@@ -216,21 +376,32 @@ select {
 
 .ticker-strip {
   display: flex;
-  gap: 2rem;
-  padding: 0.5rem 1.5rem;
+  gap: 2.4rem;
+  padding: 0.7rem 1.4rem;
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   color: var(--fg-muted);
   white-space: nowrap;
 }
 
-.ticker-strip .ticker-item strong {
-  color: var(--fg);
-  margin: 0 0.4rem;
+.ticker-strip .ticker-item {
+  font-family: var(--font-sans);
 }
 
-/* ---------- Generic color helpers ---------- */
+.ticker-strip .ticker-item strong {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  font-weight: 400;
+  margin: 0 0.5rem;
+}
+
+.ticker-strip .ticker-item > span {
+  font-family: var(--font-mono);
+}
+
+/* ---------- Generic helpers ---------- */
 
 .pos {
   color: var(--long);
@@ -246,12 +417,13 @@ select {
 
 .badge {
   display: inline-block;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.05rem 0.4rem;
-  font-size: 0.68rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
   color: var(--fg-muted);
-  letter-spacing: 0.05em;
+  vertical-align: middle;
 }
 
 .badge-soon {
@@ -259,364 +431,689 @@ select {
   color: var(--fg-dim);
 }
 
-/* ---------- Landing page ---------- */
-
-.landing-hero {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  min-height: 480px;
-  border-bottom: 1px solid var(--border);
+.error-text {
+  color: var(--short);
 }
 
-.landing-hero .copy {
-  padding: 4rem 3rem;
+.ok-text {
+  color: var(--long);
 }
 
-.landing-hero h1 {
-  font-size: 3rem;
-  line-height: 1.1;
-  margin: 0 0 1.5rem;
-  font-weight: 500;
-}
+/* ---------- Buttons ---------- */
 
-.landing-hero p {
-  color: var(--fg-muted);
-  max-width: 32em;
-  line-height: 1.6;
-}
-
-.landing-hero .cta-row {
-  display: flex;
-  gap: 0.75rem;
-  margin-top: 2rem;
-}
-
-/* These are <Link>s, i.e. anchors. The global `a { color: inherit }` drops the colour but
-   not the underline, so both calls to action rendered as underlined text inside a box —
-   reading as links someone had boxed by accident rather than as buttons. */
 .btn-primary,
 .btn-secondary,
 .landing-cta a {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-decoration: none;
-  transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+  font-family: var(--font-sans);
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    opacity 0.12s ease;
+}
+
+.btn-primary {
+  height: 48px;
+  padding: 0 1.8rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-color);
+  font-size: 1.05rem;
+  font-weight: 500;
+  cursor: pointer;
 }
 
 .btn-primary:hover {
   opacity: 0.88;
 }
 
-.btn-secondary:hover {
-  border-color: var(--fg-dim);
-  background: var(--bg-raised);
-}
-
-.btn-primary {
-  background: var(--fg);
-  color: var(--bg);
-  border: none;
-  padding: 0.75rem 1.5rem;
-  border-radius: 3px;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
 .btn-secondary {
+  height: 48px;
+  padding: 0 1.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
   background: transparent;
   color: var(--fg);
-  border: 1px solid var(--border);
-  padding: 0.75rem 1.5rem;
-  border-radius: 3px;
+  font-size: 1.05rem;
   cursor: pointer;
-  font-size: 0.8rem;
 }
 
-/* The hero art is three paint-only layers on one element — ruled backdrop (::before),
-   sphere (.sphere), scattered dots (::after) — so it ships no image asset, nothing to
-   re-export when the palette moves, and no DOM beyond the single .sphere node. The
-   absolutely-positioned pseudo-elements would otherwise both paint above the static
-   .sphere, hence the explicit z-index ladder. */
+.btn-secondary:hover {
+  background: var(--panel-strong);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+/* ---------- Landing page ---------- */
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.landing-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: center;
+  min-height: 620px;
+  padding: 0 4.5rem;
+  overflow: hidden;
+}
+
+.landing-hero .copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.8rem;
+  padding: 4rem 0;
+}
+
+.landing-hero .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+}
+
+.landing-hero h1 {
+  margin: 0;
+  font-size: 5.6rem;
+  line-height: 0.98;
+  font-weight: 300;
+  letter-spacing: -0.035em;
+}
+
+.landing-hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.landing-hero p {
+  margin: 0;
+  max-width: 34em;
+  color: var(--fg-muted);
+  font-size: 1.3rem;
+  line-height: 1.6;
+  font-weight: 300;
+}
+
+.landing-hero .cta-row {
+  display: flex;
+  gap: 0.75rem;
+}
+
+/* The hero art: a large eclipse — black disc, lit rim, warm halo — with two faint orbit
+   rings. Decorative only; it carries no text. */
 .landing-hero .brand-render {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
-  background: var(--bg);
+  height: 560px;
 }
 
-/* Faint grid the sphere sits on. One repeating gradient per axis at a 68px cell; masked
-   to fade out toward the panel edges so it reads as texture, not as a table. */
-.landing-hero .brand-render::before {
-  content: '';
+.landing-hero .brand-render .ring {
   position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image:
-    repeating-linear-gradient(to right, var(--hero-grid) 0 1px, transparent 1px 68px),
-    repeating-linear-gradient(to bottom, var(--hero-grid) 0 1px, transparent 1px 68px);
-  -webkit-mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%);
-  mask-image: radial-gradient(ellipse at 50% 45%, #000 30%, transparent 85%);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.landing-hero .brand-render .ring-outer {
+  width: 540px;
+  height: 540px;
+}
+
+.landing-hero .brand-render .ring-inner {
+  width: 440px;
+  height: 440px;
+  border-color: rgba(255, 195, 122, 0.1);
 }
 
 .landing-hero .brand-render .sphere {
   position: relative;
-  z-index: 1;
-  width: 260px;
-  height: 260px;
+  width: 320px;
+  height: 320px;
   border-radius: 50%;
-  /* Body shading and highlight share the same 34%/28% light origin so the terminator
-     falls where the mockup puts it; the highlight stop is wider and softer than the body
-     gradient, which is what makes it read as a diffuse sheen rather than a specular dot. */
-  background:
-    radial-gradient(circle at 34% 28%, var(--sphere-highlight) 0%, transparent 58%),
-    radial-gradient(circle at 34% 28%, var(--sphere-lit) 0%, var(--sphere-shadow) 72%);
-  /* Inset rim keeps the shadow side of the sphere separated from the near-black panel;
-     the outer shadow is the ambient bloom around it. */
+  background: var(--bg);
   box-shadow:
-    inset 0 0 0 1px var(--sphere-bloom),
-    0 0 90px 12px var(--sphere-bloom);
+    0 0 0 1.5px var(--corona),
+    0 0 50px 10px var(--corona-glow),
+    0 0 180px 60px var(--corona-halo);
+  animation: corona-breathe 7s ease-in-out infinite;
 }
 
-/* The scattered dots, one single-stop radial gradient each at a fixed position. Above the
-   sphere on purpose — the mockup has one dot falling across its face. */
-.landing-hero .brand-render::after {
-  content: '';
+.landing-hero .brand-render .moon {
   position: absolute;
-  inset: 0;
-  z-index: 2;
-  background-image:
-    radial-gradient(circle at 18% 20%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 72% 28%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 44% 58%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 86% 68%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 30% 80%, var(--hero-dot) 0 1.5px, transparent 1.5px),
-    radial-gradient(circle at 62% 89%, var(--hero-dot) 0 1.5px, transparent 1.5px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent);
+  top: 72px;
+  right: 18%;
 }
 
-/* Two tiles, not the mockup's three: REFERRAL SHARE was cut from scope, and a tile row
-   that spans the viewport should divide by the tiles that actually exist. */
+.landing-hero .brand-render .readout {
+  position: absolute;
+  right: 0;
+  bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-family: var(--font-mono);
+}
+
+.landing-hero .brand-render .readout span:first-child {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.landing-hero .brand-render .readout span:last-child {
+  font-size: 1.8rem;
+  font-weight: 300;
+}
+
 .stat-tiles {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  border-bottom: 1px solid var(--border);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 4.5rem;
 }
 
 .stat-tile {
-  padding: 2rem;
-  border-right: 1px solid var(--border);
-}
-
-.stat-tile:last-child {
-  border-right: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.8rem 2rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
 }
 
 .stat-tile .label {
+  font-family: var(--font-sans);
   color: var(--fg-muted);
-  font-size: 0.7rem;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.6rem;
+  font-size: 0.95rem;
 }
 
 .stat-tile .value {
-  font-size: 2rem;
+  font-size: 2.8rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+}
+
+.stat-tile.accent .value {
+  color: var(--accent);
 }
 
 .landing-section {
-  padding: 2.5rem 1.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: 5.5rem 4.5rem 0;
 }
 
 .landing-section h2 {
-  font-weight: 500;
-  font-size: 1.4rem;
-  margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0 0 1.4rem;
+  font-weight: 300;
+  font-size: 2.8rem;
+  letter-spacing: -0.02em;
+}
+
+.landing-section .section-eyebrow {
+  display: block;
+  margin-bottom: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.landing-section .lede {
+  max-width: 36em;
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 1.15rem;
+  line-height: 1.65;
+  font-weight: 300;
+}
+
+.landing-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 5rem;
+  align-items: center;
+}
+
+.quote-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1.8rem;
+}
+
+.quote-demo .row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.quote-demo .row > span:first-child {
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  font-size: 0.95rem;
+}
+
+.quote-demo .big {
+  font-size: 2.2rem;
+  font-weight: 300;
+}
+
+.quote-demo hr {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 2.2rem;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem;
+}
+
+.step .step-index {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 0.95rem;
+}
+
+.step h3 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 400;
+}
+
+.step p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  font-weight: 300;
 }
 
 .landing-cta {
+  position: relative;
+  margin: 5.5rem 4.5rem 0;
+  padding: 5rem 2rem;
   text-align: center;
-  padding: 5rem 1.5rem;
+  overflow: hidden;
+}
+
+.landing-cta::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -420px;
+  width: 620px;
+  height: 620px;
+  margin-left: -310px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--corona),
+    0 0 40px 8px var(--corona-glow),
+    0 0 160px 50px var(--corona-halo);
 }
 
 .landing-cta h2 {
-  font-size: 2rem;
-  font-weight: 500;
+  position: relative;
+  margin: 0 0 2rem;
+  font-size: 3.6rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+
+.landing-cta .btn-primary {
+  position: relative;
 }
 
 .landing-footer {
   display: flex;
   justify-content: space-between;
-  padding: 1.5rem;
+  padding: 2.2rem 4.5rem 2.6rem;
   color: var(--fg-muted);
-  font-size: 0.72rem;
+  font-size: 0.9rem;
 }
 
 .landing-footer a {
   text-decoration: none;
-  margin-left: 1.25rem;
+  margin-left: 1.5rem;
   color: var(--fg-muted);
+}
+
+.landing-footer a:hover {
+  color: var(--fg);
 }
 
 table.markets-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1rem;
 }
 
 table.markets-table th {
   text-align: left;
   color: var(--fg-muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
+  font-size: 0.9rem;
   font-weight: 400;
-  padding: 0.5rem 0.75rem;
+  padding: 1rem 1.6rem;
   border-bottom: 1px solid var(--border);
 }
 
 table.markets-table td {
-  padding: 0.7rem 0.75rem;
-  border-bottom: 1px solid var(--border);
+  padding: 1.15rem 1.6rem;
+  font-size: 1.05rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+table.markets-table tr:last-child td {
+  border-bottom: none;
+}
+
+table.markets-table td a {
+  font-family: var(--font-sans);
+  text-decoration: none;
+}
+
+table.markets-table td a:hover {
+  color: var(--accent);
 }
 
 /* ---------- Terminal ---------- */
 
-/* 90px of nav plus the 33px ticker row that now sits above the terminal. Subtracting both
-   is what keeps the grid exactly one viewport tall instead of introducing a page scrollbar
-   the moment the strip mounts. */
+/* Exactly one viewport tall below the header: the chart takes whatever the fixed rows
+   leave, and every column scrolls inside its own panel rather than moving the page. */
 .terminal-grid {
   display: grid;
-  grid-template-columns: 220px 1fr 340px;
-  min-height: calc(100vh - 90px - 33px);
+  grid-template-columns: 208px minmax(0, 1fr) 340px;
+  gap: 8px;
+  height: calc(100vh - var(--header-h));
+  min-height: 720px;
+  padding: 0 10px 10px;
 }
 
 @media (max-width: 1200px) {
   .terminal-grid {
-    grid-template-columns: 180px 1fr;
+    grid-template-columns: 180px minmax(0, 1fr) 320px;
   }
 }
 
 .terminal-rail {
-  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 10px 6px;
   overflow-y: auto;
 }
 
 .terminal-rail .rail-header {
-  padding: 0.6rem 0.9rem;
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.terminal-rail .rail-header span:last-child {
   color: var(--fg-muted);
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
+  font-weight: 400;
 }
 
 .terminal-rail .rail-row {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
   width: 100%;
-  text-align: left;
-  padding: 0.55rem 0.9rem;
+  padding: 10px;
   border: none;
+  border-radius: 11px;
   background: transparent;
   color: var(--fg);
+  text-align: left;
   cursor: pointer;
-  border-bottom: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+
+.terminal-rail .rail-row:hover {
+  background: var(--panel-strong);
 }
 
 .terminal-rail .rail-row.active {
-  background: var(--bg-raised);
-}
-
-/* Symbol and price share the first line, so the symbol is no longer a block of its own —
-   it sits at full contrast against the muted price, which is how the rail reads as a list
-   of markets rather than a list of numbers. */
-.terminal-rail .rail-row .symbol {
-  font-size: 0.78rem;
-  color: var(--fg);
+  background: var(--accent-dim);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
 }
 
 .terminal-rail .rail-row .price-line {
   display: flex;
   justify-content: space-between;
-  font-size: 0.72rem;
-  color: var(--fg-muted);
-  margin-top: 0.15rem;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
 }
 
-/* Second line: 24h volume and 24h change. Dimmer and smaller than the price line — it is
-   context for choosing a market, not something to read a value off. */
+.terminal-rail .rail-row .symbol {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+}
+
+/* Second line: 24h volume and change. Context for choosing a market, not a figure to
+   act on — smaller and dimmer than the price line. */
 .terminal-rail .rail-row .price-line.meta {
-  font-size: 0.66rem;
-  color: var(--fg-dim);
-  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+}
+
+.terminal-rail .rail-spacer {
+  flex: 1;
+}
+
+.rail-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 8px 4px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+}
+
+.rail-card .rail-card-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.rail-card .rail-card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.rail-card .rail-card-row > span:first-child {
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+}
+
+.rail-card .signer-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.rail-card .signer-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1px solid var(--fg-dim);
+}
+
+.rail-card .signer-dots span.on {
+  border: none;
+  background: var(--accent);
 }
 
 .terminal-center {
   display: flex;
   flex-direction: column;
+  gap: 8px;
   min-width: 0;
+  min-height: 0;
 }
 
 .market-header {
   display: flex;
-  align-items: baseline;
-  gap: 1.5rem;
-  padding: 0.9rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.6rem;
+  flex-shrink: 0;
+  height: 62px;
+  padding: 0 18px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.market-header .name-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .market-header .name-block .symbol {
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-size: 1.15rem;
+  font-weight: 500;
 }
 
 .market-header .chip {
-  font-size: 0.68rem;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
   color: var(--fg-muted);
+}
+
+.market-header .price-block {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .market-header .last-price {
-  font-size: 1.5rem;
+  font-size: 1.85rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.market-header .price-change {
+  font-size: 0.85rem;
+}
+
+.market-header .spacer {
+  flex: 1;
 }
 
 .market-header .stat-cell {
-  font-size: 0.68rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
   color: var(--fg-muted);
-  letter-spacing: 0.04em;
 }
 
 .market-header .stat-cell .stat-value {
-  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
   color: var(--fg);
-  font-size: 0.85rem;
-  margin-top: 0.15rem;
+}
+
+.chart-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 320px;
+  overflow: hidden;
+}
+
+.chart-panel > [data-testid='price-chart'] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .chart-toolbar {
   display: flex;
   justify-content: space-between;
-  padding: 0.5rem 1.2rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.7rem;
-  color: var(--fg-muted);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 10px 12px 4px;
 }
 
 .chart-toolbar .group {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 2px;
 }
 
 .chart-toolbar button {
-  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
   border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
   cursor: pointer;
-  font-size: 0.7rem;
-  padding: 0.15rem 0.4rem;
+}
+
+.chart-toolbar button:hover {
+  color: var(--fg);
 }
 
 .chart-toolbar button.active {
   color: var(--fg);
-  background: var(--bg-raised);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .chart-toolbar button:disabled {
@@ -624,313 +1121,148 @@ table.markets-table td {
   opacity: 0.4;
 }
 
+/* Candles ⇄ Line. Framed as one control so it reads as a mode, not two more intervals. */
+.chart-toolbar .mode-toggle {
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.chart-toolbar .mode-toggle button {
+  height: 24px;
+  font-family: var(--font-sans);
+}
+
+.chart-toolbar .mode-toggle button.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
 .chart-area {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  padding: 1rem 1.2rem;
-  min-height: 320px;
+  min-height: 0;
+  padding: 0 12px 8px;
 }
 
 .terminal-tabs {
-  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  height: 272px;
+  min-height: 0;
 }
 
 .terminal-tabs .tab-bar {
   display: flex;
-  gap: 1.5rem;
-  padding: 0.6rem 1.2rem;
+  align-items: stretch;
+  gap: 1.6rem;
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--border);
-  font-size: 0.7rem;
-  color: var(--fg-muted);
 }
 
 .terminal-tabs .tab-bar button {
-  background: transparent;
+  display: flex;
+  align-items: center;
+  padding: 0;
   border: none;
-  color: inherit;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 0.92rem;
   cursor: pointer;
-  font-size: 0.7rem;
-  letter-spacing: 0.03em;
+  transition: color 0.12s ease;
+}
+
+.terminal-tabs .tab-bar button:hover {
+  color: var(--fg);
 }
 
 .terminal-tabs .tab-bar button.active {
   color: var(--fg);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
+/* Count badge ("Positions 2"). Dim on an inactive tab, so it reads as a hint. */
+.terminal-tabs .tab-bar button .tab-count {
+  margin-left: 0.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
+.terminal-tabs .tab-bar button.active .tab-count {
+  color: var(--accent);
 }
 
 .terminal-tabs .tab-content {
-  padding: 0.5rem 1.2rem 1.2rem;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 4px 6px;
+}
+
+.terminal-tabs .tab-content > p {
+  margin: 1.4rem 12px;
+  color: var(--fg-muted);
+  font-size: 0.95rem;
 }
 
 .terminal-right {
-  border-left: 1px solid var(--border);
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px;
   overflow-y: auto;
 }
 
-.side-toggle {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 0.75rem;
-}
-
-.side-toggle button {
-  background: transparent;
-  border: none;
-  padding: 0.6rem;
-  cursor: pointer;
-  color: var(--fg-muted);
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-}
-
-.side-toggle button.long-active {
-  background: var(--long-dim);
-  color: var(--long);
-}
-
-.side-toggle button.short-active {
-  background: var(--short-dim);
-  color: var(--short);
-}
-
-.order-type-tabs {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.7rem;
-  color: var(--fg-muted);
-}
-
-.order-type-tabs button {
-  background: transparent;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  padding: 0.2rem 0;
-}
-
-.order-type-tabs button.active {
-  color: var(--fg);
-  border-bottom: 2px solid var(--accent);
-}
-
-.order-type-tabs button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+/* ---------- Form controls shared by the order ticket and the position manager ---------- */
 
 .field-group {
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.5rem 0.7rem;
-  margin-bottom: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .field-group .field-label-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.65rem;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
   color: var(--fg-muted);
-  margin-bottom: 0.3rem;
 }
 
 .field-group input {
   width: 100%;
-  background: transparent;
-  border: none;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
   color: var(--fg);
-  font-size: 0.95rem;
+  font-size: 1rem;
   outline: none;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 
-.quick-fill-row {
-  display: flex;
-  gap: 0.4rem;
-  margin-bottom: 0.75rem;
+.field-group input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
-.quick-fill-row button {
-  flex: 1;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  color: var(--fg-muted);
-  border-radius: 3px;
-  padding: 0.3rem 0;
-  cursor: pointer;
-  font-size: 0.68rem;
-}
-
-.leverage-row {
-  margin-bottom: 0.9rem;
-}
-
-.leverage-row .field-label-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 0.65rem;
-  color: var(--fg-muted);
-  margin-bottom: 0.4rem;
-}
-
-/* The chosen leverage is the single most consequential number on this panel — it decides
-   both the size and how far the price has to move to liquidate — and it was rendered at
-   label size in label grey, indistinguishable from the word "LEVERAGE" beside it. */
-.leverage-row [data-testid='leverage-value'] {
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--fg);
-}
-
-/* The native range control renders in the browser's own accent, which is neither the
-   app's palette nor the reference's. Track, fill and thumb are all drawn here so the
-   slider belongs to the panel. The fill is a gradient on the track because a range input
-   has no separate "elapsed" pseudo-element in WebKit. */
-.leverage-row input[type='range'] {
-  width: 100%;
-  height: 18px;
-  margin: 0;
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.leverage-row input[type='range']::-webkit-slider-runnable-track {
-  height: 3px;
-  border-radius: 2px;
-  background: linear-gradient(
-    to right,
-    var(--accent) 0%,
-    var(--accent) var(--fill, 0%),
-    var(--border) var(--fill, 0%),
-    var(--border) 100%
-  );
-}
-
-.leverage-row input[type='range']::-moz-range-track {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--border);
-}
-
-.leverage-row input[type='range']::-moz-range-progress {
-  height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
-}
-
-.leverage-row input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 13px;
-  height: 13px;
-  margin-top: -5px;
-  border: none;
-  border-radius: 50%;
-  background: var(--fg);
-}
-
-.leverage-row input[type='range']::-moz-range-thumb {
-  width: 13px;
-  height: 13px;
-  border: none;
-  border-radius: 50%;
-  background: var(--fg);
-}
-
-.leverage-row input[type='range']:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: 3px;
-}
-
-.leverage-row .bounds {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.62rem;
+.field-group input::placeholder {
   color: var(--fg-dim);
 }
 
-.submit-row button {
-  width: 100%;
-  padding: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  margin-top: 0.5rem;
-}
-
-.submit-row button.long {
-  background: var(--long);
-  color: #04241a;
-}
-
-.submit-row button.short {
-  background: var(--short);
-  color: #2a0a0a;
-}
-
-.submit-row button:disabled {
-  background: var(--bg-raised);
-  color: var(--fg-dim);
-  cursor: not-allowed;
-}
-
-/* A not-yet-submittable order is the panel's RESTING state — the form opens with no size,
-   so this is what a trader sees first. Rendered as flat grey it read as a broken control
-   on a dead panel; tinted with its own side it reads as the buy button, not yet armed.
-   Still unmistakably inert: dimmed, no hover, `not-allowed`. Higher specificity than the
-   generic rule above, so it wins wherever both apply — the Approve button has no side
-   class and keeps the grey. */
-.submit-row button.long:disabled {
-  background: var(--long-dim);
-  color: var(--long);
-  opacity: 0.5;
-}
-
-.submit-row button.short:disabled {
-  background: var(--short-dim);
-  color: var(--short);
-  opacity: 0.5;
-}
-
-/* Not an error — the approval leg is working as intended. Muted rather than red, because
-   red next to a button the trader just pressed says something broke. */
-.approval-notice {
-  margin-top: 0.5rem;
-  font-size: 0.7rem;
-  line-height: 1.5;
-  color: var(--fg-muted);
-}
-
-.order-summary {
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.72rem;
-}
-
-.order-summary .row {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.3rem 0;
-  color: var(--fg-muted);
-}
-
-.order-summary .row span:last-child {
-  color: var(--fg);
-}
-
-/* Unit badges inside the price and size fields, per terminal_design.pdf (`USDW` in
-   PRICE, `BTC` in SIZE). Inside rather than beside: the two fields are denominated in
-   different things, and a unit that can be read apart from its number is a unit that
-   gets read against the wrong one. */
+/* A unit badge (or the unit toggle) inside the field, not beside it: a unit that can be
+   read apart from its number is a unit that gets read against the wrong one. */
 .input-with-suffix {
   position: relative;
   display: flex;
@@ -938,184 +1270,531 @@ table.markets-table td {
 }
 
 .input-with-suffix input {
-  width: 100%;
-  padding-right: 3.4rem;
+  padding-right: 4.6rem;
 }
 
 .input-with-suffix .field-suffix {
   position: absolute;
-  right: 0.7rem;
-  font-size: 0.6rem;
-  letter-spacing: 0.08em;
-  color: var(--fg-dim);
+  right: 12px;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
   pointer-events: none;
 }
 
-.points-panel {
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  color: var(--fg-muted);
-  font-size: 0.72rem;
+.quick-fill-row {
+  display: flex;
+  gap: 5px;
 }
 
-/* ---------- Depth ladder / empty state panel ---------- */
-
-/* Full height, like a real book. The ladder used to sit at the top of its grid column
-   with the rest of the column empty below the notes — the panel read as unfinished
-   rather than as a market with this much depth in it. Flex column + growing sides press
-   the asks down onto the mid price and let the bids run from it, which is the shape the
-   eye expects, and pins the explanatory notes to the bottom. */
-.depth-panel {
-  border-left: 1px solid var(--border);
-  padding: 0.75rem;
-  font-size: 0.72rem;
+.quick-fill-row button {
+  flex: 1;
+  height: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.leverage-row {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  gap: 8px;
 }
 
-.depth-panel .empty-state {
-  border: 1px dashed var(--border);
-  border-radius: 4px;
-  padding: 1.5rem 1rem;
-  text-align: center;
+.leverage-row .field-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+/* The chosen leverage is the most consequential number on the ticket — it sets the size
+   and how far price must move to liquidate — so it is set in the accent, not label grey. */
+.leverage-row [data-testid='leverage-value'] {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--accent);
+}
+
+/* Track, fill and thumb are drawn here so the slider belongs to the panel rather than to
+   the browser's accent. The fill is a gradient on the track because a WebKit range input
+   has no separate "elapsed" pseudo-element. */
+.leverage-row input[type='range'],
+input[type='range'].slim-range {
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.leverage-row input[type='range']::-webkit-slider-runnable-track,
+input[type='range'].slim-range::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--fill, 0%),
+    rgba(255, 255, 255, 0.1) var(--fill, 0%),
+    rgba(255, 255, 255, 0.1) 100%
+  );
+}
+
+.leverage-row input[type='range']::-moz-range-track,
+input[type='range'].slim-range::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.leverage-row input[type='range']::-moz-range-progress,
+input[type='range'].slim-range::-moz-range-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.leverage-row input[type='range']::-webkit-slider-thumb,
+input[type='range'].slim-range::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.leverage-row input[type='range']::-moz-range-thumb,
+input[type='range'].slim-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.leverage-row input[type='range']:focus-visible,
+input[type='range'].slim-range:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.leverage-row .bounds {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
   color: var(--fg-dim);
-  line-height: 1.5;
 }
 
-/* ---------- Tables shared by positions/orders/fills ---------- */
+.submit-row button {
+  width: 100%;
+  height: 48px;
+  border: none;
+  border-radius: 13px;
+  font-family: var(--font-sans);
+  font-size: 1.05rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.12s ease;
+}
+
+.submit-row button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.submit-row button.long {
+  background: var(--long);
+  color: var(--on-color);
+}
+
+.submit-row button.short {
+  background: var(--short);
+  color: var(--on-color);
+}
+
+.submit-row button:disabled {
+  background: var(--panel-strong);
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+/* The resting state of the ticket: no size yet. Tinted with its own side it reads as the
+   buy button, not yet armed — still unmistakably inert. */
+.submit-row button.long:disabled {
+  background: var(--long-dim);
+  color: var(--long);
+  opacity: 0.55;
+}
+
+.submit-row button.short:disabled {
+  background: var(--short-dim);
+  color: var(--short);
+  opacity: 0.55;
+}
+
+/* Approve and other secondary actions: outlined, clearly live, never the side colour. */
+.submit-row button:not(.long):not(.short):not(:disabled) {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+/* Not an error — the approval leg is working as intended. Muted rather than red. */
+.approval-notice {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* Shown only when the connected wallet cannot fund the order in front of it: a way out
+   of a dead end, deliberately quieter than the submit button. */
+.faucet-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.faucet-row button {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--long);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--long);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.faucet-row button:hover:not(:disabled) {
+  background: var(--long-dim);
+}
+
+.faucet-row button:disabled {
+  border-color: var(--border);
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+.faucet-note {
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  line-height: 1.4;
+}
+
+/* ---------- Tables shared by positions / orders / fills / history ---------- */
 
 table.data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.75rem;
+  font-size: 0.88rem;
 }
 
 table.data-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   text-align: left;
   color: var(--fg-muted);
   font-weight: 400;
-  font-size: 0.65rem;
-  letter-spacing: 0.05em;
-  padding: 0.4rem 0.5rem;
-  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  padding: 0.7rem 12px 0.55rem;
+  background: var(--bg-panel);
+  white-space: nowrap;
 }
 
 table.data-table td {
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--border);
+  padding: 0 12px;
+  height: 46px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+}
+
+table.data-table td button {
+  font-family: var(--font-sans);
+}
+
+/* The positions table spreads its columns across the panel and pins the action to the
+   right edge, instead of letting auto layout bunch every value to the left. */
+table.data-table[data-testid='positions-table'] {
+  table-layout: fixed;
+}
+
+table.data-table[data-testid='positions-table'] th,
+table.data-table[data-testid='positions-table'] td {
+  width: 12%;
+}
+
+table.data-table[data-testid='positions-table'] th:first-child,
+table.data-table[data-testid='positions-table'] td:first-child {
+  width: 20%;
+}
+
+table.data-table[data-testid='positions-table'] th:last-child,
+table.data-table[data-testid='positions-table'] td:last-child {
+  text-align: right;
+}
+
+/* The side marker before each position's symbol. */
+.side-bar {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 0.55rem;
+  vertical-align: 0.1em;
+  border-radius: 50%;
+}
+
+.side-bar.long {
+  background: var(--long);
+}
+
+.side-bar.short {
+  background: var(--short);
+}
+
+.row-leverage {
+  margin-left: 0.35rem;
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+}
+
+.data-table .usage {
+  color: var(--fg-muted);
+}
+
+/* Close control: `Close` plus a chevron for the partial sizes the contract supports.
+   Neutral, not red — closing is the ordinary way out of a position, not a warning. */
+.close-control {
+  display: inline-flex;
+  align-items: stretch;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.close-control button {
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 0 0.8rem;
+  cursor: pointer;
+}
+
+.close-control button + button {
+  border-left: 1px solid var(--border);
+}
+
+.close-control button:hover:not(:disabled) {
+  background: var(--panel-strong);
+}
+
+.close-control button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+.close-control .close-more {
+  padding: 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--fg-muted);
+  transform: rotate(-90deg);
+}
+
+.close-control .close-more[aria-expanded='true'] {
+  transform: rotate(90deg);
+  color: var(--fg);
+}
+
+.close-partial {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.3rem;
+  margin: 0.3rem 0;
+}
+
+.close-partial button {
+  height: 22px;
+  padding: 0 0.55rem;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.close-partial button:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.close-partial button:disabled {
+  color: var(--fg-dim);
+  cursor: not-allowed;
+}
+
+/* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */
+.manager-row td {
+  height: auto;
+  padding: 0.6rem 12px 0.8rem;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.position-manager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.6rem;
+  align-items: flex-end;
+}
+
+.position-manager .manager-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
+
+.position-manager label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.position-manager input {
+  width: 8.5rem;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--fg);
+  font: inherit;
+  font-family: var(--font-mono);
+  outline: none;
+}
+
+.position-manager input:focus {
+  border-color: var(--accent);
+}
+
+.position-manager button {
+  height: 32px;
+  padding: 0 0.9rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.position-manager button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.position-manager button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pnl-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0.8rem 12px;
+}
+
+.pnl-summary dt {
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.pnl-summary dd {
+  margin: 0.25rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
 }
 
 /* ---------- Banners ---------- */
 
 .banner {
-  padding: 0.6rem 1rem;
-  border-radius: 4px;
-  margin: 0.75rem 1.2rem;
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  font-size: 0.75rem;
+  margin: 0.5rem 10px;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+  font-size: 0.92rem;
+}
+
+.banner button {
+  height: 28px;
+  padding: 0 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
 .banner-warning {
-  background: rgba(224, 167, 48, 0.1);
-  border: 1px solid var(--warning);
-  color: var(--warning);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-ring);
+  color: var(--accent);
 }
 
 .banner-degraded {
   background: var(--short-dim);
-  border: 1px solid var(--short);
-  color: var(--short);
-}
-
-.error-text {
+  border: 1px solid rgba(255, 122, 107, 0.35);
   color: var(--short);
 }
 
 /* ---------- Stub / coming-soon pages ---------- */
 
 .stub-page {
-  padding: 4rem 2rem;
+  padding: 5rem 2rem;
   text-align: center;
   color: var(--fg-muted);
 }
 
 .stub-page h1 {
   color: var(--fg);
-  font-weight: 500;
+  font-weight: 300;
 }
 
-/* ---------- Faucet ----------
-   Shown only when the connected wallet cannot fund the order in front of it. Deliberately
-   quieter than the submit button — it is a way out of a dead end, not the action the
-   terminal wants you to take. */
-.faucet-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-top: 0.6rem;
-}
+/* ---------- LP vault panel (a read-out; deposit and withdraw live in FundingModal) ---------- */
 
-.faucet-row button {
-  width: 100%;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-}
-
-.faucet-row button:hover:not(:disabled) {
-  border-color: var(--fg-dim);
-}
-
-.faucet-row button:disabled {
-  color: var(--fg-dim);
-  cursor: not-allowed;
-}
-
-.faucet-note {
-  font-size: 0.65rem;
-  color: var(--fg-dim);
-  line-height: 1.4;
-}
-
-/* Count badge in the terminal's tab bar ("Positions · 2"). Dim on an inactive tab so the
-   number reads as a hint rather than competing with the selected tab's label. */
-.terminal-tabs .tab-bar button .tab-count {
-  color: var(--fg-dim);
-  margin-left: 0.25rem;
-}
-
-.terminal-tabs .tab-bar button.active .tab-count {
-  color: var(--fg-muted);
-}
-
-/* ---------- LP vault panel ----------
-   This had no styling at all, which is why its controls flowed inline and the faucet
-   button sat on top of the deposit label. Everything here is layout only, reusing the
-   same tokens and control shapes as the order-entry panel so the two read as one product. */
 .vault-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
+  gap: 0.9rem;
+  padding: 1.4rem;
+  background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-panel, var(--bg-raised));
-  padding: 1rem;
-  font-size: 0.78rem;
+  border-radius: var(--radius-lg);
+  font-size: 0.95rem;
 }
 
-/* The panel is a read-out now that the deposit/withdraw controls live in FundingModal:
-   one row per figure, label left, value right. */
 .vault-panel .vault-stat {
   display: flex;
   align-items: baseline;
@@ -1124,13 +1803,14 @@ table.data-table td {
 }
 
 .vault-panel .vault-stat-label {
-  color: var(--fg-dim);
-  font-size: 0.6rem;
+  font-family: var(--font-sans);
+  color: var(--fg-muted);
+  font-size: 0.92rem;
 }
 
 .vault-panel .vault-stat-value {
   font-family: var(--font-mono);
-  font-size: 0.9rem;
+  font-size: 1.05rem;
   color: var(--fg);
 }
 
@@ -1144,37 +1824,35 @@ table.data-table td {
 .vault-panel label {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
   color: var(--fg-muted);
-  font-size: 0.7rem;
+  font-size: 0.85rem;
 }
 
 .vault-panel input {
   width: 100%;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
   color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
 .vault-panel button {
   width: 100%;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-raised);
+  height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: transparent;
   color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-size: 0.95rem;
   cursor: pointer;
 }
 
 .vault-panel button:hover:not(:disabled) {
-  border-color: var(--fg-dim);
+  border-color: rgba(255, 255, 255, 0.24);
 }
 
 .vault-panel button:disabled {
@@ -1182,17 +1860,22 @@ table.data-table td {
   cursor: not-allowed;
 }
 
-/* The deposit action is the panel's primary control; the faucet next to it is a way out
-   of an empty wallet, not the thing the page is for. */
+/* Deposit is the panel's primary control; the faucet beside it is a way out of an empty
+   wallet, not what the page is for. */
 .vault-panel [data-testid='request-deposit-button']:not(:disabled) {
-  background: var(--long);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-color);
+}
+
+.vault-panel [data-testid='faucet-button']:not(:disabled) {
   border-color: var(--long);
-  color: #04241a;
+  color: var(--long);
 }
 
 .vault-panel [data-testid='deposit-settlement-status'] {
   border-top: 1px solid var(--border);
-  padding-top: 0.7rem;
+  padding-top: 0.8rem;
   color: var(--fg-muted);
   line-height: 1.5;
 }
@@ -1202,302 +1885,71 @@ table.data-table td {
   line-height: 1.5;
 }
 
-/* Explains which direction each vault control moves USDW — the faucet mints to you, the
-   deposit sends to the vault. Dim, because it is a one-time orientation note, not a value. */
 .vault-panel .vault-hint {
   margin: -0.3rem 0 0;
   color: var(--fg-dim);
-  font-size: 0.66rem;
+  font-size: 0.82rem;
   line-height: 1.5;
 }
 
-/* ---------- Close control (positions table) ----------
-   terminal_design.pdf ends the row in a single `Close`. The chevron beside it opens the
-   partial sizes, which the contract supports and the reference simply does not draw —
-   hiding the capability entirely would remove function to match a picture. */
-.close-control {
-  display: inline-flex;
-  align-items: stretch;
-  height: 26px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--bg-raised);
-}
-
-.close-control .close-more {
-  padding: 0 0.4rem;
-  font-size: 0.72rem;
-  line-height: 1;
-  color: var(--fg-muted);
-  transform: rotate(-90deg);
-}
-
-.close-control .close-more[aria-expanded='true'] {
-  transform: rotate(90deg);
-  color: var(--fg);
-}
-
-.close-partial {
-  display: flex;
-  gap: 0.25rem;
-  margin-top: 0.3rem;
-}
-
-.close-partial button {
-  padding: 0.2rem 0.4rem;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  color: var(--fg-muted);
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.close-partial button:hover:not(:disabled) {
-  color: var(--fg);
-  border-color: var(--fg-dim);
-}
-
-.close-partial button:disabled {
-  color: var(--fg-dim);
-  cursor: not-allowed;
-}
-
-/* The side marker the reference puts before each position's symbol. */
-.side-bar {
-  display: inline-block;
-  width: 2px;
-  height: 0.8em;
-  margin-right: 0.45rem;
-  vertical-align: -0.05em;
-  border-radius: 1px;
-}
-
-.side-bar.long {
-  background: var(--long);
-}
-
-.side-bar.short {
-  background: var(--short);
-}
-
-.row-leverage {
-  color: var(--fg-dim);
-  font-size: 0.66rem;
-}
-
-/* Neutral, not red. Closing is not a loss — it is the ordinary way out of a position, and
-   a red button on every row reads as a warning the row is not making. The only coloured
-   things left on a position row are SIZE and UPNL, which is where colour carries meaning. */
-.close-control button {
-  border: none;
-  border-left: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg);
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.04em;
-  padding: 0 0.7rem;
-  cursor: pointer;
-}
-
-.close-control button:hover:not(:disabled) {
-  background: var(--bg-panel);
-  color: var(--fg);
-}
-
-.close-control button:disabled {
-  color: var(--fg-dim);
-  cursor: not-allowed;
-}
-
-/* ---------- Order-panel secondary actions ----------
-   Approve is a required step before the real action, and the faucet is a way out of an
-   empty wallet. Both were flat grey slabs indistinguishable from a disabled control.
-   They now read as deliberate secondary actions: outlined, tinted, and clearly live. */
-.submit-row button:not(.long):not(.short):not(:disabled) {
-  background: transparent;
-  border: 1px solid var(--accent);
+/* Links inside running copy on the landing page take the accent, not an underline. */
+.landing .step p a,
+.landing .lede a {
   color: var(--accent);
+  text-decoration: none;
 }
 
-.submit-row button:not(.long):not(.short):not(:disabled):hover {
-  background: rgba(91, 123, 255, 0.12);
+.landing .step p a:hover,
+.landing .lede a:hover {
+  text-decoration: underline;
 }
 
-/* The faucet is the same action in both places it appears — the order panel and the vault
-   panel — so it has to look the same in both. Scoping this to `.faucet-row` alone left the
-   vault's copy as a plain grey slab while the order form's read as a live control. */
-.faucet-row button:not(:disabled),
-.vault-panel [data-testid='faucet-button']:not(:disabled) {
-  border-color: var(--long);
-  color: var(--long);
-  background: transparent;
-}
+/* ---------- /vaults lifecycle ---------- */
 
-.faucet-row button:not(:disabled):hover,
-.vault-panel [data-testid='faucet-button']:not(:disabled):hover {
-  background: var(--long-dim);
-}
-
-/* ---------------------------------------------------------------------------
- * Chrome typography, matched against docs/design/terminal_design.pdf.
- *
- * The mockup sets every *label* in letter-spaced uppercase and leaves values and
- * prose alone — `MARKETS 38`, `PRICE`, `SIZE`, `AVAIL.`, `LEVERAGE`,
- * `DEPTH INDICATORS LOG SCALE`, `POSITIONS · 2`, `LONG`/`SHORT`,
- * `LIMIT MARKET STOP TWAP`, and the positions table headers
- * `MARKET SIZE ENTRY MARK LIQ. UPNL`.
- *
- * Note what it does NOT uppercase, because copying it wholesale would be wrong:
- * the order summary reads "Order value", "Margin required", "Est. liq. price",
- * "Fee · maker/taker" in sentence case in the reference, so `.order-summary` is
- * deliberately absent from the list below.
- *
- * Expressed as `text-transform` rather than by rewriting the strings in the
- * components. The rendered DOM text then stays exactly as authored, so the
- * tests that query by label keep matching, and casing remains a presentation
- * decision living in one place instead of being spread across a dozen files.
- * ------------------------------------------------------------------------ */
-.terminal-rail .rail-header,
-.market-header .chip,
-.market-header .stat-cell,
-.chart-toolbar button,
-.terminal-tabs .tab-bar button,
-.side-toggle button,
-.order-type-tabs button,
-.field-label-row,
-.leverage-row,
-.bounds,
-.data-table th,
-.submit-row button {
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* The reference draws the selected side as a filled block, not a tinted one: the active
- * half carries the side colour as its background with dark text on top, the same treatment
- * the submit button gets, so the chosen direction reads at a glance from across the panel.
- * `--long-dim` alone left it barely distinguishable from the inactive half. */
-.side-toggle button.long-active {
-  background: var(--long);
-  color: #04241a;
-  font-weight: 600;
-}
-
-.side-toggle button.short-active {
-  background: var(--short);
-  color: #2a0a0a;
-  font-weight: 600;
-}
-
-/* A price is not a label: numbers keep their natural tracking so the digits do
- * not drift apart under the tracking applied to the label above them. */
-.market-header .stat-cell .stat-value,
-.data-table td {
-  letter-spacing: normal;
-}
-
-/* ---------- Positions table width ----------
-   With `table-layout: auto` the browser sizes each column to its content and dumps the
-   leftover ~180px into the last one, so the row bunched to the left with the Close button
-   stranded mid-panel and dead space after it. Fixed layout with declared widths spreads
-   the values across the panel and lets the action sit against the right edge. */
-table.data-table[data-testid='positions-table'] {
-  table-layout: fixed;
-}
-
-table.data-table[data-testid='positions-table'] th,
-table.data-table[data-testid='positions-table'] td {
-  width: 13%;
-}
-
-/* The symbol carries a side bar, a name and a leverage badge — it needs the extra room. */
-table.data-table[data-testid='positions-table'] th:first-child,
-table.data-table[data-testid='positions-table'] td:first-child {
-  width: 22%;
-}
-
-table.data-table[data-testid='positions-table'] th:last-child,
-table.data-table[data-testid='positions-table'] td:last-child {
-  text-align: right;
-}
-
-/* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */
-.manager-row td {
-  background: var(--bg-raised);
-}
-
-.position-manager {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem 1.5rem;
-  align-items: flex-end;
-  padding: 0.4rem 0;
-}
-
-.position-manager .manager-field {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.4rem;
-}
-
-.position-manager label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  font-size: 0.65rem;
-  color: var(--fg-muted);
-}
-
-.position-manager input {
-  width: 8rem;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--fg);
-  padding: 0.3rem 0.4rem;
-  font: inherit;
-}
-
-.position-manager button {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  color: var(--fg);
-  padding: 0.3rem 0.6rem;
-  cursor: pointer;
-  font-size: 0.7rem;
-}
-
-.position-manager button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.data-table .usage {
-  color: var(--fg-muted);
-}
-
-.ok-text {
-  color: var(--long);
-}
-
-.pnl-summary {
+.vault-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1rem;
-  margin: 0.6rem 0;
+  gap: 1.1rem;
 }
 
-.pnl-summary dt {
-  font-size: 0.65rem;
+.vault-steps li {
+  display: grid;
+  grid-template-columns: 2.2rem minmax(0, 1fr);
+  gap: 0.6rem;
   color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1.65;
 }
 
-.pnl-summary dd {
-  margin: 0.2rem 0 0;
-  font-size: 1rem;
+.vault-steps strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+
+.vault-step-index {
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-size: 0.9rem;
+  line-height: 1.9;
+}
+
+.vault-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+/* The Section primitive spaces itself from the band above; beside the panel it must not. */
+.vault-grid > section {
+  margin-top: 0;
+}
+
+@media (max-width: 900px) {
+  .vault-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

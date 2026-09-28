@@ -1,51 +1,42 @@
 import type { Metadata } from 'next';
-import { JetBrains_Mono, Schibsted_Grotesk } from 'next/font/google';
+import { Azeret_Mono, Geologica } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { NavHeader } from '@/components/NavHeader';
 import { Providers } from '@/components/Providers';
 import './globals.css';
 
 /**
- * Two families, split by what the text is rather than by where it sits.
+ * Two families, split by what the text is rather than by where it sits — the Eclipse
+ * design (the approved "C3 v2" canvas board):
  *
- * The interface used to be JetBrains Mono end to end, because the only two mockups that
- * existed then — landing_design.pdf and terminal_design.pdf — are set in IBM Plex Mono
- * throughout. The September mockups are not: docs/design/pages.pdf (points, portfolio,
- * docs) and the faucet mockup are set in Schibsted Grotesk, with monospace kept for the
- * figures, the tables and the small uppercase labels. Prose in a monospace face is
- * slower to read and wastes horizontal measure; a column of prices in a proportional one
- * stops lining up. The split follows that, so both mockup generations get what they
- * asked for:
+ *   --font-sans  Geologica: headings, prose, labels, buttons, navigation
+ *   --font-mono  Azeret Mono: every figure, every data cell, prices, addresses
  *
- *   --font-sans  headings, prose, buttons, link text
- *   --font-mono  every figure, every data table, the labels, the wordmark, the ticker
+ * A column of prices in a proportional face stops lining up, and a label in a monospace
+ * face reads as data; the split keeps each where it belongs.
  *
- * `next/font/google` self-hosts both: no runtime request to Google, no layout shift
- * (Next generates a metric-matched local fallback per family), no extra dependency.
+ * `next/font/google` self-hosts both: no runtime request to Google, no layout shift (Next
+ * generates a metric-matched local fallback per family), no extra dependency. Only the
+ * cuts globals.css declares are downloaded — 300 for the large light figures, 400 for
+ * body and table text, 500 for emphasis and headings, 600 for the rare strong label.
  *
- * Only the four cuts globals.css actually declares are downloaded per family — 400 for
- * body/table text, 500 for the headings, 600 for the terminal market symbol, 700 for the
- * wordmark and the ticker's <strong> prices. The rest of each family would be dead
- * weight on every page load.
- *
- * `variable` exposes each loaded family as its own custom property, which `--font-mono`
- * and `--font-sans` then prepend to their fallback stacks in globals.css — every
- * `var(--font-*)` consumer keeps working untouched.
+ * `variable` exposes each loaded family as its own custom property, which `--font-sans`
+ * and `--font-mono` prepend to their fallback stacks in globals.css.
  */
-const jetbrainsMono = JetBrains_Mono({
+const geologica = Geologica({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  // Render immediately in the fallback and swap in JetBrains Mono when it arrives: a
-  // trading screen must never be blank while a font downloads.
+  weight: ['300', '400', '500', '600'],
+  // Render immediately in the fallback and swap the face in when it arrives: a trading
+  // screen must never be blank while a font downloads.
   display: 'swap',
-  variable: '--font-jetbrains-mono',
+  variable: '--font-geologica',
 });
 
-const schibstedGrotesk = Schibsted_Grotesk({
+const azeretMono = Azeret_Mono({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['300', '400', '500', '600'],
   display: 'swap',
-  variable: '--font-schibsted-grotesk',
+  variable: '--font-azeret-mono',
 });
 
 export const metadata: Metadata = {
@@ -55,11 +46,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${schibstedGrotesk.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${geologica.variable} ${azeretMono.variable}`}>
       <body>
         <Providers>
           <NavHeader />
-          {children}
+          <div className="page-root">{children}</div>
         </Providers>
       </body>
     </html>
