@@ -21,12 +21,12 @@ Upstream README credits the Gains Network v5 codebase as the origin of this desi
 
 ### Local modifications
 
-None in phase 1. The tree is byte-identical to upstream. Any future divergence must be recorded
-in this table with its rationale:
+Byte-identical to upstream through phase 1. Every divergence since is recorded here:
 
-| File | Change | Rationale | Commit |
+| File | Change | Rationale | Where |
 |---|---|---|---|
-| _(none)_ | | | |
+| `OstiumTrading.sol`, `OstiumTradingCallbacks.sol`, `OstiumTradingStorage.sol`, `lib/TradingCallbacksLib.sol`, `interfaces/IOstiumTradingCallbacks.sol`, `interfaces/IOstiumTradingStorage.sol` | The close oracle-fee bond is charged from the position on a cancelled or partial close instead of pulled from the wallet at request time; `refundOracleFee` removed; `OracleFeeBondCharged` event | Traders who spent their balance on margin could not close (tx `0x8a357f2b…`) | branch `feat/close-bond-from-position`, spec `docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md` |
+| `lib/TradingCallbacksLib.sol` | `withinExposureLimits` takes the fill price and charges a short's notional at `price / fillPrice` | A short admitted exactly at `maxOi` landed above it after price impact | `test/unit/Findings.t.sol`, `docs/decisions/testnet-perfect-contract-tests.md` |
 
 ### Deliberately NOT modified
 
