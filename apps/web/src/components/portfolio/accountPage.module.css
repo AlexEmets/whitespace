@@ -6,9 +6,9 @@
  */
 
 .page {
-  max-width: 1240px;
+  max-width: calc(1240px + 2 * var(--page-pad));
   margin: 0 auto;
-  padding: 0 24px 5rem;
+  padding: 0 var(--page-pad) 5rem;
 }
 
 /* ---------- Page head ---------- */
@@ -19,7 +19,7 @@
   justify-content: space-between;
   gap: 2rem 3rem;
   flex-wrap: wrap;
-  padding: 3.2rem 0 2rem;
+  padding: clamp(2rem, 4vw, 3.2rem) 0 clamp(1.4rem, 2.5vw, 2rem);
 }
 
 /* Grows to fill whatever the meta column leaves, so the lede's own max-width is what sets
@@ -36,7 +36,7 @@
 
 .title {
   font-family: var(--font-sans);
-  font-size: 3.2rem;
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
   font-weight: 300;
   letter-spacing: -0.03em;
   line-height: 1.05;
@@ -381,4 +381,38 @@
 
 .defTotal .defKey {
   color: var(--fg);
+}
+
+/* ---------- Phones ---------- */
+
+@media (max-width: 700px) {
+  .headMeta {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .section {
+    padding: 1.2rem 1.1rem 1.4rem;
+  }
+
+  .tile {
+    padding: 1.1rem 1.2rem;
+  }
+
+  .tileValue {
+    font-size: 1.6rem;
+  }
+
+  .defRow {
+    flex-wrap: wrap;
+    gap: 0.3rem 1rem;
+  }
+
+  .defValue {
+    white-space: normal;
+  }
+
+  .state {
+    padding: 2rem 1rem;
+  }
 }

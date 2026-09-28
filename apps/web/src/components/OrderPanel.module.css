@@ -5,7 +5,7 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0.92rem;
 }
 
 /* ---- Quote card ---- */
@@ -13,8 +13,8 @@
 .quoteCard {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 11px 12px 12px;
+  gap: 0.69rem;
+  padding: 0.85rem 0.92rem 0.92rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 15px;
   background: rgba(255, 255, 255, 0.02);
@@ -32,13 +32,13 @@
 .quoteTitle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.46rem;
 }
 
 .quoteTitle::before {
   content: '';
-  width: 5px;
-  height: 5px;
+  width: 0.38rem;
+  height: 0.38rem;
   border-radius: 50%;
   background: var(--accent);
 }
@@ -63,9 +63,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
+  gap: 0.62rem;
+  height: 2.62rem;
+  padding: 0 0.92rem;
   border: none;
   border-radius: 9px;
   background: transparent;
@@ -107,7 +107,7 @@
 .spreadRow {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.77rem;
   font-family: var(--font-sans);
   font-size: 0.8rem;
   color: var(--fg-muted);
@@ -122,7 +122,7 @@
 .spreadTrack {
   position: relative;
   flex: 1;
-  height: 4px;
+  height: 0.31rem;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -140,7 +140,7 @@
   left: 50%;
   top: -3px;
   width: 1px;
-  height: 10px;
+  height: 0.77rem;
   background: var(--fg);
 }
 
@@ -149,12 +149,12 @@
 .kindTabs {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 1.38rem;
   font-family: var(--font-sans);
 }
 
 .kindTabs button {
-  padding: 0 0 5px;
+  padding: 0 0 0.38rem;
   border: none;
   background: transparent;
   color: var(--fg-muted);
@@ -173,7 +173,7 @@
 
 .marginMode {
   margin-left: auto;
-  padding-bottom: 5px;
+  padding-bottom: 0.38rem;
   font-size: 0.85rem;
   color: var(--fg-muted);
 }
@@ -182,9 +182,9 @@
 
 .unitToggle {
   position: absolute;
-  right: 6px;
-  height: 28px;
-  padding: 0 8px;
+  right: 0.46rem;
+  height: 2.15rem;
+  padding: 0 0.62rem;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -201,7 +201,7 @@
 }
 
 .sizeInput input {
-  height: 46px;
+  height: 3.54rem;
   font-size: 1.3rem;
   font-weight: 300;
 }
@@ -209,17 +209,17 @@
 .percentRow {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.62rem;
 }
 
 .percentMarks {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 5px;
+  gap: 0.38rem;
 }
 
 .percentMarks button {
-  height: 26px;
+  height: 2rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -239,7 +239,7 @@
 .checkbox {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.62rem;
   font-size: 0.92rem;
   color: var(--fg);
   cursor: pointer;
@@ -253,11 +253,11 @@
 .tpSl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 0.46rem;
 }
 
 .tpSl input {
-  height: 34px;
+  height: 2.62rem;
   font-size: 0.9rem;
 }
 
@@ -266,8 +266,8 @@
 .risk {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 0.77rem;
+  padding: 0.92rem;
   border: 1px solid var(--border);
   border-radius: 13px;
 }
@@ -280,7 +280,7 @@
 
 .riskTrack {
   position: relative;
-  height: 24px;
+  height: 1.85rem;
 }
 
 .riskTrack::before {
@@ -288,7 +288,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 11px;
+  top: 0.85rem;
   height: 2px;
   border-radius: 1px;
   background: rgba(255, 255, 255, 0.1);
@@ -296,9 +296,9 @@
 
 .riskDot {
   position: absolute;
-  top: 5px;
-  width: 12px;
-  height: 12px;
+  top: 0.38rem;
+  width: 0.92rem;
+  height: 0.92rem;
   border-radius: 50%;
   background: var(--bg);
   box-shadow: inset 0 0 0 1.5px currentColor;
@@ -307,7 +307,7 @@
 .riskLegend {
   display: flex;
   justify-content: space-between;
-  gap: 6px;
+  gap: 0.46rem;
   font-family: var(--font-mono);
   font-size: 0.74rem;
   line-height: 1.35;
@@ -347,7 +347,7 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.46rem;
   font-size: 0.85rem;
 }
 
@@ -391,8 +391,8 @@
 
 .slippageInput {
   width: 4.5rem;
-  height: 22px;
-  padding: 0 6px;
+  height: 1.69rem;
+  padding: 0 0.46rem;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: transparent;

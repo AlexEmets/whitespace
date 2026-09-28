@@ -11,8 +11,9 @@
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(8, 9, 11, 0.74);
-  backdrop-filter: blur(3px);
+  background: rgba(3, 3, 5, 0.74);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
   animation: fade 120ms ease-out;
 }
 
@@ -23,8 +24,8 @@
   max-height: 100%;
   overflow: hidden;
   background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
   animation: rise 150ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
@@ -34,24 +35,23 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.9rem 1rem 0.75rem;
+  padding: 1rem 1.1rem 0.85rem;
   border-bottom: 1px solid var(--border);
 }
 
 .title {
   margin: 0;
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 1.1rem;
+  font-weight: 400;
   color: var(--fg);
 }
 
 .close {
   display: grid;
   place-items: center;
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 1.9rem;
+  height: 1.9rem;
   padding: 0;
   font-family: inherit;
   font-size: 0.9rem;
@@ -69,8 +69,8 @@
 }
 
 .footer {
-  padding: 0.6rem 1rem 0.7rem;
-  font-size: 0.58rem;
+  padding: 0.7rem 1.1rem 0.8rem;
+  font-size: 0.75rem;
   letter-spacing: 0.06em;
   color: var(--fg-dim);
   border-top: 1px solid var(--border);
@@ -93,5 +93,22 @@
   .backdrop,
   .dialog {
     animation: none;
+  }
+}
+
+/* Phones: the dialog becomes a bottom sheet, where the thumb already is. */
+@media (max-width: 560px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dialog {
+    width: 100%;
+    max-height: 88vh;
+    max-height: 88dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }

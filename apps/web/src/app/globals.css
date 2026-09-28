@@ -53,7 +53,13 @@
   --font-mono: var(--font-azeret-mono, 'Azeret Mono'), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-sans: var(--font-geologica, 'Geologica'), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  --header-h: 56px;
+  /* The header and the eclipse behind it scale with the viewport, so the arc takes the
+     same share of the screen on a 13-inch laptop as on a 32-inch monitor instead of
+     shrinking to a sliver on a wide one. */
+  --header-h: clamp(56px, 4.2vw, 80px);
+  --eclipse-size: clamp(300px, 30vw, 640px);
+  /* Horizontal page margin for the content pages. */
+  --page-pad: clamp(16px, 3.2vw, 72px);
 }
 
 * {
@@ -68,13 +74,20 @@
  *
  * 13px stays the root size; everything is in rem, so moving it would rescale the app.
  */
+/* 13px is the root size up to a 1600px-wide window. Beyond that it grows with the
+   viewport (to 15.5px at 2600px), and because the terminal, header and ticket are sized in
+   rem, the whole interface scales with it — a 27-inch monitor gets a proportionally larger
+   UI instead of the same small one stretched across more pixels. */
+html {
+  font-size: clamp(13px, calc(13px + (100vw - 1600px) * 0.0025), 15.5px);
+}
+
 html,
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 13px;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
@@ -156,17 +169,17 @@ a {
 }
 
 /* The eclipse: a disc of page-black with a lit rim, mostly above the viewport so only its
-   lower arc shows — a sunrise across the transparent header. Sized so the whole arc
-   (about 270px wide, 50px deep) sits inside the header strip and ends above the panels;
-   only the soft glow reaches them. Pure CSS — no asset, nothing to re-export. */
+   lower arc shows — a sunrise across the transparent header. Its bottom edge sits just
+   inside the header strip, so the whole arc is visible and ends above the panels; only
+   the soft glow reaches them. Pure CSS — no asset, nothing to re-export. */
 .eclipse-backdrop {
   position: absolute;
   z-index: 0;
-  top: -370px;
+  top: calc(var(--header-h) - 3px - var(--eclipse-size));
   left: 50%;
-  width: 420px;
-  height: 420px;
-  margin-left: -210px;
+  width: var(--eclipse-size);
+  height: var(--eclipse-size);
+  margin-left: calc(var(--eclipse-size) / -2);
   border-radius: 50%;
   background: var(--bg);
   box-shadow:
@@ -206,13 +219,13 @@ a {
   align-items: center;
   gap: 2rem;
   height: var(--header-h);
-  padding: 0 18px;
+  padding: 0 max(1.38rem, env(safe-area-inset-right)) 0 max(1.38rem, env(safe-area-inset-left));
 }
 
 .nav-header .wordmark {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0.77rem;
   font-family: var(--font-sans);
   font-size: 1.2rem;
   font-weight: 500;
@@ -221,15 +234,15 @@ a {
   color: var(--fg);
 }
 
-/* The brand mark: the same eclipse, at 17px. */
+/* The brand mark: the same eclipse, at 1.31rem. */
 .nav-header .wordmark-mark {
-  width: 17px;
-  height: 17px;
+  width: 1.31rem;
+  height: 1.31rem;
   border-radius: 50%;
   background: var(--bg);
   box-shadow:
     0 0 0 1.5px rgba(255, 214, 160, 0.95),
-    0 0 10px 2px rgba(255, 195, 122, 0.45);
+    0 0 0.77rem 2px rgba(255, 195, 122, 0.45);
 }
 
 .nav-links {
@@ -267,7 +280,7 @@ a {
 .nav-right .chain-health {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.62rem;
   font-family: var(--font-mono);
   font-size: 0.82rem;
   white-space: nowrap;
@@ -279,8 +292,8 @@ a {
 }
 
 .nav-right .live-dot {
-  width: 6px;
-  height: 6px;
+  width: 0.46rem;
+  height: 0.46rem;
   border-radius: 50%;
   background: var(--long);
   animation: live-pulse 2s ease-out infinite;
@@ -302,8 +315,8 @@ a {
 }
 
 .nav-right .connect-btn {
-  height: 34px;
-  padding: 0 18px;
+  height: 2.62rem;
+  padding: 0 1.38rem;
   border: none;
   border-radius: 999px;
   background: var(--accent);
@@ -328,8 +341,8 @@ a {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  height: 34px;
-  padding: 0 6px 0 14px;
+  height: 2.62rem;
+  padding: 0 0.46rem 0 1.08rem;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   font-family: var(--font-mono);
@@ -340,8 +353,8 @@ a {
 /* The connected wallet's own EIP-6963 logo and name: how a trader running two wallets
    tells at a glance which one signed in. */
 .nav-right .wallet-chip-icon {
-  width: 14px;
-  height: 14px;
+  width: 1.08rem;
+  height: 1.08rem;
   border-radius: 3px;
   object-fit: contain;
 }
@@ -352,8 +365,8 @@ a {
 }
 
 .nav-right .wallet-chip button {
-  height: 24px;
-  padding: 0 10px;
+  height: 1.85rem;
+  padding: 0 0.77rem;
   border: none;
   border-radius: 999px;
   background: var(--panel-strong);
@@ -502,7 +515,7 @@ a {
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   align-items: center;
   min-height: 620px;
-  padding: 0 4.5rem;
+  padding: 0 var(--page-pad);
   overflow: hidden;
 }
 
@@ -531,7 +544,7 @@ a {
 
 .landing-hero h1 {
   margin: 0;
-  font-size: 5.6rem;
+  font-size: clamp(3.2rem, 6vw, 5.6rem);
   line-height: 0.98;
   font-weight: 300;
   letter-spacing: -0.035em;
@@ -633,7 +646,7 @@ a {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  padding: 0 4.5rem;
+  padding: 0 var(--page-pad);
 }
 
 .stat-tile {
@@ -663,7 +676,7 @@ a {
 }
 
 .landing-section {
-  padding: 5.5rem 4.5rem 0;
+  padding: 5.5rem var(--page-pad) 0;
 }
 
 .landing-section h2 {
@@ -740,6 +753,11 @@ a {
   margin-top: 2.2rem;
 }
 
+.steps.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+
 .step {
   display: flex;
   flex-direction: column;
@@ -769,7 +787,7 @@ a {
 
 .landing-cta {
   position: relative;
-  margin: 5.5rem 4.5rem 0;
+  margin: 5.5rem var(--page-pad) 0;
   padding: 5rem 2rem;
   text-align: center;
   overflow: hidden;
@@ -806,7 +824,7 @@ a {
 .landing-footer {
   display: flex;
   justify-content: space-between;
-  padding: 2.2rem 4.5rem 2.6rem;
+  padding: 2.2rem var(--page-pad) 2.6rem;
   color: var(--fg-muted);
   font-size: 0.9rem;
 }
@@ -819,6 +837,10 @@ a {
 
 .landing-footer a:hover {
   color: var(--fg);
+}
+
+.markets-table-wrap {
+  overflow: hidden;
 }
 
 table.markets-table {
@@ -860,16 +882,18 @@ table.markets-table td a:hover {
    leave, and every column scrolls inside its own panel rather than moving the page. */
 .terminal-grid {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr) 340px;
-  gap: 8px;
+  grid-template-columns: 16rem minmax(0, 1fr) 26.15rem;
+  gap: 0.62rem;
   height: calc(100vh - var(--header-h));
-  min-height: 720px;
-  padding: 0 10px 10px;
+  /* Mobile browsers count their collapsing toolbars in 100vh; dvh is the visible height. */
+  height: calc(100dvh - var(--header-h));
+  min-height: 55.38rem;
+  padding: 0 0.77rem 0.77rem;
 }
 
 @media (max-width: 1200px) {
   .terminal-grid {
-    grid-template-columns: 180px minmax(0, 1fr) 320px;
+    grid-template-columns: 13.85rem minmax(0, 1fr) 24.62rem;
   }
 }
 
@@ -877,14 +901,14 @@ table.markets-table td a:hover {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 10px 6px;
+  padding: 0.77rem 0.46rem;
   overflow-y: auto;
 }
 
 .terminal-rail .rail-header {
   display: flex;
   justify-content: space-between;
-  padding: 2px 8px 10px;
+  padding: 2px 0.62rem 0.77rem;
   font-family: var(--font-sans);
   font-size: 0.92rem;
   font-weight: 500;
@@ -898,9 +922,9 @@ table.markets-table td a:hover {
 .terminal-rail .rail-row {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0.38rem;
   width: 100%;
-  padding: 10px;
+  padding: 0.77rem;
   border: none;
   border-radius: 11px;
   background: transparent;
@@ -946,9 +970,9 @@ table.markets-table td a:hover {
 .rail-card {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  margin: 8px 4px 0;
-  padding: 12px;
+  gap: 0.69rem;
+  margin: 0.62rem 0.31rem 0;
+  padding: 0.92rem;
   border: 1px solid var(--border);
   border-radius: 13px;
 }
@@ -976,12 +1000,12 @@ table.markets-table td a:hover {
 
 .rail-card .signer-dots {
   display: flex;
-  gap: 4px;
+  gap: 0.31rem;
 }
 
 .rail-card .signer-dots span {
-  width: 7px;
-  height: 7px;
+  width: 0.54rem;
+  height: 0.54rem;
   border-radius: 50%;
   box-sizing: border-box;
   border: 1px solid var(--fg-dim);
@@ -995,7 +1019,7 @@ table.markets-table td a:hover {
 .terminal-center {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.62rem;
   min-width: 0;
   min-height: 0;
 }
@@ -1005,8 +1029,8 @@ table.markets-table td a:hover {
   align-items: center;
   gap: 1.6rem;
   flex-shrink: 0;
-  height: 62px;
-  padding: 0 18px;
+  height: 4.77rem;
+  padding: 0 1.38rem;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -1032,7 +1056,7 @@ table.markets-table td a:hover {
 .market-header .price-block {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: 0.77rem;
 }
 
 .market-header .last-price {
@@ -1052,7 +1076,7 @@ table.markets-table td a:hover {
 .market-header .stat-cell {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.31rem;
   font-family: var(--font-sans);
   font-size: 0.85rem;
   color: var(--fg-muted);
@@ -1068,7 +1092,7 @@ table.markets-table td a:hover {
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 320px;
+  min-height: 24.62rem;
   overflow: hidden;
 }
 
@@ -1084,7 +1108,7 @@ table.markets-table td a:hover {
   justify-content: space-between;
   align-items: center;
   gap: 0.5rem;
-  padding: 10px 12px 4px;
+  padding: 0.77rem 0.92rem 0.31rem;
 }
 
 .chart-toolbar .group {
@@ -1096,9 +1120,9 @@ table.markets-table td a:hover {
 .chart-toolbar button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 9px;
+  gap: 0.38rem;
+  height: 2rem;
+  padding: 0 0.69rem;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1130,7 +1154,7 @@ table.markets-table td a:hover {
 }
 
 .chart-toolbar .mode-toggle button {
-  height: 24px;
+  height: 1.85rem;
   font-family: var(--font-sans);
 }
 
@@ -1145,14 +1169,14 @@ table.markets-table td a:hover {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  padding: 0 12px 8px;
+  padding: 0 0.92rem 0.62rem;
 }
 
 .terminal-tabs {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  height: 272px;
+  height: 20.92rem;
   min-height: 0;
 }
 
@@ -1161,8 +1185,8 @@ table.markets-table td a:hover {
   align-items: stretch;
   gap: 1.6rem;
   flex-shrink: 0;
-  height: 42px;
-  padding: 0 16px;
+  height: 3.23rem;
+  padding: 0 1.23rem;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1203,11 +1227,11 @@ table.markets-table td a:hover {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 4px 6px;
+  padding: 0 0.31rem 0.46rem;
 }
 
 .terminal-tabs .tab-content > p {
-  margin: 1.4rem 12px;
+  margin: 1.4rem 0.92rem;
   color: var(--fg-muted);
   font-size: 0.95rem;
 }
@@ -1216,7 +1240,7 @@ table.markets-table td a:hover {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 14px;
+  padding: 1.08rem;
   overflow-y: auto;
 }
 
@@ -1225,7 +1249,7 @@ table.markets-table td a:hover {
 .field-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.46rem;
 }
 
 .field-group .field-label-row {
@@ -1240,8 +1264,8 @@ table.markets-table td a:hover {
 
 .field-group input {
   width: 100%;
-  height: 40px;
-  padding: 0 12px;
+  height: 3.08rem;
+  padding: 0 0.92rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 11px;
   background: rgba(255, 255, 255, 0.025);
@@ -1276,7 +1300,7 @@ table.markets-table td a:hover {
 
 .input-with-suffix .field-suffix {
   position: absolute;
-  right: 12px;
+  right: 0.92rem;
   font-size: 0.85rem;
   color: var(--fg-muted);
   pointer-events: none;
@@ -1284,12 +1308,12 @@ table.markets-table td a:hover {
 
 .quick-fill-row {
   display: flex;
-  gap: 5px;
+  gap: 0.38rem;
 }
 
 .quick-fill-row button {
   flex: 1;
-  height: 26px;
+  height: 2rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1302,7 +1326,7 @@ table.markets-table td a:hover {
 .leverage-row {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.62rem;
 }
 
 .leverage-row .field-label-row {
@@ -1329,7 +1353,7 @@ table.markets-table td a:hover {
 .leverage-row input[type='range'],
 input[type='range'].slim-range {
   width: 100%;
-  height: 16px;
+  height: 1.23rem;
   margin: 0;
   appearance: none;
   -webkit-appearance: none;
@@ -1368,8 +1392,8 @@ input[type='range'].slim-range::-moz-range-progress {
 input[type='range'].slim-range::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 1.08rem;
+  height: 1.08rem;
   margin-top: -5.5px;
   border: 2px solid var(--accent);
   border-radius: 50%;
@@ -1378,8 +1402,8 @@ input[type='range'].slim-range::-webkit-slider-thumb {
 
 .leverage-row input[type='range']::-moz-range-thumb,
 input[type='range'].slim-range::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 0.92rem;
+  height: 0.92rem;
   border: 2px solid var(--accent);
   border-radius: 50%;
   background: var(--bg);
@@ -1400,7 +1424,7 @@ input[type='range'].slim-range:focus-visible {
 
 .submit-row button {
   width: 100%;
-  height: 48px;
+  height: 3.69rem;
   border: none;
   border-radius: 13px;
   font-family: var(--font-sans);
@@ -1469,7 +1493,7 @@ input[type='range'].slim-range:focus-visible {
 
 .faucet-row button {
   width: 100%;
-  height: 38px;
+  height: 2.92rem;
   border: 1px solid var(--long);
   border-radius: 11px;
   background: transparent;
@@ -1510,14 +1534,14 @@ table.data-table th {
   color: var(--fg-muted);
   font-weight: 400;
   font-size: 0.8rem;
-  padding: 0.7rem 12px 0.55rem;
+  padding: 0.7rem 0.92rem 0.55rem;
   background: var(--bg-panel);
   white-space: nowrap;
 }
 
 table.data-table td {
-  padding: 0 12px;
-  height: 46px;
+  padding: 0 0.92rem;
+  height: 3.54rem;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   white-space: nowrap;
 }
@@ -1550,8 +1574,8 @@ table.data-table[data-testid='positions-table'] td:last-child {
 /* The side marker before each position's symbol. */
 .side-bar {
   display: inline-block;
-  width: 6px;
-  height: 6px;
+  width: 0.46rem;
+  height: 0.46rem;
   margin-right: 0.55rem;
   vertical-align: 0.1em;
   border-radius: 50%;
@@ -1580,7 +1604,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
 .close-control {
   display: inline-flex;
   align-items: stretch;
-  height: 26px;
+  height: 2rem;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   overflow: hidden;
@@ -1630,7 +1654,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
 }
 
 .close-partial button {
-  height: 22px;
+  height: 1.69rem;
   padding: 0 0.55rem;
   font-family: var(--font-mono);
   font-size: 0.78rem;
@@ -1654,7 +1678,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
 /* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */
 .manager-row td {
   height: auto;
-  padding: 0.6rem 12px 0.8rem;
+  padding: 0.6rem 0.92rem 0.8rem;
   background: rgba(255, 255, 255, 0.015);
 }
 
@@ -1681,8 +1705,8 @@ table.data-table[data-testid='positions-table'] td:last-child {
 
 .position-manager input {
   width: 8.5rem;
-  height: 32px;
-  padding: 0 10px;
+  height: 2.46rem;
+  padding: 0 0.77rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.025);
@@ -1697,7 +1721,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
 }
 
 .position-manager button {
-  height: 32px;
+  height: 2.46rem;
   padding: 0 0.9rem;
   border: 1px solid var(--border-strong);
   border-radius: 9px;
@@ -1721,7 +1745,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
-  margin: 0.8rem 12px;
+  margin: 0.8rem 0.92rem;
 }
 
 .pnl-summary dt {
@@ -1955,7 +1979,39 @@ table.data-table[data-testid='positions-table'] td:last-child {
   }
 }
 
-/* ---------- Narrower screens ---------- */
+/* ---------- Header menu button (phones) ---------- */
+
+.menu-button {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.38rem;
+  width: 2.92rem;
+  height: 2.92rem;
+  padding: 0 0.77rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.menu-button span {
+  display: block;
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--fg);
+  transition: transform 0.15s ease;
+}
+
+.menu-button[aria-expanded='true'] span:first-child {
+  transform: translateY(3.25px) rotate(45deg);
+}
+
+.menu-button[aria-expanded='true'] span:last-child {
+  transform: translateY(-3.25px) rotate(-45deg);
+}
+
+/* ---------- Responsive ---------- */
 
 /* Tabs scroll sideways rather than wrapping: a two-line tab bar moves every row below it. */
 .terminal-tabs .tab-bar {
@@ -1966,6 +2022,14 @@ table.data-table[data-testid='positions-table'] td:last-child {
 .terminal-tabs .tab-bar button {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Wide monitors: the terminal's side columns grow a little so the ticket and rail are not
+   dwarfed by a 1400px chart. */
+@media (min-width: 1800px) {
+  .terminal-grid {
+    grid-template-columns: 18rem minmax(0, 1fr) 28rem;
+  }
 }
 
 /* The market header sheds its least-used figures first, so the mark price never gets cut. */
@@ -1990,20 +2054,37 @@ table.data-table[data-testid='positions-table'] td:last-child {
   .nav-right .chain-health {
     display: none;
   }
+
+  .nav-links {
+    gap: 1.1rem;
+  }
 }
 
-/* Below this the three columns cannot all be usable at once: stack them, let the page
-   scroll, and turn the rail into a horizontal strip of markets. */
-@media (max-width: 1000px) {
+/* Tablets and phones: one scrolling column. The terminal's centre column dissolves
+   (`display: contents`) so its header, chart and tables can interleave with the ticket:
+   markets, header, chart, ticket, then the account tables — the order a trader on a small
+   screen needs them in. */
+@media (max-width: 900px) {
   .terminal-grid {
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-direction: column;
     height: auto;
     min-height: 0;
+    padding: 0 8px 8px;
+  }
+
+  .terminal-center {
+    display: contents;
   }
 
   .terminal-rail {
+    order: 1;
     flex-direction: row;
+    /* Each chip keeps its own height; stretched to the taller oracle card, a market
+       chip would carry a block of empty space under its price. */
+    align-items: flex-start;
     gap: 4px;
+    padding: 6px;
     overflow-x: auto;
     overflow-y: hidden;
   }
@@ -2014,27 +2095,282 @@ table.data-table[data-testid='positions-table'] td:last-child {
   }
 
   .terminal-rail .rail-row {
-    flex: 0 0 180px;
+    flex: 0 0 168px;
   }
 
   .terminal-rail .rail-card {
-    flex: 0 0 220px;
+    flex: 0 0 210px;
     margin: 0;
   }
 
+  .market-header {
+    order: 2;
+    flex-wrap: wrap;
+    height: auto;
+    gap: 10px 18px;
+    padding: 12px 14px;
+    white-space: normal;
+  }
+
+  .market-header .spacer {
+    flex-basis: 100%;
+    height: 0;
+  }
+
+  /* There is room for every figure once the header may wrap onto a second line. */
+  .market-header .stat-secondary,
+  .market-header .stat-tertiary {
+    display: flex;
+  }
+
   .chart-panel {
-    min-height: 420px;
+    order: 3;
+    flex: none;
+    height: min(62vh, 440px);
+    min-height: 300px;
   }
 
   .terminal-right {
+    order: 4;
     overflow: visible;
   }
 
+  .terminal-tabs {
+    order: 5;
+    height: auto;
+    min-height: 220px;
+    max-height: 520px;
+  }
+
+  /* The nav folds behind the menu button into a sheet under the header. */
+  .menu-button {
+    display: flex;
+  }
+
   .nav-header {
-    gap: 1rem;
+    gap: 0.8rem;
+    padding: 0 12px;
   }
 
   .nav-links {
+    position: absolute;
+    top: calc(var(--header-h) - 4px);
+    left: 8px;
+    right: 8px;
+    z-index: 30;
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.6);
+  }
+
+  .nav-links.open {
+    display: flex;
+  }
+
+  .nav-links a {
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    font-size: 1.15rem;
+  }
+
+  .nav-links a.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .nav-right {
+    margin-left: auto;
+  }
+
+  .nav-right .wallet-chip {
+    padding-left: 10px;
+  }
+
+  .nav-right .wallet-chip button {
+    display: none;
+  }
+
+  /* Landing */
+  .landing-hero {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    padding: 0 var(--page-pad);
+  }
+
+  .landing-hero .copy {
+    padding: 2.5rem 0 1rem;
+    gap: 1.4rem;
+  }
+
+  .landing-hero .brand-render {
+    order: -1;
+    height: 260px;
+    margin-top: 1rem;
+  }
+
+  .landing-hero .brand-render .ring-outer {
+    width: 300px;
+    height: 300px;
+  }
+
+  .landing-hero .brand-render .ring-inner {
+    width: 250px;
+    height: 250px;
+  }
+
+  .landing-hero .brand-render .sphere {
+    width: 180px;
+    height: 180px;
+  }
+
+  .landing-hero .brand-render .moon {
+    top: 34px;
+    right: 22%;
+  }
+
+  .stat-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0 var(--page-pad);
+  }
+
+  .stat-tile {
+    padding: 1.2rem 1.3rem;
+  }
+
+  .landing-section {
+    padding: 3.8rem var(--page-pad) 0;
+  }
+
+  .landing-split,
+  .steps,
+  .steps.two-up {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .landing-split {
+    gap: 2rem;
+  }
+
+  .landing-cta {
+    margin: 3.8rem var(--page-pad) 0;
+    padding: 3.5rem 1.2rem;
+  }
+
+  .landing-footer {
+    flex-direction: column;
+    gap: 1rem;
+    padding: 2rem var(--page-pad) 2.4rem;
+  }
+
+  .landing-footer a {
+    margin: 0 1.2rem 0 0;
+  }
+
+  .markets-table-wrap {
     overflow-x: auto;
+  }
+
+  table.markets-table th,
+  table.markets-table td {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    white-space: nowrap;
+  }
+}
+
+/* Phones. */
+@media (max-width: 560px) {
+  /* A phone header has no free centre: the wordmark and the wallet controls meet in the
+     middle, and an arc behind them only draws a line through both. The wordmark keeps
+     its own small eclipse, and the landing hero draws the large one. */
+  .eclipse-backdrop {
+    display: none;
+  }
+
+  .nav-header .wordmark {
+    font-size: 1.05rem;
+  }
+
+  .nav-right .wallet-chip-icon,
+  .nav-right .wallet-chip-name {
+    display: none;
+  }
+
+  .nav-right .connect-btn {
+    padding: 0 14px;
+  }
+
+  .landing-hero h1 {
+    font-size: 3.2rem;
+  }
+
+  .landing-hero p {
+    font-size: 1.1rem;
+  }
+
+  .landing-hero .cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stat-tile .value {
+    font-size: 2rem;
+  }
+
+  .landing-section h2 {
+    font-size: 2rem;
+  }
+
+  .landing-cta h2 {
+    font-size: 2.2rem;
+  }
+
+  .quote-demo {
+    padding: 1.2rem;
+  }
+
+  .quote-demo .big {
+    font-size: 1.6rem;
+  }
+
+  .step {
+    padding: 1.4rem;
+  }
+
+  /* Intervals on one line, chart type and log scale on the next. */
+  .chart-toolbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .pnl-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .position-manager {
+    gap: 0.8rem;
+  }
+
+  .banner {
+    flex-wrap: wrap;
+  }
+}
+
+/* Touch screens: 16px is the size below which iOS Safari zooms the page on focus, and a
+   zoomed trading ticket has to be pinched back by hand. */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea,
+  .field-group input,
+  .position-manager input,
+  .vault-panel input {
+    font-size: 16px;
   }
 }

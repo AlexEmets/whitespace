@@ -65,7 +65,7 @@ export function MarketsTable() {
       {loading ? <p>Loading…</p> : null}
       {error ? <p className="error-text">Failed to load markets: {error.message}</p> : null}
       {!loading && !error ? (
-        <div className="panel" style={{ overflow: 'hidden' }}>
+        <div className="panel markets-table-wrap">
           <table className="markets-table">
             <thead>
               <tr>

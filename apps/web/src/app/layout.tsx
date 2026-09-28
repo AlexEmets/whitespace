@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Azeret_Mono, Geologica } from 'next/font/google';
 import type { ReactNode } from 'react';
 import { NavHeader } from '@/components/NavHeader';
@@ -42,6 +42,16 @@ const azeretMono = Azeret_Mono({
 export const metadata: Metadata = {
   title: 'Whitespace — Whitechain Perp DEX',
   description: 'Trade perpetual futures on Whitechain testnet.',
+};
+
+/** `viewport-fit=cover` lets the page use the whole screen on notched phones (the header
+ * pads itself by the safe-area insets instead), and the theme colour tints the mobile
+ * browser's own toolbar to the page black rather than a white strip above the app. */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#030305',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

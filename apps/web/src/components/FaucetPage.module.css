@@ -17,9 +17,9 @@
   --pad: 2.25rem;
   /* The mockup puts the rule at 78.6% of a 1600px viewport — a 342px rail. */
   --rail: 25rem;
-  max-width: 1240px;
+  max-width: calc(1240px + 2 * var(--page-pad));
   margin: 0 auto;
-  padding: 0 24px 5rem;
+  padding: 0 var(--page-pad) 5rem;
 }
 
 /* ---------- Bands ---------- */

@@ -171,7 +171,7 @@ export default function LandingPage() {
       <MarketsTable />
 
       <section className="landing-section">
-        <div className="steps" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', marginTop: 0 }}>
+        <div className="steps two-up">
           <div className="step panel">
             <span className="step-index">Void Points</span>
             <h3>Not live yet.</h3>
