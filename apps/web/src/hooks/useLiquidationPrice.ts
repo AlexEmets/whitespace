@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
 import { useReadContract } from 'wagmi';
 import type { Address } from 'viem';
 import { PAIR_INFOS_ABI } from '@/lib/abi';
@@ -99,9 +100,23 @@ export function useEstimatedLiquidationPrice(params: {
     query: { enabled },
   });
 
+  // The entry is the live quote, so the arguments change every time the mark moves — every
+  // second or two — and each change is a new read that has no data until it lands. Null in
+  // that gap blanked the ticket's liquidation row and unmounted the risk preview on every
+  // tick. So the last answer stands in while the next one is in flight, but only for the
+  // same side and leverage: the market drifting moves the level by cents, whereas flipping
+  // to short or changing leverage moves it somewhere else entirely.
+  const shape = `${params.long}:${params.leverageRaw}:${params.maxLeverageRaw}`;
+  const last = useRef<{ shape: string; value: bigint } | null>(null);
+  useEffect(() => {
+    if (enabled && data !== undefined) last.current = { shape, value: data };
+  }, [enabled, data, shape]);
+
   // Gated on `enabled`, not just on `data`. wagmi keeps the last successful result in its
   // query cache, so a read that becomes disabled again (the trader clears the size field,
   // the price feed drops out) would otherwise keep rendering the previous answer as though
   // it still applied to the current inputs.
-  return enabled ? (data ?? null) : null;
+  if (!enabled) return null;
+  if (data !== undefined) return data;
+  return last.current?.shape === shape ? last.current.value : null;
 }
