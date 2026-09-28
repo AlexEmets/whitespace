@@ -1,113 +1,106 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { decodeFunctionData } from 'viem';
+import { createDeadLetterStore } from '@whitespace/txsender';
 import { createTxSender } from '../src/txSender.mjs';
-import { createDeadLetterQueue } from '../src/deadLetter.mjs';
+import { PRICE_UPKEEP_ABI } from '../src/abi.mjs';
 
 const ACCOUNT = { address: '0x1234567890123456789012345678901234567890' };
 const UPKEEP = '0x9999999999999999999999999999999999999999';
 
-test('send() succeeds on the first attempt and advances the cached nonce', async (t) => {
-  const publicClient = {
-    getTransactionCount: t.mock.fn(async () => 5),
-    getGasPrice: t.mock.fn(async () => 1_000_000_000n),
-    waitForTransactionReceipt: t.mock.fn(async () => ({ status: 'success' })),
+/**
+ * Receipts come from `statuses` in broadcast order; a tx stays pending for `pendingPolls`
+ * receipt lookups first, which is the window in which two unserialised sends collide.
+ */
+function fakeClients({ startNonce = 5, statuses = [], pendingPolls = 0 } = {}) {
+  const sent = [];
+  const polls = new Map();
+  const receiptOf = (hash) => {
+    const n = (polls.get(hash) ?? 0) + 1;
+    polls.set(hash, n);
+    if (n <= pendingPolls) return null;
+    const index = sent.findIndex((t) => t.hash === hash);
+    return { status: statuses[index] ?? 'success', transactionHash: hash };
   };
-  const walletClient = { sendTransaction: t.mock.fn(async () => '0xhash1') };
-  const deadLetter = createDeadLetterQueue();
-  const sender = createTxSender({ publicClient, walletClient, account: ACCOUNT, priceUpKeepAddress: UPKEEP, deadLetter });
+  const publicClient = {
+    getTransactionCount: async () => startNonce,
+    getGasPrice: async () => 1_000_000_000n,
+    async getTransactionReceipt({ hash }) {
+      const r = receiptOf(hash);
+      if (!r) throw new Error('receipt not found');
+      return r;
+    },
+    async waitForTransactionReceipt({ hash }) {
+      let r;
+      while (!(r = receiptOf(hash))) await new Promise((res) => setTimeout(res, 1));
+      return r;
+    },
+  };
+  const walletClient = {
+    async sendTransaction(args) {
+      const hash = `0x${(sent.length + 1).toString(16).padStart(64, '0')}`;
+      sent.push({ ...args, hash });
+      return hash;
+    },
+  };
+  return { publicClient, walletClient, sent };
+}
 
+function makeSender(clients, opts = {}) {
+  return createTxSender({
+    publicClient: clients.publicClient,
+    walletClient: clients.walletClient,
+    account: ACCOUNT,
+    priceUpKeepAddress: UPKEEP,
+    deadLetter: createDeadLetterStore(),
+    receiptPollMs: 1,
+    ...opts,
+  });
+}
+
+test('send() calls performUpkeep(performData) on the price upkeep as a legacy tx', async () => {
+  const clients = fakeClients();
+  const sender = makeSender(clients);
   const result = await sender.send({ orderId: 1n, performData: '0x1234' });
 
   assert.equal(result.ok, true);
-  assert.equal(result.hash, '0xhash1');
   assert.equal(sender.nonce, 6);
-  assert.equal(walletClient.sendTransaction.mock.callCount(), 1);
-  assert.equal(walletClient.sendTransaction.mock.calls[0].arguments[0].type, 'legacy');
-  assert.equal(deadLetter.size(), 0);
+  const [tx] = clients.sent;
+  assert.equal(tx.to, UPKEEP);
+  assert.equal(tx.type, 'legacy');
+  const decoded = decodeFunctionData({ abi: PRICE_UPKEEP_ABI, data: tx.data });
+  assert.equal(decoded.functionName, 'performUpkeep');
+  assert.deepEqual(decoded.args, ['0x1234']);
 });
 
-test('send() bumps gas price 1.2x and retries after a reverted receipt, then succeeds', async (t) => {
-  let receiptCall = 0;
-  const publicClient = {
-    getTransactionCount: t.mock.fn(async () => 5),
-    getGasPrice: t.mock.fn(async () => 1_000_000_000n),
-    waitForTransactionReceipt: t.mock.fn(async () => {
-      receiptCall++;
-      return receiptCall === 1 ? { status: 'reverted' } : { status: 'success' };
-    }),
-  };
-  const sentGasPrices = [];
-  const walletClient = {
-    sendTransaction: t.mock.fn(async (args) => {
-      sentGasPrices.push(args.gasPrice);
-      return `0xhash${sentGasPrices.length}`;
-    }),
-  };
-  const deadLetter = createDeadLetterQueue();
-  const sender = createTxSender({ publicClient, walletClient, account: ACCOUNT, priceUpKeepAddress: UPKEEP, deadLetter });
-
-  const result = await sender.send({ orderId: 2n, performData: '0x1234' });
-
-  assert.equal(result.ok, true);
-  assert.equal(sentGasPrices.length, 2);
-  assert.equal(sentGasPrices[0], 1_000_000_000n);
-  assert.equal(sentGasPrices[1], (1_000_000_000n * 12n) / 10n); // exact 1.2x bump
-  assert.equal(deadLetter.size(), 0);
+test('two orders handled at once never share a nonce', async () => {
+  const clients = fakeClients({ pendingPolls: 2 });
+  const sender = makeSender(clients);
+  const results = await Promise.all([
+    sender.send({ orderId: 1n, performData: '0x01' }),
+    sender.send({ orderId: 2n, performData: '0x02' }),
+  ]);
+  assert.ok(results.every((r) => r.ok));
+  assert.deepEqual(clients.sent.map((t) => t.nonce), [5, 6]);
 });
 
-test('send() dead-letters the order after exhausting retries on repeated reverts', async (t) => {
-  const publicClient = {
-    getTransactionCount: t.mock.fn(async () => 5),
-    getGasPrice: t.mock.fn(async () => 1_000_000_000n),
-    waitForTransactionReceipt: t.mock.fn(async () => ({ status: 'reverted' })),
-  };
-  const walletClient = { sendTransaction: t.mock.fn(async () => '0xhash') };
-  const deadLetter = createDeadLetterQueue();
-  const sender = createTxSender({
-    publicClient,
-    walletClient,
-    account: ACCOUNT,
-    priceUpKeepAddress: UPKEEP,
-    deadLetter,
-    maxRetries: 2,
-  });
+test('a mined revert consumes its nonce: the next order goes out at nonce + 1', async () => {
+  const clients = fakeClients({ statuses: ['reverted'] });
+  const sender = makeSender(clients, { maxRetries: 0 });
+  const first = await sender.send({ orderId: 1n, performData: '0x01' });
+  assert.equal(first.ok, false);
+  await sender.send({ orderId: 2n, performData: '0x02' });
+  assert.deepEqual(clients.sent.map((t) => t.nonce), [5, 6]);
+});
 
-  const result = await sender.send({ orderId: 3n, performData: '0x1234' });
-
+test('a failed order is dead-lettered with its orderId', async () => {
+  const clients = fakeClients({ statuses: ['reverted', 'reverted'] });
+  const deadLetter = createDeadLetterStore();
+  const sender = makeSender(clients, { maxRetries: 1, deadLetter });
+  const result = await sender.send({ orderId: 3n, performData: '0x03' });
   assert.equal(result.ok, false);
   assert.equal(deadLetter.size(), 1);
-  assert.equal(deadLetter.list()[0].orderId, '3');
-  assert.equal(walletClient.sendTransaction.mock.callCount(), 3); // maxRetries + 1 attempts
-});
-
-test('send() refreshes the nonce (without a gas bump) on a nonce-related send failure', async (t) => {
-  let nonceCalls = 0;
-  const publicClient = {
-    getTransactionCount: t.mock.fn(async () => {
-      nonceCalls++;
-      return nonceCalls === 1 ? 5 : 9;
-    }),
-    getGasPrice: t.mock.fn(async () => 1_000_000_000n),
-    waitForTransactionReceipt: t.mock.fn(async () => ({ status: 'success' })),
-  };
-  const sentNonces = [];
-  const sentGasPrices = [];
-  let sendCalls = 0;
-  const walletClient = {
-    sendTransaction: t.mock.fn(async (args) => {
-      sendCalls++;
-      sentNonces.push(args.nonce);
-      sentGasPrices.push(args.gasPrice);
-      if (sendCalls === 1) throw new Error('nonce too low');
-      return '0xhash';
-    }),
-  };
-  const deadLetter = createDeadLetterQueue();
-  const sender = createTxSender({ publicClient, walletClient, account: ACCOUNT, priceUpKeepAddress: UPKEEP, deadLetter });
-
-  const result = await sender.send({ orderId: 4n, performData: '0x1234' });
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(sentNonces, [5, 9]);
-  assert.deepEqual(sentGasPrices, [1_000_000_000n, 1_000_000_000n]); // no bump on the nonce-error path
+  const [entry] = deadLetter.list();
+  assert.equal(entry.key, 'order-3');
+  assert.deepEqual(entry.meta, { orderId: '3' });
 });

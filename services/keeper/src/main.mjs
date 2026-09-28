@@ -12,7 +12,7 @@ import { createClients } from './rpc.mjs';
 import { watchPriceRequested } from './watcher.mjs';
 import { createHttpReportSource } from './reportSource.mjs';
 import { createTxSender } from './txSender.mjs';
-import { createDeadLetterQueue } from './deadLetter.mjs';
+import { createDeadLetterStore } from '@whitespace/txsender';
 import { createKeeperEngine } from './keeperEngine.mjs';
 
 async function main() {
@@ -28,7 +28,7 @@ async function main() {
   });
   console.log(`[keeper] forwarder address=${account.address}`);
 
-  const deadLetter = createDeadLetterQueue({ filePath: config.deadLetterFilePath });
+  const deadLetter = createDeadLetterStore({ filePath: config.deadLetterFilePath });
   const reportSource = createHttpReportSource(config.publisherBaseUrl);
   const txSender = createTxSender({
     publicClient,
@@ -37,6 +37,7 @@ async function main() {
     priceUpKeepAddress: config.priceUpKeepAddress,
     deadLetter,
     maxRetries: config.maxRetries,
+    log: (level, message) => console[level === 'error' ? 'error' : 'warn'](`[keeper] ${message}`),
   });
   const engine = createKeeperEngine({
     reportSource,
