@@ -9,7 +9,7 @@ import {
   onLpWithdrawClaimed,
 } from '../src/lib/points.js';
 
-const trader = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19';
+const trader = '0x2b8ba090dedf879f8045c0dda5a78762ced90d19' as `0x${string}`;
 const TX = '0xcc' as `0x${string}`;
 const P = 1_000_000n; // one point, 6dp
 const USDW = 1_000_000n; // one USDW, 6dp
