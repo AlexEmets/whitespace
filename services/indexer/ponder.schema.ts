@@ -363,3 +363,88 @@ export const syncStatus = onchainTable('sync_status', (t) => ({
   blockNumber: t.bigint().notNull(),
   blockTimestamp: t.integer().notNull(),
 }));
+
+// ---------------------------------------------------------------------------
+// Season-one points (see packages/shared/src/points.mjs for the scoring rules
+// and src/lib/points.ts for how these tables are written). Points are carried
+// at 6 decimals (POINTS_DECIMALS), the same scale as USDW, so a fractional
+// point serialises as a decimal string and never touches a float — the same
+// discipline as every money column above.
+// ---------------------------------------------------------------------------
+
+/** Append-only ledger, one row per award. The id is deterministic per award so
+ * a handler replay (restart/reorg) is idempotent: a mission is
+ * `mission-${trader}-${missionId}` (once per wallet ever), a realised
+ * time-in-market award is `time-${closeOrderId}`, a day's streak award is
+ * `streak-${trader}-${dayIndex}`, and an LP accrual is `lp-${txHash}-${logIndex}`.
+ * `pointsRaw` is what was actually credited (after the daily cap); `requestedRaw`
+ * is what the rule produced before the cap, so the two together explain any gap. */
+export const pointsEvent = onchainTable(
+  'points_event',
+  (t) => ({
+    id: t.text().primaryKey(),
+    trader: t.hex().notNull(),
+    component: t.text().notNull(), // 'mission' | 'time' | 'streak' | 'lp'
+    pointsRaw: t.bigint().notNull(), // credited, PRECISION_6
+    requestedRaw: t.bigint().notNull(), // before the daily cap, PRECISION_6
+    dayIndex: t.integer().notNull(), // UTC day the award fell in
+    refId: t.text().notNull(), // missionId / closeOrderId / dayIndex / logId
+    at: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderIdx: index().on(table.trader),
+    traderComponentDayIdx: index().on(table.trader, table.component, table.dayIndex),
+  }),
+);
+
+/** Per-wallet running totals, one row per trader. The leaderboard is `ORDER BY
+ * total_raw DESC` over this table, and GET /points/:address reads one row — both
+ * avoid re-summing the ledger on every request. Kept in step with points_event
+ * by src/lib/points.ts, never written independently. */
+export const walletPoints = onchainTable(
+  'wallet_points',
+  (t) => ({
+    trader: t.hex().primaryKey(),
+    missionsRaw: t.bigint().notNull(),
+    timeRaw: t.bigint().notNull(),
+    streakRaw: t.bigint().notNull(),
+    lpRaw: t.bigint().notNull(),
+    totalRaw: t.bigint().notNull(),
+    updatedAt: t.integer().notNull(),
+  }),
+  (table) => ({
+    totalIdx: index().on(table.totalRaw),
+  }),
+);
+
+/** Per-(wallet, component, UTC day) accumulator that enforces the daily caps
+ * (100/day time-in-market, 50/day LP). Read-modify-written on each capped award. */
+export const pointsDaily = onchainTable('points_daily', (t) => ({
+  id: t.text().primaryKey(), // `${trader}-${component}-${dayIndex}`
+  trader: t.hex().notNull(),
+  component: t.text().notNull(),
+  dayIndex: t.integer().notNull(),
+  accruedRaw: t.bigint().notNull(), // PRECISION_6
+}));
+
+/** Streak state per wallet: the last UTC day that qualified (a position held
+ * >10 min closed that day), the current run length, and the longest ever. A
+ * close on day `lastQualifiedDay + 1` extends the run; any larger gap resets it. */
+export const walletStreak = onchainTable('wallet_streak', (t) => ({
+  trader: t.hex().primaryKey(),
+  lastQualifiedDay: t.integer().notNull(),
+  currentLength: t.integer().notNull(),
+  longest: t.integer().notNull(),
+  updatedAt: t.integer().notNull(),
+}));
+
+/** LP balance state per wallet, in USDW assets (PRECISION_6). LP points accrue
+ * over time (usdw-days), so the balance and the moment it was last accrued are
+ * kept here; each deposit/withdraw claim first credits the elapsed period at the
+ * old balance, then updates the balance. */
+export const walletLp = onchainTable('wallet_lp', (t) => ({
+  owner: t.hex().primaryKey(),
+  balanceRaw: t.bigint().notNull(), // USDW assets, PRECISION_6
+  lastAccrualAt: t.integer().notNull(),
+}));
