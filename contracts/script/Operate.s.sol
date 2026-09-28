@@ -15,6 +15,7 @@ import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.s
 import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
 import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
 import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
+import {OstiumPairInfos} from "../src/vendor/ostium/OstiumPairInfos.sol";
 import {OstiumTradesUpKeep} from "../src/vendor/ostium/OstiumTradesUpKeep.sol";
 import {WhitespaceVerifier} from "../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../src/oracle/WhitespacePriceUpKeep.sol";
@@ -206,7 +207,9 @@ contract OperateScript is Script {
     function _setFundingParams(Config memory c, uint16 pairIndex) internal {
         IOstiumPairInfos pairInfos =
             IOstiumPairInfos(IOstiumRegistry(c.registry).getContractAddress("pairInfos"));
-        (,,,,, uint64 springFactor,,,,,,) = pairInfos.pairFundingFees(pairIndex);
+        // Through the concrete contract: the interface getter is not `view`, so under
+        // `--broadcast` this read would be sent as a transaction.
+        (,,,,, uint64 springFactor,,,,,,) = OstiumPairInfos(address(pairInfos)).pairFundingFees(pairIndex);
         if (springFactor != 0) return;
 
         _relay(msg.sender);

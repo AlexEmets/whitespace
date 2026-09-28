@@ -183,9 +183,13 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @dev Caller must be `registry.gov()`. Each of the three is compared before it is written.
     function configureMarketEconomics(address registry, uint16 pairIndex, MarketSpec memory m) public {
         IOstiumPairInfos pi = IOstiumPairInfos(IOstiumRegistry(registry).getContractAddress("pairInfos"));
+        // Reads go through the concrete contract, whose public-mapping getters are `view`.
+        // `IOstiumPairInfos` declares them without `view`, and under `--broadcast` a non-view
+        // call is sent as a transaction — every run used to pay for 12 no-op reads here.
+        OstiumPairInfos piView = OstiumPairInfos(address(pi));
 
         (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilP, uint16 makerMaxLev, uint8 vaultFeeP) =
-            pi.pairOpeningFees(pairIndex);
+            piView.pairOpeningFees(pairIndex);
         IOstiumPairInfos.PairOpeningFees memory f = m.openingFees;
         if (
             makerFeeP != f.makerFeeP || takerFeeP != f.takerFeeP || usageFeeP != f.usageFeeP
@@ -196,7 +200,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         }
 
         (,,, int64 hillInflectionPoint, uint64 maxFundingFeePerBlock, uint64 springFactor,, uint16 hillPos, uint16 hillNeg, uint16 up, uint16 down,)
-        = pi.pairFundingFees(pairIndex);
+        = piView.pairFundingFees(pairIndex);
         IOstiumPairInfos.PairFundingFeesV2 memory fu = m.funding;
         if (
             hillInflectionPoint != fu.hillInflectionPoint || maxFundingFeePerBlock != fu.maxFundingFeePerBlock
@@ -208,7 +212,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         }
 
         (,, int256 lastLongPure, uint256 brokerPremium, uint64 maxRollover, uint32 lastUpdateBlock, bool negAllowed) =
-            OstiumPairInfos(address(pi)).pairRolloverFeesV2(pairIndex); // not on the interface
+            piView.pairRolloverFeesV2(pairIndex); // not on the interface
         IOstiumPairInfos.PairRolloverFeesV2 memory r = m.rollover;
         if (
             lastUpdateBlock == 0 || lastLongPure != r.lastLongPure || brokerPremium != r.brokerPremium
@@ -224,7 +228,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     ///      `onlyGovOrManager`, and it is the manager's day-to-day tuning knob.
     function configureMarketSpread(address registry, uint16 pairIndex, MarketSpec memory m) public {
         IOstiumPairInfos pi = IOstiumPairInfos(IOstiumRegistry(registry).getContractAddress("pairInfos"));
-        (uint256 thr, uint128 decay, uint256 k) = pi.pairDynamicSpreadParams(pairIndex);
+        (uint256 thr, uint128 decay, uint256 k) = OstiumPairInfos(address(pi)).pairDynamicSpreadParams(pairIndex);
         if (thr == m.spread.netVolThreshold && decay == m.spread.decayRate && k == m.spread.priceImpactK) return;
         _relay(msg.sender);
         pi.setPairDynamicSpreadParams(pairIndex, m.spread);

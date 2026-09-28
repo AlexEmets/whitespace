@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Vm} from "forge-std/Vm.sol";
+import {Vm, VmSafe} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {TestnetFixture} from "../helpers/TestnetFixture.sol";
@@ -315,6 +315,41 @@ contract DeployTestnetTest is TestnetFixture {
         assertEq(IOstiumPairsStorage(bare.pairsStorage).pairsCount(), 4, "markets listed");
         assertEq(OstiumVault(bare.vault).currentBalance(), LP_AMOUNT, "vault seeded");
         IOstiumRegistry(bare.registry).getContractAddress("tradesUpKeep");
+    }
+
+    /// @notice Under `forge script --broadcast`, a call the compiler sees as non-view is sent as a
+    ///         TRANSACTION. `IOstiumPairInfos` declares its mapping getters without `view`, so
+    ///         reading them through the interface made every deploy and every replay broadcast
+    ///         16 gas-paying no-op transactions (seen on the anvil rehearsal). Every read the
+    ///         script makes must reach the chain as a STATICCALL.
+    function test_theScriptOnlyReadsThroughStaticCalls() public {
+        vm.setEnv("REGISTRY_ADDRESS", vm.toString(d.registry));
+        vm.startStateDiffRecording();
+        script.configureTestnet();
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+
+        uint256 reads;
+        for (uint256 i = 0; i < accesses.length; i++) {
+            Vm.AccountAccess memory a = accesses[i];
+            // Only top-level calls become broadcast transactions; under `vm.startBroadcast` their
+            // accessor is the broadcasting key, not the script contract.
+            if (a.depth != 1 && a.depth != 2) continue;
+            if (a.accessor != owner && a.accessor != gov && a.accessor != manager && a.accessor != lp) continue;
+            if (a.kind == VmSafe.AccountAccessKind.StaticCall) {
+                reads++;
+                continue;
+            }
+            if (a.kind != VmSafe.AccountAccessKind.Call) continue;
+            fail(
+                string.concat(
+                    "replay sent a CALL (a broadcast transaction) to ",
+                    vm.toString(a.account),
+                    " with selector ",
+                    vm.toString(bytes4(a.data))
+                )
+            );
+        }
+        assertGt(reads, 0, "the replay read nothing, so it checked nothing");
     }
 
     function test_refusesAnyChainButTestnetAndAnvil() public {
