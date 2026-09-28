@@ -1,5 +1,5 @@
 import { ponder } from 'ponder:registry';
-import { order, position } from '../../ponder.schema.js';
+import { order } from '../../ponder.schema.js';
 import { updateIfExists } from '../lib/db.js';
 import {
   onOpenLimitPlaced,
@@ -9,6 +9,7 @@ import {
 } from '../lib/limitOrders.js';
 import { toMeta as meta } from '../lib/event.js';
 import { onOracleFeeChargedLimitCancelled } from '../lib/fees.js';
+import { onTpUpdated, onSlUpdated, onTopUpCollateral } from '../lib/positions.js';
 
 // --- Limit / stop entries (see src/lib/limitOrders.ts for which event fires when) ----
 
@@ -156,36 +157,15 @@ ponder.on('Trading:MarketCloseTimeoutExecutedV2', async ({ event, context }) => 
 // --- Position updates that don't open/close a trade -------------------------
 
 ponder.on('Trading:TpUpdated', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    { tp: event.args.newTp },
-    'TpUpdated',
-  );
+  await onTpUpdated(context.db, event.args);
 });
 
 ponder.on('Trading:SlUpdated', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    { sl: event.args.newSl },
-    'SlUpdated',
-  );
+  await onSlUpdated(context.db, event.args);
 });
 
 ponder.on('Trading:TopUpCollateralExecuted', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    (row: { collateral: bigint }) => ({
-      collateral: row.collateral + event.args.topUpAmount,
-      leverage: event.args.newLeverage,
-    }),
-    'TopUpCollateralExecuted',
-  );
+  await onTopUpCollateral(context.db, event.args);
 });
 
 // --- Collateral removal (its own sub-flow, own orderId) ---------------------

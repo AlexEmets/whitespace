@@ -29,12 +29,7 @@ describe('fee_charge', () => {
     ctx = makeFakeDb();
   });
 
-  it.each([
-    ['oracle', 'oracle'],
-    ['dev', 'dev'],
-    ['vault_opening', 'vault_opening'],
-    ['vault_liq', 'vault_liq'],
-  ] as const)('records a %s fee as one row keyed by tx and log index', async (kind) => {
+  it.each(['oracle', 'dev', 'vault_opening', 'vault_liq'] as const)('records a %s fee as one row keyed by tx and log index', async (kind) => {
     seedPosition(ctx, 5n);
     await onTradeFee(ctx.db, kind, { tradeId: 5n, trader: TRADER, amount: 1_234n }, meta(8));
     expect(ctx.rows(feeCharge)).toEqual([
