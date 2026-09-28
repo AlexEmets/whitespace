@@ -47,6 +47,15 @@ sudo systemctl enable --now whitespace-bot@a whitespace-bot@b whitespace-balance
 `/etc/sudoers.d/whitespace` must allow single-unit `systemctl start|stop|restart|is-active`
 for every unit above, including `whitespace-bot@a` and `whitespace-bot@b`.
 
+## Indexer schemas (the views pattern)
+
+Ponder will not start in a schema another build created, so every indexer build writes its own
+schema, `ws1874_<sha>` (`deploy/indexer-schema.sh`, written to `services/indexer/.env.build` by
+`deploy.sh`). `ponder start --views-schema ws1874` repoints the stable views in `ws1874` at the
+new build once it has synced. **Readers only ever use `ws1874`:** the API via
+`INDEXER_SCHEMA=ws1874`, the bots via `DATABASE_SCHEMA=ws1874`. During a resync the views still
+show the previous build. Old build schemas can be removed with `ponder db prune`.
+
 ## Secrets
 
 Keys live in `~/.whitespace-keys/` (dir 700, files 600): `keeper.json`, `signer*.json`,

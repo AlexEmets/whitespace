@@ -15,8 +15,15 @@ WorkingDirectory=/home/whitespace/whitespace/services/indexer
 # looks for `.env.local`), and dies with "Database schema required" when DATABASE_SCHEMA
 # is only in `.env`. systemd loading the file removes that ambiguity entirely.
 EnvironmentFile=/home/whitespace/whitespace/services/indexer/.env
+# Written by deploy/deploy.sh: DATABASE_SCHEMA=ws1874_<sha> for THIS build (deploy/indexer-schema.sh).
+# Later file wins, so it overrides any DATABASE_SCHEMA left in .env.
+EnvironmentFile=/home/whitespace/whitespace/services/indexer/.env.build
 Environment=HOME=/home/whitespace
-ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder start --hostname 127.0.0.1
+# The views pattern: each build writes its own schema; once it is synced Ponder repoints the
+# stable views in `ws1874` at it. The API (INDEXER_SCHEMA) and the bots (DATABASE_SCHEMA) read
+# only `ws1874`, so an indexer deploy never breaks them, and the previous build keeps serving
+# until the new one is ready.
+ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder start --hostname 127.0.0.1 --schema ${DATABASE_SCHEMA} --views-schema ws1874
 Restart=always
 RestartSec=5
 # Measured 203 MB PSS at peak during historical backfill, which is the heaviest phase.

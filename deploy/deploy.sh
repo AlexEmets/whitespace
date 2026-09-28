@@ -19,6 +19,9 @@ main() {
   echo "==> installing dependencies"
   pnpm install --frozen-lockfile
 
+  echo "==> naming the indexer build schema"
+  write_indexer_build_env
+
   echo "==> stopping memory-heavy units for the build"
   # One `sudo systemctl <verb> <single-unit>` per call, never a multi-unit line.
   # /etc/sudoers.d/whitespace matches the WHOLE command including its arguments, so
@@ -78,6 +81,15 @@ build_web() {
   echo "    build failed — clearing .next and retrying once" >&2
   rm -rf apps/web/.next
   pnpm --filter @whitespace/web build
+}
+
+# Ponder refuses a schema another build created, so each indexer build gets its own (see
+# deploy/indexer-schema.sh); readers use the stable `ws1874` views Ponder repoints on ready.
+write_indexer_build_env() {
+  local schema
+  schema=$(deploy/indexer-schema.sh)
+  printf 'DATABASE_SCHEMA=%s\n' "$schema" > services/indexer/.env.build
+  echo "    indexer schema: $schema (views: ws1874)"
 }
 
 ws_ctl() {
