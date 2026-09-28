@@ -27,6 +27,14 @@ contract TradingTest is TestnetTrading {
     IOstiumTradingStorage.OpenOrderType internal constant LIMIT = IOstiumTradingStorage.OpenOrderType.LIMIT;
     IOstiumTradingStorage.OpenOrderType internal constant STOP = IOstiumTradingStorage.OpenOrderType.STOP;
 
+    /// @dev The position most tests open: 1,000 USDW at 10x into an empty BTC market (taker).
+    ///      Taker fee: 10,000 notional * 0.03% = 3 USDW (half dev, half vault).
+    uint256 internal constant OPEN_FEE = 1_000e6 * 1_000 / 100 * TAKER_FEE_P / 1e6 / 100;
+    /// @dev Its stored collateral: 1,000 - 3 taker - 0.10 oracle = 996.9 USDW.
+    uint256 internal constant POS = 1_000e6 - OPEN_FEE - ORACLE_FEE;
+    /// @dev Its notional, which later collateral changes hold fixed: 996.9 * 10x = 9,969 USDW.
+    uint256 internal constant NOTIONAL = POS * 1_000 / 100;
+
     function setUp() public {
         _setUpTestnet();
         _fundTrader(trader, 1_000_000e6);
@@ -37,8 +45,8 @@ contract TradingTest is TestnetTrading {
     // Market open — success
     // =====================================================================================
 
-    /// @notice 1,000 USDW at 10x on BTC: collateral escrowed at request; at fill the 0.06% taker
-    ///         fee (6 USDW, half to the vault), the $1 oracle fee, the ask-side fill, the
+    /// @notice 1,000 USDW at 10x on BTC: collateral escrowed at request; at fill the 0.03% taker
+    ///         fee (3 USDW, half to the vault), the $0.10 oracle fee, the ask-side fill, the
     ///         max-gain TP, the OI and the group collateral are all exactly as specified.
     function test_marketOpen_fillsAtTheAskAndAccountsEveryUsdw() public {
         uint256 traderBefore = _bal(trader);
@@ -58,16 +66,17 @@ contract TradingTest is TestnetTrading {
         uint256 fill = _spreadFill(_basePrice(BTC), true, true);
         assertEq(fill, 65_006.5e18, "one basis point above mid");
         assertEq(tr.openPrice, fill, "long fills at the ask");
-        assertEq(tr.collateral, 993e6, "1000 - 3 dev - 3 vault - 1 oracle");
+        assertEq(OPEN_FEE, 3e6, "0.03% of 10,000");
+        assertEq(tr.collateral, POS, "1000 - 1.5 dev - 1.5 vault - 0.1 oracle");
         assertEq(tr.leverage, 1_000, "leverage kept");
         assertEq(tr.tp, fill + fill * 900e6 / 1e6 / 1_000, "tp defaults to the 900% max gain price");
         assertEq(tr.sl, 0, "no stop loss");
-        assertEq(ts.devFees(), devBefore + 3e6 + ORACLE_FEE, "dev half + oracle fee");
-        assertEq(_bal(d.vault), vaultBefore + 3e6, "vault half of the fee");
-        assertEq(_bal(d.tradingStorage), storageBefore + 997e6, "collateral + dev fees stay in storage");
-        assertEq(_oi(BTC, true), uint256(993e6) * 1e12 * 1_000 / 100 * 1e18 / fill, "long OI in units");
+        assertEq(ts.devFees(), devBefore + OPEN_FEE / 2 + ORACLE_FEE, "dev half + oracle fee");
+        assertEq(_bal(d.vault), vaultBefore + OPEN_FEE / 2, "vault half of the fee");
+        assertEq(_bal(d.tradingStorage), storageBefore + 1_000e6 - OPEN_FEE / 2, "collateral + dev fees stay in storage");
+        assertEq(_oi(BTC, true), POS * 1e12 * 1_000 / 100 * 1e18 / fill, "long OI in units");
         assertEq(_oi(BTC, false), 0, "no short OI");
-        assertEq(ps.groupCollateral(BTC, true), 993e6, "group collateral");
+        assertEq(ps.groupCollateral(BTC, true), POS, "group collateral");
         assertEq(ts.pendingMarketOpenCount(trader, BTC), 0, "pending cleared");
         assertEq(ts.pendingOrderIdsCount(trader), 0, "order id cleared");
         assertEq(ts.openTradesCount(trader, BTC), 1, "one open trade");
@@ -79,7 +88,7 @@ contract TradingTest is TestnetTrading {
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.openPrice, _spreadFill(_basePrice(BTC), false, true), "short fills at the bid");
         assertEq(tr.openPrice, 64_993.5e18, "one basis point below mid");
-        assertEq(_oi(BTC, false), uint256(993e6) * 1e12 * 1_000 / 100 * 1e18 / tr.openPrice, "short OI");
+        assertEq(_oi(BTC, false), POS * 1e12 * 1_000 / 100 * 1e18 / tr.openPrice, "short OI");
         assertEq(_oi(BTC, true), 0, "no long OI");
     }
 
@@ -157,23 +166,35 @@ contract TradingTest is TestnetTrading {
             _tradeFull(trader, BTC, 1_000_000e6 + 1, 100, true, p, 0, 0), MARKET, 100,
             abi.encodeWithSelector(IOstiumTrading.AboveMaxAllowedCollateral.selector)
         );
-        // $1 at 1x: the $1 oracle fee alone eats it
+        // BelowFees when taker fee + oracle fee >= collateral. At 1x the taker fee on c is
+        // floor(c * 3 / 10_000): 0.100030 USDW pays 0.000030 + 0.100000 == all of it and reverts;
+        // one micro-USDW more clears the fees (and is then too small a position).
+        uint256 atFees = ORACLE_FEE + 30;
+        assertEq(_takerFee(atFees, 100) + ORACLE_FEE, atFees, "fees consume exactly the collateral");
         _openReverts(
-            _tradeFull(trader, BTC, 1e6, 100, true, p, 0, 0), MARKET, 100,
+            _tradeFull(trader, BTC, atFees, 100, true, p, 0, 0), MARKET, 100,
             abi.encodeWithSelector(IOstiumTrading.BelowFees.selector)
+        );
+        _openReverts(
+            _tradeFull(trader, BTC, atFees + 1, 100, true, p, 0, 0), MARKET, 100,
+            abi.encodeWithSelector(IOstiumTrading.BelowMinLevPos.selector)
         );
     }
 
-    /// @notice minLevPos is $10 of post-fee notional. At 1x, 11.006603 USDW leaves exactly
-    ///         10.000000 after the $1 oracle fee and 0.006603 of taker fee; one micro-USDW less
-    ///         does not.
+    /// @notice minLevPos is $10 of post-fee notional. At 1x, 10.103030 USDW leaves exactly
+    ///         10.000000 after the $0.10 oracle fee and 0.003030 of taker fee; one micro-USDW
+    ///         less does not.
     function test_openTrade_minimumPositionSizeBoundary() public {
         uint192 p = _upx(BTC);
+        uint256 minimum = 10_103_030;
+        assertEq(_takerFee(minimum, 100), 3_030, "0.03% of 10.103030, floored");
+        assertEq(_postFee(minimum, 100), 10e6, "exactly $10 after fees");
+        assertEq(_postFee(minimum - 1, 100), 10e6 - 1, "one micro-USDW short");
         _openReverts(
-            _tradeFull(trader, BTC, 11_006_602, 100, true, p, 0, 0), MARKET, 100,
+            _tradeFull(trader, BTC, minimum - 1, 100, true, p, 0, 0), MARKET, 100,
             abi.encodeWithSelector(IOstiumTrading.BelowMinLevPos.selector)
         );
-        _requestOpen(_tradeFull(trader, BTC, 11_006_603, 100, true, p, 0, 0), 100);
+        _requestOpen(_tradeFull(trader, BTC, minimum, 100, true, p, 0, 0), 100);
         assertEq(ts.pendingMarketOpenCount(trader, BTC), 1, "exactly $10 post-fee is accepted");
     }
 
@@ -207,7 +228,7 @@ contract TradingTest is TestnetTrading {
     // Market open — every cancel reason the testnet configuration reaches
     // =====================================================================================
 
-    /// @dev Asserts the refund path of a cancelled open: collateral minus the $1 oracle fee back
+    /// @dev Asserts the refund path of a cancelled open: collateral minus the oracle fee back
     ///      to the trader, the fee to devFees, nothing stored.
     function _assertOpenCanceled(
         uint256 orderId,
@@ -294,7 +315,9 @@ contract TradingTest is TestnetTrading {
             assertEq(ts.openTradesCount(trader, BTC), 0, "round trip closed");
         }
         (uint256 buyVol,,) = pairInfos.pairDynamicSpreadState(BTC);
-        assertEq(buyVol, 2 * uint256(9_399e6) * 10_000 * 1e10, "two post-fee 939,900 opens recorded");
+        // post-fee collateral: 10,000 - 1,000,000 * 0.03% - 0.10 = 9,699.9 -> 969,990 notional
+        assertEq(_postFee(10_000e6, 10_000), 9_699.9e6, "post-fee collateral at 100x");
+        assertEq(buyVol, 2 * _postFee(10_000e6, 10_000) * 10_000 * 1e10, "two post-fee 969,990 opens recorded");
 
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 10_000e6, 10_000, true, 0), 500);
         _assertOpenCanceled(id, BTC, 10_000e6, IOstiumTradingCallbacks.CancelReason.PRICE_IMPACT, _report(BTC, t, _basePrice(BTC)));
@@ -388,15 +411,16 @@ contract TradingTest is TestnetTrading {
         assertEq(_oi(BTC, true), 0, "OI released");
         assertEq(ps.groupCollateral(BTC, true), 0, "group collateral released");
         assertEq(ts.devFees(), devBefore, "a full close costs no bond");
-        assertEq(_bal(d.tradingStorage), storageBefore - 993e6, "whole collateral leaves storage");
+        assertEq(_bal(d.tradingStorage), storageBefore - POS, "whole collateral leaves storage");
         uint256 toTrader = _bal(trader) - traderBefore;
         uint256 toVault = _bal(d.vault) - vaultBefore;
-        assertEq(toTrader + toVault, 993e6, "collateral split between trader and vault, nothing lost");
-        assertGt(toTrader, 990e6, "a flat round trip returns ~0.2% less than collateral");
+        assertEq(toTrader + toVault, POS, "collateral split between trader and vault, nothing lost");
+        // the round trip crosses the 1bp half spread twice at 10x: ~0.2% (~2 USDW) of 996.9
+        assertGt(toTrader, POS - 3e6, "a flat round trip returns ~0.2% less than collateral");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "trigger cleared");
     }
 
-    /// @notice Closing half: half the collateral and exactly half the OI leave; the one-dollar
+    /// @notice Closing half: half the collateral and exactly half the OI leave; the oracle-fee
     ///         bond is taken from the remaining position, whose notional is held fixed.
     function test_partialClose_halvesThePositionAndChargesTheBondFromWhatRemains() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
@@ -408,12 +432,13 @@ contract TradingTest is TestnetTrading {
         _closeAt(trader, BTC, 0, 5_000, _basePrice(BTC));
 
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        assertEq(tr.collateral, 496.5e6 - ORACLE_FEE, "half left, minus the bond");
-        assertEq(tr.leverage, uint32(uint256(4_965e6) * 1e6 / (495.5e6) / 1e4), "fixed notional, higher leverage");
-        assertEq(_oi(BTC, true), oiBefore - oiBefore * 496.5e6 / 993e6, "exactly half the OI released");
+        // half of 996.9 is 498.45; the 0.10 bond leaves 498.35 carrying 4,984.5 of notional
+        assertEq(tr.collateral, POS / 2 - ORACLE_FEE, "half left, minus the bond");
+        assertEq(tr.leverage, uint32(NOTIONAL / 2 * 1e6 / (POS / 2 - ORACLE_FEE) / 1e4), "fixed notional, higher leverage");
+        assertEq(_oi(BTC, true), oiBefore - oiBefore * (POS / 2) / POS, "exactly half the OI released");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "bond to dev fees");
-        assertEq((_bal(trader) - traderBefore) + (_bal(d.vault) - vaultBefore), 496.5e6, "closed half split");
-        assertEq(ps.groupCollateral(BTC, true), 495.5e6, "group collateral follows the trade");
+        assertEq((_bal(trader) - traderBefore) + (_bal(d.vault) - vaultBefore), POS / 2, "closed half split");
+        assertEq(ps.groupCollateral(BTC, true), POS / 2 - ORACLE_FEE, "group collateral follows the trade");
     }
 
     function test_closeTradeMarket_rejectsMalformedRequests() public {
@@ -462,8 +487,8 @@ contract TradingTest is TestnetTrading {
         _deliverAt(id, BTC, t, _px(BTC, -200));
 
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        assertEq(tr.collateral, 992e6, "bond out of collateral");
-        assertEq(tr.leverage, uint32(uint256(9_930e6) * 1e6 / 992e6 / 1e4), "notional held fixed");
+        assertEq(tr.collateral, POS - ORACLE_FEE, "bond out of collateral");
+        assertEq(tr.leverage, uint32(NOTIONAL * 1e6 / (POS - ORACLE_FEE) / 1e4), "notional held fixed");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "bond to dev fees");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "can close again");
     }
@@ -477,7 +502,7 @@ contract TradingTest is TestnetTrading {
             id, tradeId, trader, BTC, 0, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED
         );
         _deliver(id, _closedReport(BTC, t));
-        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, 992e6, "bond charged");
+        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS - ORACLE_FEE, "bond charged");
     }
 
     function test_closeTimeout_releasesThePendingCloseAndCanRetry() public {
@@ -499,7 +524,7 @@ contract TradingTest is TestnetTrading {
         vm.prank(trader);
         trading.closeTradeMarketTimeout(id, false);
         assertEq(_bal(trader), before, "no USDW moves");
-        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, 993e6, "position intact");
+        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "position intact");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "unlocked");
         assertEq(ts.pendingOrderIdsCount(trader), 0, "no pending order");
         vm.revertToState(snap);
@@ -552,7 +577,7 @@ contract TradingTest is TestnetTrading {
 
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.openPrice, _spreadFill(63_900e18, true, true), "fills at the post-impact price, not the target");
-        assertEq(tr.collateral, 993e6, "same fees as a market order");
+        assertEq(tr.collateral, POS, "same fees as a market order");
         assertFalse(ts.hasOpenLimitOrder(trader, BTC, 0), "order consumed");
         assertEq(ts.openLimitOrdersCount(trader, BTC), 0, "count");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, OPEN), 0, "trigger cleared");
@@ -702,7 +727,7 @@ contract TradingTest is TestnetTrading {
         emit IOstiumTrading.OpenLimitCanceled(trader, BTC, 0);
         vm.prank(trader);
         trading.cancelOpenLimitOrder(BTC, 0);
-        assertEq(_bal(trader), before + 999e6, "refund");
+        assertEq(_bal(trader), before + 1_000e6 - ORACLE_FEE, "refund");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "fee");
         assertEq(_bal(d.tradingStorage), ts.devFees(), "only fees left in storage");
         assertFalse(ts.hasOpenLimitOrder(trader, BTC, 0), "gone");
@@ -741,8 +766,8 @@ contract TradingTest is TestnetTrading {
         _deliverAt(id, BTC, t, 66_100e18);
         assertEq(ts.openTradesCount(trader, BTC), 0, "closed");
         uint256 paid = _bal(trader) - before;
-        assertGt(paid, 993e6, "a winner");
-        assertEq(_bal(d.vault), vaultBefore - (paid - 993e6), "the vault pays the profit");
+        assertGt(paid, POS, "a winner");
+        assertEq(_bal(d.vault), vaultBefore - (paid - POS), "the vault pays the profit");
         assertEq(_oi(BTC, true), 0, "OI released");
     }
 
@@ -755,7 +780,7 @@ contract TradingTest is TestnetTrading {
             id, tradeId, trader, BTC, TP, IOstiumTradingCallbacks.CancelReason.NOT_HIT
         );
         _deliverAt(id, BTC, t, 66_000e18); // bid 65,993.4 < TP
-        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, 993e6, "untouched");
+        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "untouched");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, TP), 0, "trigger cleared");
     }
 
@@ -767,8 +792,8 @@ contract TradingTest is TestnetTrading {
         _deliverAt(id, BTC, t, 64_000e18); // mid exactly at SL
         assertEq(ts.openTradesCount(trader, BTC), 0, "closed at the SL");
         uint256 paid = _bal(trader) - before;
-        assertLt(paid, 993e6, "a loser");
-        assertEq(_bal(d.vault) - vaultBefore, 993e6 - paid, "the vault keeps the loss");
+        assertLt(paid, POS, "a loser");
+        assertEq(_bal(d.vault) - vaultBefore, POS - paid, "the vault keeps the loss");
     }
 
     function test_sl_notHitOneWeiAbove() public {
@@ -863,14 +888,14 @@ contract TradingTest is TestnetTrading {
         uint256 before = _bal(trader);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.TopUpCollateralExecuted(tradeId, trader, BTC, 993e6, 500);
+        emit IOstiumTrading.TopUpCollateralExecuted(tradeId, trader, BTC, POS, 500);
         vm.prank(trader);
-        trading.topUpCollateral(BTC, 0, 993e6);
+        trading.topUpCollateral(BTC, 0, POS);
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        assertEq(tr.collateral, 1_986e6, "collateral doubled");
+        assertEq(tr.collateral, 2 * POS, "collateral doubled");
         assertEq(tr.leverage, 500, "leverage halved");
-        assertEq(_bal(trader), before - 993e6, "charged exactly");
-        assertEq(ps.groupCollateral(BTC, true), 1_986e6, "group collateral");
+        assertEq(_bal(trader), before - POS, "charged exactly");
+        assertEq(ps.groupCollateral(BTC, true), 2 * POS, "group collateral");
         assertEq(ts.getOpenTradeInfo(trader, BTC, 0).initialLeverage, 1_000, "initial leverage kept");
     }
 
@@ -880,12 +905,14 @@ contract TradingTest is TestnetTrading {
         _open(trader, BTC, 1_000e6, 1_000, true);
         uint256 before = _bal(trader);
         vm.prank(trader);
-        trading.topUpCollateral(BTC, 0, 1_000e6);
+        trading.topUpCollateral(BTC, 0, 1_050e6);
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        uint256 expected = uint256(9_930e6) * 100 / 499;
-        assertEq(tr.leverage, 499, "rounded up from 498.24");
-        assertEq(tr.collateral, expected, "collateral sized for 4.99x");
-        assertEq(before - _bal(trader), expected - 993e6, "charged less than asked");
+        // 9,969 notional over 996.9 + 1,050 = 2,046.9 is 4.8703x -> the next step up is 4.88x
+        uint256 expected = NOTIONAL * 100 / 488;
+        assertEq(tr.leverage, 488, "rounded up from 487.03");
+        assertEq(tr.collateral, expected, "collateral sized for 4.88x");
+        assertEq(before - _bal(trader), expected - POS, "charged less than asked");
+        assertLt(expected - POS, 1_050e6, "strictly less");
     }
 
     function test_topUp_rejections() public {
@@ -904,7 +931,7 @@ contract TradingTest is TestnetTrading {
         trading.setMaxAllowedCollateral(1_500e6);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.AboveMaxAllowedCollateral.selector));
         vm.prank(trader);
-        trading.topUpCollateral(BTC, 0, 993e6);
+        trading.topUpCollateral(BTC, 0, POS);
 
         _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
@@ -913,10 +940,11 @@ contract TradingTest is TestnetTrading {
     }
 
     function test_topUp_cannotTakeLeverageBelowTheMinimum() public {
-        _open(trader, BTC, 1_000e6, 200, true); // 997.8 USDW at 2x after fees
+        _open(trader, BTC, 1_000e6, 200, true); // 1,000 - 2,000 * 0.03% - 0.10 = 999.3 USDW at 2x
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        assertEq(tr.collateral, 997.8e6, "fees at 2x");
-        // 1995.6 notional over 2997.8 is 0.6657x -> rounded up to 0.67x, still below 1x
+        assertEq(tr.collateral, _postFee(1_000e6, 200), "fees at 2x");
+        assertEq(tr.collateral, 999.3e6, "999.3 after fees");
+        // 1998.6 notional over 2999.3 is 0.6664x -> rounded up to 0.67x, still below 1x
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(67)));
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, 2_000e6);
@@ -930,18 +958,18 @@ contract TradingTest is TestnetTrading {
         _open(trader, BTC, 1_000e6, 1_000, true);
         uint256 before = _bal(trader);
         uint256 devBefore = ts.devFees();
-        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, 496.5e6);
+        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, POS / 2);
         assertEq(_bal(trader), before - ORACLE_FEE, "oracle fee paid up front from the wallet");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "to dev fees");
-        assertEq(ts.getPendingRemoveCollateral(id).removeAmount, 496.5e6, "request stored");
+        assertEq(ts.getPendingRemoveCollateral(id).removeAmount, POS / 2, "request stored");
         assertGt(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "locked");
 
         _deliverAt(id, BTC, t, _basePrice(BTC));
         IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
-        assertEq(tr.collateral, 496.5e6, "half removed");
+        assertEq(tr.collateral, POS / 2, "half removed");
         assertEq(tr.leverage, 2_000, "notional fixed, leverage doubled");
-        assertEq(_bal(trader), before - ORACLE_FEE + 496.5e6, "paid out");
-        assertEq(ps.groupCollateral(BTC, true), 496.5e6, "group collateral");
+        assertEq(_bal(trader), before - ORACLE_FEE + POS / 2, "paid out");
+        assertEq(ps.groupCollateral(BTC, true), POS / 2, "group collateral");
         assertEq(ts.getOpenTradeInfo(trader, BTC, 0).initialLeverage, 2_000, "initial leverage raised");
         assertEq(ts.getPendingRemoveCollateral(id).trader, address(0), "request cleared");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
@@ -950,7 +978,11 @@ contract TradingTest is TestnetTrading {
     function test_removeCollateral_roundsTheAmountToAWholeLeverageStep() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         (uint256 id,) = _requestRemove(trader, BTC, 0, 400e6);
-        assertEq(ts.getPendingRemoveCollateral(id).removeAmount, 993e6 - uint256(9_930e6) * 100 / 1_674, "rounded down to 16.74x");
+        // 9,969 notional over 996.9 - 400 = 596.9 is 16.7013x -> rounded down to 16.70x, so the
+        // amount shrinks to what leaves 9,969 / 16.70 = 596.946 USDW
+        uint256 amount = POS - NOTIONAL * 100 / 1_670;
+        assertLt(amount, 400e6, "rounded down");
+        assertEq(ts.getPendingRemoveCollateral(id).removeAmount, amount, "rounded down to 16.70x");
     }
 
     function _assertRemoveRejected(uint256 id, IOstiumTradingCallbacks.CancelReason reason, bytes memory report) internal {
@@ -961,29 +993,29 @@ contract TradingTest is TestnetTrading {
         emit IOstiumTradingCallbacks.RemoveCollateralRejected(id, tradeId, trader, BTC, amount, reason);
         _deliver(id, report);
         assertEq(_bal(trader), before, "nothing paid");
-        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, 993e6, "position untouched");
+        assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "position untouched");
         assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
     }
 
     function test_removeCollateral_rejectedUnderLiquidation() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, 993e6 - 99.3e6); // to 100x
+        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, POS - POS / 10); // to 100x
         _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.UNDER_LIQUIDATION, _report(BTC, t, _px(BTC, -100)));
     }
 
     function test_removeCollateral_rejectedMarketClosedPausedAndMaxLeverage() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, 496.5e6);
+        (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, POS / 2);
         _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED, _closedReport(BTC, t));
 
-        (id, t) = _requestRemove(trader, BTC, 0, 496.5e6);
+        (id, t) = _requestRemove(trader, BTC, 0, POS / 2);
         vm.prank(gov);
         ps.setPairMaxLeverage(BTC, 1_500);
         _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE, _report(BTC, t, _basePrice(BTC)));
         vm.prank(gov);
         ps.setPairMaxLeverage(BTC, 10_000);
 
-        (id, t) = _requestRemove(trader, BTC, 0, 496.5e6);
+        (id, t) = _requestRemove(trader, BTC, 0, POS / 2);
         vm.prank(manager);
         callbacks.pause();
         _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.PAUSED, _report(BTC, t, _basePrice(BTC)));
@@ -997,9 +1029,10 @@ contract TradingTest is TestnetTrading {
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
         trading.removeCollateral(BTC, 0, 0);
         vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
-        trading.removeCollateral(BTC, 0, 993e6);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(331_000)));
-        trading.removeCollateral(BTC, 0, 990e6);
+        trading.removeCollateral(BTC, 0, POS);
+        // leaving 3 USDW under 9,969 of notional is 3,323x
+        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(NOTIONAL * 100 / 3e6)));
+        trading.removeCollateral(BTC, 0, POS - 3e6);
         vm.stopPrank();
 
         _requestRemove(trader, BTC, 0, 100e6);
@@ -1032,7 +1065,7 @@ contract TradingTest is TestnetTrading {
         // exits and risk reduction keep working
         vm.startPrank(trader);
         trading.updateSl(BTC, 0, 64_000e18);
-        trading.topUpCollateral(BTC, 0, 993e6);
+        trading.topUpCollateral(BTC, 0, POS);
         vm.stopPrank();
         assertEq(ts.getOpenTrade(trader, BTC, 0).leverage, 500, "top-up while paused");
         _closeAt(trader, BTC, 0, 0, _basePrice(BTC));

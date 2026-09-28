@@ -31,7 +31,7 @@ contract FindingsTest is TestnetTrading {
     ///
     ///         Reproduction on WBT (100k cap, K = 1e19): five same-block 100k long round trips
     ///         load ~490k of sell volume, then a 20,000 USDW 5x short (100,000 pre-fee, exactly
-    ///         the cap) fills with ~0.55% impact against a 0.06% fee.
+    ///         the cap) fills with ~0.55% impact against a 0.03% fee.
     function test_aShortOpenCannotLeaveOiAboveTheCap() public {
         for (uint256 i = 0; i < 5; i++) {
             _openAt(trader, WBT, 4_000e6, 2_500, true, _basePrice(WBT));

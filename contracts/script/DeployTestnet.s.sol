@@ -55,6 +55,11 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     ///      so an "annual" figure in a vendored comment is ~4x too high here.
     uint256 internal constant BLOCKS_PER_YEAR = 31_536_000;
 
+    /// @dev Flat per-order oracle fee, PRECISION_6 ($0.10). It pays the keeper's delivery
+    ///      (~300k gas at 5 gwei ≈ 0.0015 WBT) with margin and doubles as the close bond. The
+    ///      inherited $1 was a 2% tax on a $50 trade.
+    uint64 internal constant TESTNET_ORACLE_FEE = 100_000;
+
     /// @notice Every economic parameter of one market.
     /// @param name        `<FROM>/<TO>`; also the feed id and the oracle name (see `addMarketFor`).
     /// @param maxLeverage PRECISION_2.
@@ -87,12 +92,14 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     // Market economics
     // ---------------------------------------------------------------------------------------
 
-    /// @dev Taker 0.06%, maker 0.03% (maker = a trade that reduces the OI imbalance, up to 20x),
-    ///      half of each fee to the vault. PRECISION_6 percent: 60_000 == 0.06%.
+    /// @dev Taker 0.03%, maker 0.01% (maker = a trade that reduces the OI imbalance, up to 20x),
+    ///      half of each fee to the vault. PRECISION_6 percent: 30_000 == 0.03%. Charged on
+    ///      NOTIONAL, so at 17x the taker fee is ~0.5% of margin; 0.06% (the first testnet value)
+    ///      made a single round of trading cost traders ~1% of margin plus the oracle fee.
     function _openingFees() internal pure returns (IOstiumPairInfos.PairOpeningFees memory) {
         return IOstiumPairInfos.PairOpeningFees({
-            makerFeeP: 30_000,
-            takerFeeP: 60_000,
+            makerFeeP: 10_000,
+            takerFeeP: 30_000,
             usageFeeP: 0,
             utilizationThresholdP: 8_000,
             makerMaxLeverage: 2_000,
@@ -151,8 +158,9 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     // Configuration steps — one sender role each, each idempotent
     // ---------------------------------------------------------------------------------------
 
-    /// @notice Lists the one group and the one fee tier every market shares.
-    /// @dev Caller must be `registry.gov()`. Same values `addMarket` creates for BTC/USD.
+    /// @notice Lists the one group and the one fee tier every market shares, and keeps the
+    ///         tier at the testnet values (a replay re-prices a system on older ones).
+    /// @dev Caller must be `registry.gov()`.
     function ensureGroupAndFee(address registry) public {
         IOstiumPairsStorage ps = IOstiumPairsStorage(IOstiumRegistry(registry).getContractAddress("pairsStorage"));
         if (ps.groupsCount() == 0) {
@@ -172,7 +180,20 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
                 IOstiumPairsStorage.Fee({
                     name: FEE_NAME,
                     minLevPos: FEE_MIN_LEV_POS,
-                    oracleFee: FEE_ORACLE_FEE,
+                    oracleFee: TESTNET_ORACLE_FEE,
+                    liqFeeP: FEE_LIQ_FEE_P
+                })
+            );
+        }
+        (bytes32 name, uint64 minLevPos, uint64 oracleFee, uint16 liqFeeP) = ps.fees(0);
+        if (name != FEE_NAME || minLevPos != FEE_MIN_LEV_POS || oracleFee != TESTNET_ORACLE_FEE || liqFeeP != FEE_LIQ_FEE_P) {
+            _relay(msg.sender);
+            ps.updateFee(
+                0,
+                IOstiumPairsStorage.Fee({
+                    name: FEE_NAME,
+                    minLevPos: FEE_MIN_LEV_POS,
+                    oracleFee: TESTNET_ORACLE_FEE,
                     liqFeeP: FEE_LIQ_FEE_P
                 })
             );

@@ -29,7 +29,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
     // =====================================================================================
 
     function _baseFee(uint256 makerAmt, uint256 takerAmt) internal pure returns (uint256) {
-        return (30_000 * makerAmt + 60_000 * takerAmt) / 1e6 / 100;
+        return (MAKER_FEE_P * makerAmt + TAKER_FEE_P * takerAmt) / 1e6 / 100;
     }
 
     /// @dev Opens at base and returns (dev fee excl. oracle fee, vault fee) actually charged.
@@ -55,7 +55,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
     function test_openingFee_takerIntoAnEmptyMarketSplitsHalfToTheVault() public {
         (uint256 devFee, uint256 vaultFee) = _openAndMeasure(longTrader, 1_000e6, 1_000, true);
         uint256 base = _baseFee(0, 10_000e6);
-        assertEq(base, 6e6, "0.06% of 10k");
+        assertEq(base, 3e6, "0.03% of 10k");
         assertEq(vaultFee, base * 50 / 100, "vault half");
         assertEq(devFee, base - base * 50 / 100, "dev half");
     }
@@ -65,7 +65,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
         assertGt(_oiDeltaAtBase(), 5_000e6, "precondition: long skew larger than the short");
         (uint256 devFee, uint256 vaultFee) = _openAndMeasure(shortTrader, 500e6, 1_000, false);
         uint256 base = _baseFee(5_000e6, 0);
-        assertEq(base, 1.5e6, "0.03% of 5k");
+        assertEq(base, 0.5e6, "0.01% of 5k");
         assertEq(vaultFee + devFee, base, "maker rate");
         assertEq(vaultFee, base * 50 / 100, "vault half");
     }
@@ -460,10 +460,6 @@ contract PairInfosEconomicsTest is TestnetTrading {
     // =====================================================================================
     // Dynamic spread
     // =====================================================================================
-
-    function _postFee(uint256 collateral, uint32 lev) internal pure returns (uint256) {
-        return collateral - collateral * lev / 100 * 60_000 / 1e6 / 100 - ORACLE_FEE;
-    }
 
     function _expectedFill(uint16 p, uint256 collateral, uint32 lev, uint256 initialVol, int192 price)
         internal

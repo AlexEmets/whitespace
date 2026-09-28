@@ -29,7 +29,11 @@ abstract contract TestnetTrading is TestnetFixture {
     IOstiumPairsStorage internal ps;
     IERC20 internal usdw;
 
-    uint256 internal constant ORACLE_FEE = 1e6;
+    uint256 internal constant ORACLE_FEE = 0.1e6; // $0.10, DeployTestnet.s.sol
+    /// @dev Opening fees, DeployTestnet.s.sol `_openingFees`. PRECISION_6 percent: fee on a
+    ///      notional N is N * FEE_P / 1e6 / 100, i.e. 30_000 == 0.03%; half goes to the vault.
+    uint256 internal constant TAKER_FEE_P = 30_000;
+    uint256 internal constant MAKER_FEE_P = 10_000;
     uint32 internal constant TRIGGER_TIMEOUT = 30;
     uint16 internal constant MARKET_TIMEOUT = 11;
 
@@ -232,6 +236,22 @@ abstract contract TestnetTrading is TestnetFixture {
         uint256 p = uint256(int256(price));
         uint256 impactP = uint256(int256(2 * half)) * 1e18 * 100 / (p * 2);
         return isOpen == buy ? p * (1e18 + impactP / 100) / 1e18 : p * (1e18 - impactP / 100) / 1e18;
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Fees
+    // -------------------------------------------------------------------------------------
+
+    /// @notice The taker opening fee on `collateral` at `lev` (PRECISION_2), exactly as
+    ///         `OstiumPairInfos._getBaseOpeningFee` charges it on the pre-fee notional.
+    function _takerFee(uint256 collateral, uint32 lev) internal pure returns (uint256) {
+        return collateral * lev / 100 * TAKER_FEE_P / 1e6 / 100;
+    }
+
+    /// @notice The collateral a taker open stores: the request minus the taker fee and the
+    ///         oracle fee.
+    function _postFee(uint256 collateral, uint32 lev) internal pure returns (uint256) {
+        return collateral - _takerFee(collateral, lev) - ORACLE_FEE;
     }
 
     // -------------------------------------------------------------------------------------

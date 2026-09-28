@@ -128,12 +128,54 @@ contract DeployTestnetTest is TestnetFixture {
         for (uint16 i = 0; i < 4; i++) {
             (uint32 maker, uint32 taker, uint32 usage, uint16 util, uint16 makerMaxLev, uint8 vaultPct) =
                 IOstiumPairInfos(d.pairInfos).pairOpeningFees(i);
-            assertEq(maker, 30_000, "maker 0.03%");
-            assertEq(taker, 60_000, "taker 0.06%");
+            assertEq(maker, 10_000, "maker 0.01%");
+            assertEq(taker, 30_000, "taker 0.03%");
             assertEq(usage, 0, "no usage fee");
             assertEq(util, 8_000, "utilisation threshold");
             assertEq(makerMaxLev, 2_000, "maker up to 20x");
             assertEq(vaultPct, 50, "half of every fee to the vault");
+        }
+    }
+
+    /// @notice The flat per-order oracle fee is $0.10 on every market: it pays for a keeper
+    ///         delivery (~0.0015 WBT) with margin, without eating small trades.
+    function test_everyMarketChargesATenCentOracleFee() public view {
+        for (uint16 i = 0; i < 4; i++) {
+            assertEq(IOstiumPairsStorage(d.pairsStorage).pairOracleFee(i), 100_000, "oracle fee $0.10");
+        }
+        (bytes32 name, uint64 minLevPos, uint64 oracleFee, uint16 liqFeeP) = IOstiumPairsStorage(d.pairsStorage).fees(0);
+        assertEq(name, bytes32("BTC-USD"), "tier name unchanged");
+        assertEq(minLevPos, 10_000_000, "min position $10 unchanged");
+        assertEq(oracleFee, 100_000, "tier oracle fee");
+        assertEq(liqFeeP, 50, "liq fee unchanged");
+    }
+
+    /// @notice A system configured with the first testnet fees ($1 oracle fee, 0.03/0.06%) is
+    ///         brought to the current ones by a configuration replay — how the live 1874
+    ///         deployment is re-priced without redeploying.
+    function test_aReplayRepricesASystemOnTheOldFees() public {
+        IOstiumPairsStorage ps = IOstiumPairsStorage(d.pairsStorage);
+        vm.prank(gov);
+        ps.updateFee(0, IOstiumPairsStorage.Fee({name: "BTC-USD", minLevPos: 10_000_000, oracleFee: 1_000_000, liqFeeP: 50}));
+        for (uint16 i = 0; i < 4; i++) {
+            vm.prank(gov);
+            IOstiumPairInfos(d.pairInfos).setPairOpeningFees(
+                i,
+                IOstiumPairInfos.PairOpeningFees({
+                    makerFeeP: 30_000, takerFeeP: 60_000, usageFeeP: 0, utilizationThresholdP: 8_000,
+                    makerMaxLeverage: 2_000, vaultFeePercent: 50
+                })
+            );
+        }
+
+        vm.setEnv("REGISTRY_ADDRESS", vm.toString(d.registry));
+        script.configureTestnet();
+
+        assertEq(ps.pairOracleFee(0), 100_000, "oracle fee re-priced");
+        for (uint16 i = 0; i < 4; i++) {
+            (uint32 maker, uint32 taker,,,,) = IOstiumPairInfos(d.pairInfos).pairOpeningFees(i);
+            assertEq(maker, 10_000, "maker re-priced");
+            assertEq(taker, 30_000, "taker re-priced");
         }
     }
 
@@ -199,9 +241,9 @@ contract DeployTestnetTest is TestnetFixture {
         uint256 devFeesBefore = IOstiumTradingStorage(d.tradingStorage).devFees();
         _open(trader, BTC, 1_000e6, 1_000, true);
         uint256 devFee = IOstiumTradingStorage(d.tradingStorage).devFees() - devFeesBefore;
-        // ~10,000 notional at the 0.06% taker rate is ~6 USDW; the dev half is ~3. The $1 oracle
-        // fee accrues to devFees as well.
-        assertApproxEqRel(devFee, 3e6 + 1e6, 0.01e18, "dev half of a 0.06% taker fee plus the oracle fee");
+        // ~10,000 notional at the 0.03% taker rate is ~3 USDW; the dev half is ~1.5. The $0.10
+        // oracle fee accrues to devFees as well.
+        assertApproxEqRel(devFee, 1.5e6 + 0.1e6, 0.01e18, "dev half of a 0.03% taker fee plus the oracle fee");
     }
 
     /// @notice Above the net-volume threshold a larger trade fills at a worse price than a small

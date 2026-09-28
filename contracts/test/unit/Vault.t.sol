@@ -307,8 +307,11 @@ contract VaultTest is TestnetTrading {
 
     function test_openingFeeRaisesTheSharePriceImmediately() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        assertEq(vault.accRewardsPerToken(), uint256(3e6) * 1e18 / SUPPLY, "vault half of the fee per share");
-        assertEq(vault.shareToAssetsPrice(), 1e18 + uint256(3e6) * 1e18 / SUPPLY, "price up without a settlement");
+        // 10,000 notional at 0.03% taker = 3 USDW; half (1.5) to the vault
+        uint256 vaultHalf = _takerFee(1_000e6, 1_000) / 2;
+        assertEq(vaultHalf, 1.5e6, "vault half of a 0.03% fee on 10k");
+        assertEq(vault.accRewardsPerToken(), vaultHalf * 1e18 / SUPPLY, "vault half of the fee per share");
+        assertEq(vault.shareToAssetsPrice(), 1e18 + vaultHalf * 1e18 / SUPPLY, "price up without a settlement");
     }
 
     function test_traderWin_lowersTheSharePriceAtSettlement() public {
@@ -332,7 +335,7 @@ contract VaultTest is TestnetTrading {
         vm.prank(lp);
         vault.claimWithdraw(id);
         assertEq(_bal(lp) - before, uint256(10_000e6) * vault.settlementShareToAssetsPrice(id) / 1e18, "at the settled price");
-        assertLt(_bal(lp) - before, 10_000e6 + 10_000e6 * uint256(3e6) / SUPPLY, "less than deposited plus fees");
+        assertLt(_bal(lp) - before, 10_000e6 + 10_000e6 * (_takerFee(1_000e6, 1_000) / 2) / SUPPLY, "less than deposited plus fees");
     }
 
     function test_traderLossAfterAWin_restoresTheSharePrice() public {
