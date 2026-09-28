@@ -6,9 +6,21 @@ import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketPairLabel } from '@/lib/markets';
-import { collateralToRaw, formatMoney } from '@/lib/money';
+import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
 
-function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; from: string; to: string; openInterest: { long: string; short: string } }) {
+function MarketRow({
+  pairIndex,
+  from,
+  to,
+  maxLeverage,
+  openInterest,
+}: {
+  pairIndex: number;
+  from: string;
+  to: string;
+  maxLeverage: string;
+  openInterest: { long: string; short: string };
+}) {
   const { data: price } = usePrice(pairIndex);
   const change = useMarket24h(pairIndex);
   // openInterest.{long,short} are collateral-denominated (6 decimals) per
@@ -32,8 +44,8 @@ function MarketRow({ pairIndex, from, to, openInterest }: { pairIndex: number; f
       >
         {change ? `${formatMoney(change.changeBps, 2, { grouping: false, signDisplay: true })}%` : '—'}
       </td>
-      {/* No funding-rate endpoint in the read API (D3) — honest dash, not fabricated. */}
-      <td className="dash">—</td>
+      {/* The per-market cap `/markets` reports — the same number the ticket enforces. */}
+      <td>{formatMoney(leverageToRaw(maxLeverage), 2, { fractionDigits: 0, grouping: false })}×</td>
       <td>{formatMoney(oiTotal, COLLATERAL_DECIMALS)}</td>
     </tr>
   );
@@ -46,28 +58,38 @@ export function MarketsTable() {
 
   return (
     <div className="landing-section" data-testid="markets-table-section">
+      <span className="section-eyebrow">03 · Markets</span>
       <h2>
         Markets <span className="badge">{markets.length}</span>
       </h2>
       {loading ? <p>Loading…</p> : null}
       {error ? <p className="error-text">Failed to load markets: {error.message}</p> : null}
       {!loading && !error ? (
-        <table className="markets-table">
-          <thead>
-            <tr>
-              <th>Market</th>
-              <th>Mark</th>
-              <th>24h</th>
-              <th>Funding</th>
-              <th>Open interest</th>
-            </tr>
-          </thead>
-          <tbody>
-            {markets.map((m) => (
-              <MarketRow key={m.pairIndex} pairIndex={m.pairIndex} from={m.from} to={m.to} openInterest={m.openInterest} />
-            ))}
-          </tbody>
-        </table>
+        <div className="panel" style={{ overflow: 'hidden' }}>
+          <table className="markets-table">
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Mark</th>
+                <th>24h</th>
+                <th>Max leverage</th>
+                <th>Open interest</th>
+              </tr>
+            </thead>
+            <tbody>
+              {markets.map((m) => (
+                <MarketRow
+                  key={m.pairIndex}
+                  pairIndex={m.pairIndex}
+                  from={m.from}
+                  to={m.to}
+                  maxLeverage={m.maxLeverage}
+                  openInterest={m.openInterest}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </div>
   );
