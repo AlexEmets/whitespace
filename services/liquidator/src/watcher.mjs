@@ -96,10 +96,10 @@ export function watchLiveness(publicClient, sequencerMonitor, positionTable, int
       if (highestSeen === null || blockNumber > highestSeen) highestSeen = blockNumber;
       sequencerMonitor.observe({ nowMs: Date.now(), blockNumber });
     } catch {
-      // An RPC failure here does not by itself change liveness state -- the fallback
-      // transport (rpc.mjs) already handles endpoint failover; if every endpoint is
-      // down, the sequencer monitor's own stall-threshold timeout (driven by wall-clock
-      // gap since the last successful observation) is what correctly stops liquidation.
+      // The fallback transport (rpc.mjs) has already tried every endpoint. A failure
+      // here is "no new block observed": the monitor's gap clock keeps running, so a
+      // total RPC outage reaches STALLED instead of freezing the last known state.
+      sequencerMonitor.observeFailure({ nowMs: Date.now() });
     }
     if (!stopped) setTimeout(tick, intervalMs);
   }

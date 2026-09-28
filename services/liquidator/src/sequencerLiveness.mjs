@@ -75,6 +75,12 @@ export function createSequencerMonitor({
    */
   function observe({ nowMs, blockNumber }) {
     if (lastBlockNumber === null) {
+      // First block ever. If failures before it already stalled us (a startup outage),
+      // this is a resumption like any other and must go through the recovery window.
+      if (state === SequencerState.STALLED) {
+        state = SequencerState.RECOVERING;
+        recoveryStartedAtMs = nowMs;
+      }
       lastBlockNumber = blockNumber;
       lastBlockSeenAtMs = nowMs;
     } else if (blockNumber > lastBlockNumber) {
@@ -90,28 +96,51 @@ export function createSequencerMonitor({
       // responsible for not acting on orphaned state. This module only tracks whether
       // *some* block is arriving, so it neither advances nor stalls on this sample.
     } else {
-      const gapMs = nowMs - lastBlockSeenAtMs;
-      if (gapMs >= stallThresholdMs && state === SequencerState.LIVE) {
-        state = SequencerState.STALLED;
-        recoveryStartedAtMs = null;
-      } else if (gapMs >= stallThresholdMs && state === SequencerState.RECOVERING) {
-        // Stalled again mid-recovery: back to STALLED, window restarts from scratch
-        // once blocks resume again.
-        state = SequencerState.STALLED;
-        recoveryStartedAtMs = null;
-      }
+      noNewBlock(nowMs);
     }
 
+    return finishRecovery(nowMs);
+  }
+
+  function noNewBlock(nowMs) {
+    const gapMs = nowMs - lastBlockSeenAtMs;
+    if (gapMs >= stallThresholdMs && state === SequencerState.LIVE) {
+      state = SequencerState.STALLED;
+      recoveryStartedAtMs = null;
+    } else if (gapMs >= stallThresholdMs && state === SequencerState.RECOVERING) {
+      // Stalled again mid-recovery: back to STALLED, window restarts from scratch
+      // once blocks resume again.
+      state = SequencerState.STALLED;
+      recoveryStartedAtMs = null;
+    }
+  }
+
+  function finishRecovery(nowMs) {
     if (state === SequencerState.RECOVERING && nowMs - recoveryStartedAtMs >= recoveryWindowMs) {
       state = SequencerState.LIVE;
       recoveryStartedAtMs = null;
     }
-
     return state;
+  }
+
+  /**
+   * Feed one FAILED liveness sample (every RPC endpoint errored). We cannot tell a dead
+   * sequencer from a dead RPC, and for this service they mean the same thing — nothing
+   * we submit can land — so a failure is treated exactly as "no new block": the gap
+   * clock keeps running and a long enough outage reaches STALLED. With no block ever
+   * seen, the clock starts at the first failure.
+   *
+   * @param {{ nowMs: number }} sample
+   */
+  function observeFailure({ nowMs }) {
+    if (lastBlockSeenAtMs === null) lastBlockSeenAtMs = nowMs;
+    noNewBlock(nowMs);
+    return finishRecovery(nowMs);
   }
 
   return {
     observe,
+    observeFailure,
     get state() {
       return state;
     },
