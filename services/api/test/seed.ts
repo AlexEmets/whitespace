@@ -14,7 +14,8 @@ export const COLLATERAL = '999000000';
 export async function truncateAll(): Promise<void> {
   const pool = getPool();
   await pool.query(
-    `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status`,
+    `TRUNCATE market, price_request, price_report, "order", "position", closed_position, lp_activity, candle, sync_status,
+       limit_order, order_event, fee_charge, liquidation, vault_settlement`,
   );
   // Not in the list above: that TRUNCATE names Ponder's tables, and this one is the
   // API's own (src/indexSeries.ts). Guarded because a test file may run before any
@@ -106,5 +107,55 @@ export async function seedCandle(
     `INSERT INTO candle (id, pair_index, interval, bucket_start, open, high, low, close, volume)
      VALUES ($1, 0, $2, $3, $4, $5, $6, $7, $8)`,
     [`0-${interval}-${bucketStart}`, interval, bucketStart, ohlc.o, ohlc.h, ohlc.l, ohlc.c, ohlc.v],
+  );
+}
+
+export const TX_A = '0x00000000000000000000000000000000000000000000000000000000000000a1';
+export const TX_B = '0x00000000000000000000000000000000000000000000000000000000000000b2';
+
+export async function seedLimitOrder(
+  over: { index?: number; orderType?: string; placedAt?: number; trader?: string } = {},
+): Promise<void> {
+  const trader = over.trader ?? TRADER;
+  const index = over.index ?? 0;
+  await getPool().query(
+    `INSERT INTO limit_order (id, trader, pair_index, index, order_type, buy, collateral, leverage, trigger_price, tp, sl, placed_at, updated_at, placed_tx)
+     VALUES ($1, $2, 0, $3, $4, true, 50000000, 1000, '60000000000000000000000', '70000000000000000000000', 0, $5, $5, $6)`,
+    [`${trader}-0-${index}`, trader, index, over.orderType ?? 'LIMIT', over.placedAt ?? 1788882000, TX_A],
+  );
+}
+
+export async function seedOrder(
+  orderId: number,
+  over: { kind?: string; status?: string; requestedAt?: number; trader?: string; cancelReason?: string | null } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO "order" (order_id, trader, pair_index, kind, trade_id, index, buy, collateral, leverage, status, requested_at, requested_at_block, request_tx_hash, resolved_at, cancel_reason)
+     VALUES ($1, $2, 0, $3, NULL, NULL, NULL, NULL, NULL, $4, $5, 7285600, $6, NULL, $7)`,
+    [orderId, over.trader ?? TRADER, over.kind ?? 'open', over.status ?? 'pending', over.requestedAt ?? 1000, TX_B, over.cancelReason ?? null],
+  );
+}
+
+export async function seedOrderEvent(
+  id: string,
+  over: { kind?: string; at?: number; trader?: string } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO order_event (id, trader, pair_index, index, kind, order_type, buy, collateral, leverage, trigger_price, tp, sl, order_id, trade_id, at, block_number, tx_hash)
+     VALUES ($1, $2, 0, 1, $3, 'STOP', false, 25000000, 500, '59000000000000000000000', 0, '61000000000000000000000', NULL, NULL, $4, 900, $5)`,
+    [id, over.trader ?? TRADER, over.kind ?? 'limit_placed', over.at ?? 1000, TX_A],
+  );
+}
+
+export async function seedFee(
+  id: string,
+  kind: string,
+  amount: string,
+  over: { at?: number; tradeId?: number | null; trader?: string; pairIndex?: number | null } = {},
+): Promise<void> {
+  await getPool().query(
+    `INSERT INTO fee_charge (id, trader, trade_id, pair_index, kind, amount, at, block_number, tx_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 7285600, $8)`,
+    [id, over.trader ?? TRADER, over.tradeId === undefined ? 2 : over.tradeId, over.pairIndex === undefined ? 0 : over.pairIndex, kind, amount, over.at ?? 1000, TX_A],
   );
 }

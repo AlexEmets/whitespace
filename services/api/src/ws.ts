@@ -1,18 +1,29 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'node:http';
-import { query, queryOne } from './db.js';
-import { price as fmtPrice, collateral as fmtCollateral, leverage as fmtLeverage, id as fmtId } from './format.js';
+import { queryOne } from './db.js';
+import { price as fmtPrice, collateral as fmtCollateral } from './format.js';
 import { readLatestIndexCandle } from './indexSeries.js';
 import { resolveOrders } from './routes/orders.js';
+import { resolvePositions } from './routes/positions.js';
 import { resolvePrice } from './routes/price.js';
+import { resolveLimitOrders } from './routes/limitOrders.js';
+import { resolveFees } from './routes/fees.js';
+import { parseAddress } from './validate.js';
 
-type ChannelKind = 'price' | 'positions' | 'orders' | 'candles';
-const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles'];
+type ChannelKind = 'price' | 'positions' | 'orders' | 'candles' | 'limitOrders' | 'fees';
+const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles', 'limitOrders', 'fees'];
+/** Channels whose argument is a wallet; the address must be well-formed, so a client cannot
+ * create an unbounded number of distinct polled channels out of arbitrary strings. */
+const ADDRESS_KINDS: ChannelKind[] = ['positions', 'orders', 'limitOrders', 'fees'];
+
+/** Every channel a socket holds is re-queried each poll; this caps what one socket can
+ * make the server do per tick. A trading UI needs a handful. */
+export const MAX_SUBSCRIPTIONS_PER_SOCKET = 64;
 
 type ParsedChannel = { kind: ChannelKind; args: string[] };
 
 /** Parses "price:<pairIndex>" | "positions:<address>" | "orders:<address>"
- * | "candles:<pairIndex>:<interval>". Returns null for anything else — the
+ * | "limitOrders:<address>" | "fees:<address>" | "candles:<pairIndex>:<interval>". Returns null for anything else — the
  * caller must reject the subscription rather than silently accept garbage. */
 export function parseChannel(channel: string): ParsedChannel | null {
   const parts = channel.split(':');
@@ -23,6 +34,10 @@ export function parseChannel(channel: string): ParsedChannel | null {
     return { kind, args: [parts[1], parts[2]] };
   }
   if (parts.length !== 2 || !parts[1]) return null;
+  if (ADDRESS_KINDS.includes(kind)) {
+    const address = parseAddress(parts[1]);
+    return address ? { kind, args: [address] } : null;
+  }
   return { kind, args: [parts[1]] };
 }
 
@@ -34,37 +49,22 @@ async function fetchChannelData(parsed: ParsedChannel): Promise<unknown> {
       return resolvePrice(Number(parsed.args[0]));
     }
     case 'positions': {
-      const trader = parsed.args[0].toLowerCase();
-      const rows = await query<{
-        pair_index: number;
-        index: number;
-        buy: boolean;
-        collateral: string;
-        leverage: number;
-        open_price: string;
-        tp: string;
-        sl: string;
-        opened_at: number;
-        trade_id: string;
-      }>('SELECT * FROM position WHERE trader = $1 ORDER BY opened_at DESC', [trader]);
-      return rows.map((r) => ({
-        pairIndex: r.pair_index,
-        index: r.index,
-        buy: r.buy,
-        collateral: fmtCollateral(r.collateral),
-        leverage: fmtLeverage(r.leverage),
-        openPrice: fmtPrice(r.open_price),
-        tp: fmtPrice(r.tp),
-        sl: fmtPrice(r.sl),
-        openedAt: r.opened_at,
-        tradeId: fmtId(r.trade_id),
-      }));
+      // Same bounded resolver as GET /positions/:address.
+      return resolvePositions(parsed.args[0]);
     }
     case 'orders': {
       // Same resolver the REST route uses. These were two independent queries with
       // different WHERE clauses and different columns, so whether an order appeared to
       // exist depended on which transport last answered.
       return resolveOrders(parsed.args[0]);
+    }
+    case 'limitOrders': {
+      // Same resolver as GET /limit-orders/:address.
+      return resolveLimitOrders(parsed.args[0]);
+    }
+    case 'fees': {
+      // Same resolver and default window (200 newest) as GET /fees/:address.
+      return resolveFees(parsed.args[0]);
     }
     case 'candles': {
       const pairIndex = Number(parsed.args[0]);
@@ -124,14 +124,23 @@ export function createWsManager(opts: { pollIntervalMs?: number; pingIntervalMs?
   const subscribers = new Map<string, Set<WebSocket>>();
   const lastPayload = new Map<string, string>();
 
+  const perSocket = new Map<WebSocket, Set<string>>();
+
   function subscribe(ws: WebSocket, channel: string): boolean {
     if (!parseChannel(channel)) return false;
+    const held = perSocket.get(ws) ?? new Set<string>();
+    if (!held.has(channel) && held.size >= MAX_SUBSCRIPTIONS_PER_SOCKET) return false;
+    held.add(channel);
+    perSocket.set(ws, held);
     if (!subscribers.has(channel)) subscribers.set(channel, new Set());
     subscribers.get(channel)!.add(ws);
     return true;
   }
 
   function unsubscribe(ws: WebSocket, channel: string): void {
+    const held = perSocket.get(ws);
+    held?.delete(channel);
+    if (held && held.size === 0) perSocket.delete(ws);
     const set = subscribers.get(channel);
     if (!set) return;
     set.delete(ws);
@@ -224,7 +233,9 @@ export function createWsManager(opts: { pollIntervalMs?: number; pingIntervalMs?
         if (type === 'subscribe') {
           const ok = subscribe(ws, channel);
           ws.send(
-            JSON.stringify(ok ? { type: 'subscribed', channel } : { type: 'error', channel, error: 'invalid channel' }),
+            JSON.stringify(
+              ok ? { type: 'subscribed', channel } : { type: 'error', channel, error: 'invalid channel or too many subscriptions' },
+            ),
           );
         } else if (type === 'unsubscribe') {
           unsubscribe(ws, channel);

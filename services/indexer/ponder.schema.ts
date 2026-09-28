@@ -164,6 +164,103 @@ export const closedPosition = onchainTable(
   }),
 );
 
+/** Resting LIMIT/STOP entries (spec 2026-09-28 §9.1), one row per occupied
+ * (trader, pairIndex, index) limit slot. Written by OpenLimitPlacedV2, patched by
+ * OpenLimitUpdated, deleted by OpenLimitCanceled and LimitOpenExecuted. The contract
+ * reuses a freed slot (firstEmptyOpenLimitIndex), so the id describes the slot, not
+ * one order's history — that lives in `order_event`. Read directly by the automation
+ * bot, so it must never hold a row the chain no longer has. */
+export const limitOrder = onchainTable(
+  'limit_order',
+  (t) => ({
+    id: t.text().primaryKey(), // `${trader}-${pairIndex}-${index}`, trader lowercase
+    trader: t.hex().notNull(),
+    pairIndex: t.integer().notNull(),
+    index: t.integer().notNull(),
+    orderType: t.text().notNull(), // 'LIMIT' | 'STOP'
+    buy: t.boolean().notNull(),
+    collateral: t.bigint().notNull(), // PRECISION_6
+    leverage: t.integer().notNull(), // PRECISION_2
+    triggerPrice: t.bigint().notNull(), // PRECISION_18, the order's openPrice/targetPrice
+    tp: t.bigint().notNull(), // PRECISION_18
+    sl: t.bigint().notNull(), // PRECISION_18
+    placedAt: t.integer().notNull(),
+    updatedAt: t.integer().notNull(),
+    placedTx: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderIdx: index().on(table.trader),
+  }),
+);
+
+/** Append-only history of limit-order actions, one row per log. Complements `order`
+ * (which holds everything that went through the two-phase oracle flow and therefore has
+ * an orderId): placing, updating and cancelling a limit order are synchronous and have
+ * no orderId, so without this table they would leave no trace once `limit_order` drops
+ * the row. */
+export const orderEvent = onchainTable(
+  'order_event',
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`
+    trader: t.hex().notNull(),
+    pairIndex: t.integer().notNull(),
+    index: t.integer().notNull(),
+    kind: t.text().notNull(), // 'limit_placed' | 'limit_updated' | 'limit_cancelled' | 'limit_executed'
+    orderType: t.text(), // 'LIMIT' | 'STOP'; null only if the placement predates startBlock
+    buy: t.boolean(),
+    collateral: t.bigint(), // PRECISION_6
+    leverage: t.integer(), // PRECISION_2
+    triggerPrice: t.bigint(), // PRECISION_18
+    tp: t.bigint(), // PRECISION_18
+    sl: t.bigint(), // PRECISION_18
+    orderId: t.bigint(), // limit_executed only: the automation order that filled it
+    tradeId: t.bigint(), // limit_executed only
+    at: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderAtIdx: index().on(table.trader, table.at),
+  }),
+);
+
+/** Close orders that turned out to be liquidations, keyed by the close orderId, from
+ * VaultLiqFeeCharged. A MARKET close can liquidate (closeTradeMarketCallback checks
+ * tradeValue < liqMarginValue), and MarketCloseExecutedV2 says nothing about it — it even
+ * reports the liquidation fee as `usdcSentToTrader` while the trader is actually sent 0.
+ * VaultLiqFeeCharged fires earlier in the same callback, so the close handler reads this
+ * row to label the close 'liq'. */
+export const liquidation = onchainTable('liquidation', (t) => ({
+  orderId: t.bigint().primaryKey(),
+  tradeId: t.bigint().notNull(),
+  trader: t.hex().notNull(),
+  liquidationFee: t.bigint().notNull(), // PRECISION_6, what the vault kept
+  at: t.integer().notNull(),
+  txHash: t.hex().notNull(),
+}));
+
+/** Every fee the protocol charged a trader (spec §9.1), one row per charge. See
+ * src/lib/fees.ts for the event → kind mapping and the two places a log does not map to
+ * exactly one row (FeesChargedV2 → rollover + funding; the bond's OracleFeeCharged is
+ * folded into its OracleFeeBondCharged row so the bond is not counted twice). */
+export const feeCharge = onchainTable(
+  'fee_charge',
+  (t) => ({
+    id: t.text().primaryKey(), // `${txHash}-${logIndex}`, plus `-rollover`/`-funding` for FeesChargedV2
+    trader: t.hex().notNull(),
+    tradeId: t.bigint(), // null for OracleFeeChargedLimitCancelled (no trade exists)
+    pairIndex: t.integer(), // null when neither the event nor an indexed row carries it
+    kind: t.text().notNull(), // 'oracle'|'dev'|'vault_opening'|'vault_liq'|'rollover'|'funding'|'bond'
+    amount: t.bigint().notNull(), // PRECISION_6; signed for rollover/funding (negative = received)
+    at: t.integer().notNull(),
+    blockNumber: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+  }),
+  (table) => ({
+    traderAtIdx: index().on(table.trader, table.at),
+  }),
+);
+
 /** LP vault activity: deposit/withdraw requests and claims (the vault is an
  * async, settlement-based model — see abis/vault.ts). */
 export const lpActivity = onchainTable(
@@ -171,7 +268,7 @@ export const lpActivity = onchainTable(
   (t) => ({
     id: t.text().primaryKey(), // `${kind}-${owner}-${settlementId}-${logIndex}`
     owner: t.hex().notNull(),
-    kind: t.text().notNull(), // 'deposit_requested'|'withdraw_requested'|'deposit_claimed'|'withdraw_claimed'
+    kind: t.text().notNull(), // see LP_EVENTS in src/lib/lpActivity.ts: {deposit,withdraw}_{requested,claimed,cancelled,reclaimed}, deposit_refunded
     settlementId: t.integer().notNull(),
     amount: t.bigint().notNull(), // assets (PRECISION_6) or shares, per event
     timestamp: t.integer().notNull(),
@@ -182,6 +279,29 @@ export const lpActivity = onchainTable(
     ownerIdx: index().on(table.owner),
   }),
 );
+
+/** One row per vault settlement (spec §9.1), keyed by settlementId. Built from the two
+ * events a settlement emits in one transaction: AsyncDepositWithdrawExecuted (the
+ * deposit/withdraw batch, fires first) and SettlementExecuted (the accounting totals).
+ * Each handler fills its own columns, so either may arrive first. */
+export const vaultSettlement = onchainTable('vault_settlement', (t) => ({
+  id: t.integer().primaryKey(), // settlementId
+  settlementType: t.text(), // 'acct' | 'mm' (IOstiumVault.SettlementType)
+  settlementTs: t.integer(),
+  totalAssets: t.bigint(), // PRECISION_6, USDW in the vault after settlement
+  totalSupply: t.bigint(), // PRECISION_6, OLP shares outstanding after settlement
+  shareToAssetsPrice: t.bigint().notNull(), // PRECISION_18
+  settlementOpenPnl: t.bigint(), // PRECISION_18 USD, signed
+  totalClosedPnl: t.bigint(), // PRECISION_6, signed
+  accPnlPerTokenUsed: t.bigint(), // PRECISION_18, signed
+  bufferSize: t.bigint(), // PRECISION_6, signed
+  assetsDeposited: t.bigint(), // PRECISION_6, deposits executed in this settlement
+  sharesWithdrawn: t.bigint(), // PRECISION_6, withdrawals executed in this settlement
+  deltaShares: t.bigint(), // PRECISION_6, signed net mint (+) / burn (-)
+  at: t.integer().notNull(),
+  blockNumber: t.bigint().notNull(),
+  txHash: t.hex().notNull(),
+}));
 
 /** OHLCV candles, one row per (pairIndex, interval, bucketStart). Populated
  * from every price tick (price reports + executed trade prices). */

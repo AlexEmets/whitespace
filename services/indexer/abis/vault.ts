@@ -5,6 +5,37 @@
 // meaningful lifecycle points for "LP deposits/withdrawals": the request
 // (assets/shares committed) and the claim (assets/shares actually moved).
 export const vaultAbi = [
+  // --- Settlement (vault_settlement). _settlement() emits AsyncDepositWithdrawExecuted
+  // (from _executeAsyncDepositWithdraw) and then SettlementExecuted, both for the same
+  // lastSettlementId.
+  {
+    type: 'event',
+    name: 'SettlementExecuted',
+    inputs: [
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'settlementTs', type: 'uint32', indexed: false },
+      { name: 'settlementOpenPnl', type: 'int256', indexed: false },
+      { name: 'settlementType', type: 'uint8', indexed: false },
+      { name: 'accPnlPerTokenUsed', type: 'int256', indexed: false },
+      { name: 'accRewardsPerToken', type: 'uint256', indexed: false },
+      { name: 'shareToAssetsPrice', type: 'uint256', indexed: false },
+      { name: 'totalClosedPnl', type: 'int256', indexed: false },
+      { name: 'totalSupply', type: 'uint256', indexed: false },
+      { name: 'totalAssets', type: 'uint256', indexed: false },
+      { name: 'bufferSize', type: 'int256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'AsyncDepositWithdrawExecuted',
+    inputs: [
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'deltaShares', type: 'int256', indexed: false },
+      { name: 'totalAssetsToDeposit', type: 'uint256', indexed: false },
+      { name: 'totalSharesToWithdraw', type: 'uint256', indexed: false },
+      { name: 'shareToAssetsPrice', type: 'uint256', indexed: false },
+    ],
+  },
   {
     type: 'event',
     name: 'DepositRequestedV2',
@@ -39,6 +70,52 @@ export const vaultAbi = [
       { name: 'owner', type: 'address', indexed: true },
       { name: 'settlementId', type: 'uint32', indexed: true },
       { name: 'assets', type: 'uint256', indexed: false },
+    ],
+  },
+  // Requests that end without a claim.
+  {
+    type: 'event',
+    name: 'RequestDepositCanceledV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'assets', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'RequestWithdrawCanceledV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'shares', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'DepositReclaimedV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'assets', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'WithdrawReclaimedV2',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'shares', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'DepositPartiallyRefunded',
+    inputs: [
+      { name: 'owner', type: 'address', indexed: true },
+      { name: 'settlementId', type: 'uint32', indexed: true },
+      { name: 'refundedAssets', type: 'uint256', indexed: false },
     ],
   },
 ] as const;

@@ -152,3 +152,94 @@ CREATE TABLE sync_status (
     block_timestamp integer NOT NULL,
     PRIMARY KEY (chain_id)
 );
+
+-- Added 2026-09-28 (spec 2026-09-28-testnet-perfect-design.md §9.1): captured the same way,
+-- with `pg_dump --schema-only -t limit_order -t order_event -t fee_charge -t liquidation
+-- -t vault_settlement` against a database `ponder start` had just created from
+-- services/indexer/ponder.schema.ts (against a local anvil with chain id 1874). Triggers
+-- and Ponder's reorg functions omitted, as above; indexes kept because the routes rely on them.
+
+CREATE TABLE limit_order (
+    id text NOT NULL,
+    trader text NOT NULL,
+    pair_index integer NOT NULL,
+    index integer NOT NULL,
+    order_type text NOT NULL,
+    buy boolean NOT NULL,
+    collateral numeric(78,0) NOT NULL,
+    leverage integer NOT NULL,
+    trigger_price numeric(78,0) NOT NULL,
+    tp numeric(78,0) NOT NULL,
+    sl numeric(78,0) NOT NULL,
+    placed_at integer NOT NULL,
+    updated_at integer NOT NULL,
+    placed_tx text NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE INDEX limit_order_trader_index ON limit_order USING btree (trader);
+
+CREATE TABLE order_event (
+    id text NOT NULL,
+    trader text NOT NULL,
+    pair_index integer NOT NULL,
+    index integer NOT NULL,
+    kind text NOT NULL,
+    order_type text,
+    buy boolean,
+    collateral numeric(78,0),
+    leverage integer,
+    trigger_price numeric(78,0),
+    tp numeric(78,0),
+    sl numeric(78,0),
+    order_id numeric(78,0),
+    trade_id numeric(78,0),
+    at integer NOT NULL,
+    block_number numeric(78,0) NOT NULL,
+    tx_hash text NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE INDEX order_event_trader_at_index ON order_event USING btree (trader, at);
+
+CREATE TABLE fee_charge (
+    id text NOT NULL,
+    trader text NOT NULL,
+    trade_id numeric(78,0),
+    pair_index integer,
+    kind text NOT NULL,
+    amount numeric(78,0) NOT NULL,
+    at integer NOT NULL,
+    block_number numeric(78,0) NOT NULL,
+    tx_hash text NOT NULL,
+    PRIMARY KEY (id)
+);
+CREATE INDEX fee_charge_trader_at_index ON fee_charge USING btree (trader, at);
+
+CREATE TABLE liquidation (
+    order_id numeric(78,0) NOT NULL,
+    trade_id numeric(78,0) NOT NULL,
+    trader text NOT NULL,
+    liquidation_fee numeric(78,0) NOT NULL,
+    at integer NOT NULL,
+    tx_hash text NOT NULL,
+    PRIMARY KEY (order_id)
+);
+
+CREATE TABLE vault_settlement (
+    id integer NOT NULL,
+    settlement_type text,
+    settlement_ts integer,
+    total_assets numeric(78,0),
+    total_supply numeric(78,0),
+    share_to_assets_price numeric(78,0) NOT NULL,
+    settlement_open_pnl numeric(78,0),
+    total_closed_pnl numeric(78,0),
+    acc_pnl_per_token_used numeric(78,0),
+    buffer_size numeric(78,0),
+    assets_deposited numeric(78,0),
+    shares_withdrawn numeric(78,0),
+    delta_shares numeric(78,0),
+    at integer NOT NULL,
+    block_number numeric(78,0) NOT NULL,
+    tx_hash text NOT NULL,
+    PRIMARY KEY (id)
+);

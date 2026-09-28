@@ -45,3 +45,11 @@ const CANCEL_REASON_LABELS = [
 export function cancelReasonLabel(ordinal: number): string {
   return CANCEL_REASON_LABELS[ordinal] ?? `unknown_${ordinal}`;
 }
+
+// IOstiumTradingStorage.OpenOrderType. MARKET never reaches a limit-order event (openTrade
+// routes it to the pending-market-order flow), but is labelled rather than rejected.
+const OPEN_ORDER_TYPE_LABELS = ['MARKET', 'LIMIT', 'STOP'] as const;
+
+export function openOrderTypeLabel(ordinal: number): string {
+  return OPEN_ORDER_TYPE_LABELS[ordinal] ?? `unknown_${ordinal}`;
+}

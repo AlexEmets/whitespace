@@ -4,8 +4,12 @@ import { Router } from './router.js';
 import { handleHealth } from './routes/health.js';
 import { handleMarkets, handleMarket, handleCandles } from './routes/markets.js';
 import { handlePositions, handlePositionsHistory } from './routes/positions.js';
-import { handleOrders } from './routes/orders.js';
+import { handleOrders, handleOrdersHistory } from './routes/orders.js';
 import { handlePrice } from './routes/price.js';
+import { handleLimitOrders } from './routes/limitOrders.js';
+import { handleFees } from './routes/fees.js';
+import { handlePnl } from './routes/pnl.js';
+import { handleVaultSettlements } from './routes/vault.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 
@@ -17,7 +21,12 @@ router.get('/markets/:pairIndex/candles', handleCandles);
 router.get('/positions/:address', handlePositions);
 router.get('/positions/:address/history', handlePositionsHistory);
 router.get('/orders/:address', handleOrders);
+router.get('/orders/:address/history', handleOrdersHistory);
 router.get('/price/:pairIndex', handlePrice);
+router.get('/limit-orders/:address', handleLimitOrders);
+router.get('/fees/:address', handleFees);
+router.get('/pnl/:address', handlePnl);
+router.get('/vault/settlements', handleVaultSettlements);
 
 export type App = { server: Server; wsManager: WsManager };
 

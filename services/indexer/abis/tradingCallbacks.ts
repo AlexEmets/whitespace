@@ -98,6 +98,20 @@ export const tradingCallbacksAbi = [
       { name: 'cancelReason', type: 'uint8', indexed: false },
     ],
   },
+  // Emitted here, by handleRemoveCollateral, with a CancelReason enum — NOT by Trading,
+  // whose interface declares a same-named event (string reason) that is never emitted.
+  {
+    type: 'event',
+    name: 'RemoveCollateralRejected',
+    inputs: [
+      { name: 'orderId', type: 'uint256', indexed: true },
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'pairIndex', type: 'uint16', indexed: false },
+      { name: 'removeAmount', type: 'uint256', indexed: false },
+      { name: 'reason', type: 'uint8', indexed: false },
+    ],
+  },
   {
     type: 'event',
     name: 'RemoveCollateralExecuted',
@@ -110,6 +124,56 @@ export const tradingCallbacksAbi = [
       { name: 'leverage', type: 'uint32', indexed: false },
       { name: 'tp', type: 'uint192', indexed: false },
       { name: 'sl', type: 'uint192', indexed: false },
+    ],
+  },
+  // --- Fee events (fee_charge). The callbacks' OracleFeeCharged has no pairIndex, unlike
+  // the same-named declaration in IOstiumTrading, which Trading never emits.
+  {
+    type: 'event',
+    name: 'DevFeeCharged',
+    inputs: [
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'OracleFeeCharged',
+    inputs: [
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'VaultOpeningFeeCharged',
+    inputs: [
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'VaultLiqFeeCharged',
+    inputs: [
+      { name: 'orderId', type: 'uint256', indexed: true },
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'event',
+    name: 'FeesChargedV2',
+    inputs: [
+      { name: 'orderId', type: 'uint256', indexed: true },
+      { name: 'tradeId', type: 'uint256', indexed: true },
+      { name: 'trader', type: 'address', indexed: true },
+      { name: 'rolloverFees', type: 'int256', indexed: false },
+      { name: 'fundingFees', type: 'int256', indexed: false },
     ],
   },
   {

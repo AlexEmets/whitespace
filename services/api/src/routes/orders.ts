@@ -1,6 +1,8 @@
 import { query } from '../db.js';
-import { collateral, leverage as fmtLeverage, id as fmtId } from '../format.js';
+import { collateral, leverage as fmtLeverage, id as fmtId, price as fmtPrice } from '../format.js';
 import type { RouteResult, Handler } from '../router.js';
+import type { OrderHistoryEntry } from '../types.js';
+import { parseAddress, parseLimit, badRequest } from '../validate.js';
 
 type OrderRow = {
   order_id: string;
@@ -79,4 +81,87 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
 
 export const handleOrders: Handler = async (_req, params): Promise<RouteResult> => {
   return { code: 200, body: await resolveOrders(params.address) };
+};
+
+type HistoryRow = {
+  source: 'order' | 'limit';
+  id: string;
+  order_id: string | null;
+  kind: OrderHistoryEntry['kind'];
+  order_type: OrderHistoryEntry['orderType'];
+  pair_index: number;
+  trade_id: string | null;
+  index: number | null;
+  buy: boolean | null;
+  collateral: string | null;
+  leverage: number | null;
+  price: string | null;
+  tp: string | null;
+  sl: string | null;
+  status: OrderHistoryEntry['status'];
+  cancel_reason: string | null;
+  requested_at: number;
+  resolved_at: number | null;
+  tx_hash: string;
+};
+
+export const HISTORY_DEFAULT_LIMIT = 100;
+export const HISTORY_MAX_LIMIT = 500;
+
+// GET /orders/:address/history?limit=100 -> OrderHistoryEntry[], every order the trader
+// ever requested, newest first. Two sources, one list:
+//   - "order": everything that went through the oracle round trip (market open/close,
+//     automation open/close, remove collateral), with its final status;
+//   - "order_event": limit-order actions, which are synchronous and have no orderId —
+//     placed, updated, cancelled — and the fill of a resting order.
+// A limit fill therefore appears twice, by design: once as the automation_open order that
+// carried it (with the oracle outcome), once as limit_executed (which resting order it was).
+export const handleOrdersHistory: Handler = async (_req, params, searchParams): Promise<RouteResult> => {
+  const trader = parseAddress(params.address);
+  if (!trader) return badRequest('invalid address');
+  const limit = parseLimit(searchParams, HISTORY_DEFAULT_LIMIT, HISTORY_MAX_LIMIT);
+  if (limit === null) return badRequest(`limit must be an integer between 1 and ${HISTORY_MAX_LIMIT}`);
+
+  const rows = await query<HistoryRow>(
+    `(SELECT 'order' AS source, order_id::text AS id, order_id::text AS order_id, kind,
+             CASE WHEN kind IN ('open', 'close') THEN 'MARKET' END AS order_type,
+             pair_index, trade_id::text AS trade_id, index, buy, collateral::text AS collateral, leverage,
+             NULL::text AS price, NULL::text AS tp, NULL::text AS sl,
+             status, cancel_reason, requested_at, resolved_at, request_tx_hash AS tx_hash
+        FROM "order" WHERE trader = $1
+        ORDER BY requested_at DESC LIMIT $2)
+     UNION ALL
+     (SELECT 'limit', id, order_id::text, kind, order_type,
+             pair_index, trade_id::text, index, buy, collateral::text, leverage,
+             trigger_price::text, tp::text, sl::text,
+             CASE WHEN kind = 'limit_cancelled' THEN 'cancelled' ELSE 'executed' END,
+             NULL, at, at, tx_hash
+        FROM order_event WHERE trader = $1
+        ORDER BY at DESC LIMIT $2)
+     ORDER BY requested_at DESC, id DESC
+     LIMIT $2`,
+    [trader, limit],
+  );
+  const body: OrderHistoryEntry[] = rows.map((r) => ({
+    source: r.source,
+    id: r.id,
+    orderId: fmtId(r.order_id),
+    kind: r.kind,
+    orderType: r.order_type,
+    pairIndex: r.pair_index,
+    tradeId: fmtId(r.trade_id),
+    index: r.index,
+    buy: r.buy,
+    collateral: collateral(r.collateral),
+    leverage: fmtLeverage(r.leverage),
+    price: fmtPrice(r.price),
+    tp: fmtPrice(r.tp),
+    sl: fmtPrice(r.sl),
+    status: r.status,
+    cancelReason: r.cancel_reason,
+    requestedAt: r.requested_at,
+    resolvedAt: r.resolved_at,
+    txHash: r.tx_hash,
+  }));
+  return { code: 200, body };
 };

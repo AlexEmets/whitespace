@@ -1,6 +1,33 @@
 import { ponder } from 'ponder:registry';
-import { order, position } from '../../ponder.schema.js';
+import { order } from '../../ponder.schema.js';
 import { updateIfExists } from '../lib/db.js';
+import {
+  onOpenLimitPlaced,
+  onOpenLimitUpdated,
+  onOpenLimitCanceled,
+  automationOpenOrderDetails,
+} from '../lib/limitOrders.js';
+import { toMeta as meta } from '../lib/event.js';
+import { onOracleFeeChargedLimitCancelled } from '../lib/fees.js';
+import { onTpUpdated, onSlUpdated, onTopUpCollateral } from '../lib/positions.js';
+
+// --- Limit / stop entries (see src/lib/limitOrders.ts for which event fires when) ----
+
+ponder.on('Trading:OpenLimitPlacedV2', async ({ event, context }) => {
+  await onOpenLimitPlaced(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OpenLimitUpdated', async ({ event, context }) => {
+  await onOpenLimitUpdated(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OracleFeeChargedLimitCancelled', async ({ event, context }) => {
+  await onOracleFeeChargedLimitCancelled(context.db, event.args, meta(event));
+});
+
+ponder.on('Trading:OpenLimitCanceled', async ({ event, context }) => {
+  await onOpenLimitCanceled(context.db, event.args, meta(event));
+});
 
 // --- Order requests (phase 1 of the two-phase flow) ------------------------
 // Note: none of these "initiated" events carry collateral/leverage/buy — the
@@ -51,6 +78,12 @@ ponder.on('Trading:MarketCloseOrderInitiatedV2', async ({ event, context }) => {
 });
 
 ponder.on('Trading:AutomationOpenOrderInitiated', async ({ event, context }) => {
+  const details = await automationOpenOrderDetails(
+    context.db,
+    event.args.trader,
+    event.args.pairIndex,
+    event.args.index,
+  );
   await context.db
     .insert(order)
     .values({
@@ -60,9 +93,7 @@ ponder.on('Trading:AutomationOpenOrderInitiated', async ({ event, context }) => 
       kind: 'automation_open',
       tradeId: null,
       index: event.args.index,
-      buy: null,
-      collateral: null,
-      leverage: null,
+      ...details,
       status: 'pending',
       requestedAt: Number(event.block.timestamp),
       requestedAtBlock: event.block.number,
@@ -126,36 +157,15 @@ ponder.on('Trading:MarketCloseTimeoutExecutedV2', async ({ event, context }) => 
 // --- Position updates that don't open/close a trade -------------------------
 
 ponder.on('Trading:TpUpdated', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    { tp: event.args.newTp },
-    'TpUpdated',
-  );
+  await onTpUpdated(context.db, event.args);
 });
 
 ponder.on('Trading:SlUpdated', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    { sl: event.args.newSl },
-    'SlUpdated',
-  );
+  await onSlUpdated(context.db, event.args);
 });
 
 ponder.on('Trading:TopUpCollateralExecuted', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    position,
-    { tradeId: event.args.tradeId },
-    (row: { collateral: bigint }) => ({
-      collateral: row.collateral + event.args.topUpAmount,
-      leverage: event.args.newLeverage,
-    }),
-    'TopUpCollateralExecuted',
-  );
+  await onTopUpCollateral(context.db, event.args);
 });
 
 // --- Collateral removal (its own sub-flow, own orderId) ---------------------
@@ -179,19 +189,4 @@ ponder.on('Trading:RemoveCollateralInitiated', async ({ event, context }) => {
       requestTxHash: event.transaction.hash,
     })
     .onConflictDoUpdate({});
-});
-
-ponder.on('Trading:RemoveCollateralRejected', async ({ event, context }) => {
-  await updateIfExists(
-    context.db,
-    order,
-    { orderId: event.args.orderId },
-    {
-      status: 'cancelled',
-      cancelReason: event.args.reason, // free-text from the contract, not an enum
-      resolvedAt: Number(event.block.timestamp),
-      resolvedTxHash: event.transaction.hash,
-    },
-    'RemoveCollateralRejected',
-  );
 });
