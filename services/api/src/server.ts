@@ -100,6 +100,9 @@ export function createApp(opts: { wsPollIntervalMs?: number } = {}): App {
 const isMain = process.argv[1] && import.meta.url === new URL(process.argv[1], 'file:').href;
 if (isMain) {
   const port = Number(process.env.PORT ?? 3001);
+  // Loopback by default: only Caddy reaches the API, and a public bind would expose the WS
+  // poller to anyone who found the port. HOST=0.0.0.0 opts out explicitly.
+  const host = process.env.HOST ?? '127.0.0.1';
   const { server } = createApp();
 
   // Only the long-running process records the index series — never `createApp()`, which
@@ -114,8 +117,8 @@ if (isMain) {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
-  server.listen(port, () => {
+  server.listen(port, host, () => {
     // eslint-disable-next-line no-console
-    console.log(`services/api listening on :${port} (index recorder sampling ${process.env.PUBLISHER_URL ?? 'http://127.0.0.1:8787'})`);
+    console.log(`services/api listening on ${host}:${port} (index recorder sampling ${process.env.PUBLISHER_URL ?? 'http://127.0.0.1:8787'})`);
   });
 }
