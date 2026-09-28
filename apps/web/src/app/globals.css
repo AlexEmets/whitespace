@@ -633,7 +633,9 @@ a {
   width: 440px;
   height: 440px;
   border-color: rgba(var(--accent-rgb), 0.1);
+  animation: ring-ripple 9s ease-in-out 1.2s infinite;
 }
+
 
 .landing-hero .brand-render .sphere {
   position: relative;
@@ -648,7 +650,42 @@ a {
   --eclipse-opacity: 0.72;
   filter: blur(4px);
   opacity: var(--eclipse-opacity);
-  animation: corona-breathe 7s ease-in-out infinite;
+  /* The hero eclipse pulses, slowly: it swells a few percent and brightens once every
+     nine seconds, so the page feels alive without anything catching the eye. */
+  animation: eclipse-pulse 9s ease-in-out infinite;
+}
+
+@keyframes eclipse-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: calc(var(--eclipse-opacity, 1) * 0.8);
+  }
+  50% {
+    transform: scale(1.035);
+    opacity: var(--eclipse-opacity, 1);
+  }
+}
+
+/* The inner orbit ring follows the pulse a beat later, like a ripple. */
+@keyframes ring-ripple {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scale(1.025);
+    opacity: 0.85;
+  }
+}
+
+/* After the hero rules, so it wins the cascade over their `animation`. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero .brand-render .sphere,
+  .landing-hero .brand-render .ring-inner {
+    animation: none;
+  }
 }
 
 .landing-hero .brand-render .moon {
