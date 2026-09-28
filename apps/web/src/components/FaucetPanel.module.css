@@ -14,6 +14,12 @@
   /* The internal rules run edge to edge; without this they poke through the rounded
      corners. */
   overflow: hidden;
+  /* A flex column so that when two panels sit side by side at equal height (the /faucet
+     claim pair), the extra height is handed to .balanceRow rather than pooling as dead
+     space at the foot — which keeps the facts row and the action button aligned across
+     both panels. On its own (one panel), nothing to distribute, so this is a no-op. */
+  display: flex;
+  flex-direction: column;
 }
 
 .head {
@@ -43,6 +49,10 @@
   gap: 0.7rem;
   padding: 1.55rem 1.2rem 1.45rem;
   border-bottom: 1px solid var(--border);
+  /* Takes up the slack when the panel is stretched to a sibling's height (see .panel), so
+     the balance/target sits with more room rather than the button drifting off the foot. */
+  flex: 1;
+  align-content: start;
 }
 
 .balanceLabel {

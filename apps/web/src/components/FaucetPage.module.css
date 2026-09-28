@@ -17,7 +17,7 @@
   --pad: 2.25rem;
   /* The mockup puts the rule at 78.6% of a 1600px viewport — a 342px rail. */
   --rail: 25rem;
-  max-width: calc(1240px + 2 * var(--page-pad));
+  max-width: calc(1440px + 2 * var(--page-pad));
   margin: 0 auto;
   padding: 0 var(--page-pad) 5rem;
 }
@@ -129,13 +129,14 @@
 
 /* The two faucets, side by side — USDW collateral and WBT gas. Each is a self-titled
    panel (its own header + badge), so together they read as a matched pair; on a narrow
-   viewport they stack rather than squeeze. `align-items: start` so the shorter panel does
-   not stretch to the taller one's height. */
+   viewport they stack rather than squeeze. `stretch` gives them equal height so their
+   dividers and action buttons line up across the pair; the panel itself absorbs the slack
+   into its balance row (see FaucetPanel.module.css .panel/.balanceRow). */
 .claimPanels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1.25rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (max-width: 720px) {
