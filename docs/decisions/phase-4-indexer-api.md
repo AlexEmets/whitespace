@@ -395,3 +395,133 @@ disposable instance per test run (`initdb` into a fresh temp dir, `pg_ctl start`
 `rm -rf` on teardown) via Vitest's `globalSetup`. A `TEST_DATABASE_URL` env var override exists
 for CI environments that provide a managed Postgres instead. Nothing in this project silently
 skips DB-dependent tests when Postgres is present.
+
+---
+
+## 11. Orders, fees, PnL and settlements (2026-09-28, spec `2026-09-28-testnet-perfect-design.md` §9)
+
+### 11.1 Indexer tables added
+
+| table | key | written by |
+|---|---|---|
+| `limit_order` | `${trader}-${pairIndex}-${index}` (trader lowercase) | `OpenLimitPlacedV2` (insert/replace), `OpenLimitUpdated` (price/tp/sl), deleted by `OpenLimitCanceled` and `LimitOpenExecuted` |
+| `order_event` | `${txHash}-${logIndex}` | one history row per limit action: `limit_placed`, `limit_updated`, `limit_cancelled`, `limit_executed` |
+| `fee_charge` | `${txHash}-${logIndex}` (`-rollover`/`-funding` suffix for `FeesChargedV2`) | every fee event, see below |
+| `liquidation` | close `orderId` | `VaultLiqFeeCharged` — lets the close handler tell a liquidating market close from a normal one |
+| `vault_settlement` | `settlementId` | `AsyncDepositWithdrawExecuted` + `SettlementExecuted` merged |
+
+What the contracts actually emit (read from the vendored sources, not the interfaces):
+
+- Placing a limit/stop emits only `OpenLimitPlacedV2`; the V1 `OpenLimitPlaced` is never emitted.
+  The event carries the full `Trade` and the `OpenOrderType`, so LIMIT vs STOP needs no storage read.
+- `AutomationOpenOrderCanceled` does **not** remove the resting order — the callback only releases
+  the trigger, the order stays in storage and can fire again. So `limit_order` keeps it.
+- `LimitOpenExecuted.limitIndex` is the freed limit slot; `t.index` is the new trade's slot.
+- `TpUpdated`/`SlUpdated` only apply to open trades; limit orders change tp/sl via `OpenLimitUpdated`.
+- `RemoveCollateralRejected` is emitted by the **callbacks** with a `CancelReason` enum. The indexer
+  used to subscribe to the `IOstiumTrading` declaration (string reason), which is never emitted, so a
+  rejected remove-collateral order stayed `pending` forever. Fixed.
+- A **market** close can liquidate. `MarketCloseExecutedV2` has no flag for it and reports the value
+  the vault kept as `usdcSentToTrader`. `VaultLiqFeeCharged` fires first in the same callback, so the
+  close is now stored as `closeReason: 'liq'`, `usdcSentToTrader: 0`. (A liquidation whose remaining
+  value is exactly 0 emits no fee event; it stays `'close'` with 0 sent, which is still correct money.)
+
+Fee kinds: `OracleFeeCharged` and `OracleFeeChargedLimitCancelled` → `oracle` (the latter has no
+trade, `trade_id` null); `DevFeeCharged` → `dev`; `VaultOpeningFeeCharged` → `vault_opening`;
+`VaultLiqFeeCharged` → `vault_liq`; `FeesChargedV2` → one `rollover` and one `funding` row, both
+**signed** (the contract subtracts them from trade value, so positive = paid, negative = received),
+zero amounts kept; `OracleFeeBondCharged` → `bond`. The bond path emits `OracleFeeCharged(bond)`
+immediately followed by `OracleFeeBondCharged` (which has no amount), so the bond row takes the
+preceding log's amount and that `oracle` row is deleted — the bond is counted once.
+`BuilderFeeCharged` is not recorded (no builder on this deployment; not a spec kind).
+`pair_index` comes from the position, else the open order (open-time fees fire before the position
+row exists), else the closed position, else null.
+
+`lp_activity` also gained `deposit_cancelled`, `withdraw_cancelled`, `deposit_reclaimed`,
+`withdraw_reclaimed` and `deposit_refunded` (pro-rata cap refund).
+
+Handler logic now lives in `src/lib/{limitOrders,fees,positions,vaultSettlement,lpActivity}.ts` and
+is unit-tested against `test/fakeDb.ts`, an in-memory store keyed by each table's real primary key.
+Every new ABI fragment's topic0 is checked against its Solidity signature in
+`test/abiSignatures.test.ts`.
+
+### 11.2 Endpoints added
+
+Types are exported from `services/api/src/types.ts`. Money is a decimal string (prices 18 dp, USDW
+6 dp, leverage 2 dp), ids are integer strings, addresses lowercase, times unix seconds. A malformed
+address or `limit` answers `400 {"error": "..."}`.
+
+`GET /limit-orders/:address` → `LimitOrder[]`, newest first:
+
+```json
+[{ "id": "0x2b8b…0d19-0-0", "trader": "0x2b8b…0d19", "pairIndex": 0, "index": 0,
+   "orderType": "LIMIT", "buy": true, "collateral": "50.000000", "leverage": "10.00",
+   "triggerPrice": "60000.000000000000000000", "tp": "70000.000000000000000000",
+   "sl": "0.000000000000000000", "placedAt": 1788882000, "updatedAt": 1788882000,
+   "placedTx": "0x…" }]
+```
+
+`GET /orders/:address/history?limit=100` (1–500) → `OrderHistoryEntry[]`, newest first — the `order`
+table (oracle-flow orders, any age) merged with `order_event` (limit actions). A limit fill appears
+both as its `automation_open` order and as `limit_executed`.
+
+```json
+[{ "source": "limit", "id": "0x…-3", "orderId": null, "kind": "limit_cancelled", "orderType": "STOP",
+   "pairIndex": 0, "tradeId": null, "index": 1, "buy": false, "collateral": "25.000000",
+   "leverage": "5.00", "price": "59000.000000000000000000", "tp": "0.000000000000000000",
+   "sl": "61000.000000000000000000", "status": "cancelled", "cancelReason": null,
+   "requestedAt": 200, "resolvedAt": 200, "txHash": "0x…" },
+ { "source": "order", "id": "5", "orderId": "5", "kind": "open", "orderType": "MARKET",
+   "pairIndex": 0, "tradeId": null, "index": null, "buy": null, "collateral": null, "leverage": null,
+   "price": null, "tp": null, "sl": null, "status": "cancelled", "cancelReason": "slippage",
+   "requestedAt": 100, "resolvedAt": null, "txHash": "0x…" }]
+```
+
+`kind`: `open | close | automation_open | automation_close | remove_collateral | limit_placed |
+limit_updated | limit_cancelled | limit_executed`. `status`: `pending | executed | cancelled | timeout`
+(limit rows: `cancelled` for `limit_cancelled`, else `executed`). `orderType` is `MARKET` for
+`open`/`close`, the limit's type for limit rows, else null.
+
+`GET /fees/:address?limit=200` (1–1000) → `FeeCharge[]`, newest first:
+
+```json
+[{ "id": "0x…-5-funding", "trader": "0x…", "tradeId": "2", "pairIndex": 0, "kind": "funding",
+   "amount": "-1.234567", "at": 200, "blockNumber": "7285600", "txHash": "0x…" }]
+```
+
+`GET /pnl/:address` → `PnlSummary`, over closed positions:
+
+```json
+{ "realizedPnl": "49.692628", "fees": "1.250040", "funding": "-0.300000", "trades": 2 }
+```
+
+`realizedPnl` = Σ(usdcSentToTrader − collateral), the same figure `/positions/:address/history`
+gives per trade. `fees` = Σ oracle + dev + vault_opening + bond + rollover on those trades;
+`vault_liq` is excluded because it is the liquidated remainder, already a loss in `realizedPnl`.
+`funding` is signed. Proceeds of **partial** closes are not in `closed_position` and so not in
+`realizedPnl` (the pre-existing scope note above still applies).
+
+`GET /vault/settlements?limit=50` (1–500) → `VaultSettlement[]`, newest first:
+
+```json
+[{ "settlementId": 4, "settlementType": "acct", "settlementTs": 1788880000,
+   "totalAssets": "1000.000000", "totalSupply": "990.000000",
+   "shareToAssetsPrice": "1.010000000000000000", "settlementOpenPnl": "-5.000000000000000000",
+   "totalClosedPnl": "-3.000000", "accPnlPerTokenUsed": "-0.000000000000000012",
+   "bufferSize": "0.000007", "assetsDeposited": "5.000000", "sharesWithdrawn": "15.000000",
+   "deltaShares": "-10.000000", "at": 1788880001, "blockNumber": "7285000", "txHash": "0x…" }]
+```
+
+Columns a settlement's other event has not filled yet are null (`shareToAssetsPrice` never is).
+
+WebSocket: `limitOrders:<address>` and `fees:<address>` push exactly the REST payloads (same
+resolvers; `fees` is the 200 newest).
+
+### 11.3 WebSocket bounds
+
+The poll re-queries every subscribed channel every 2 s. `positions:<address>` ran an unbounded
+`SELECT` per wallet and any string was accepted as a wallet, so a client could create any number of
+distinct polled channels. Now: positions come from `resolvePositions` (shared with REST, capped at
+500 rows), every wallet channel (`positions`, `orders`, `limitOrders`, `fees`) requires a
+well-formed address, and one socket may hold at most 64 subscriptions (the 65th gets
+`{type: "error"}`).
