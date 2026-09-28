@@ -51,7 +51,7 @@ export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; 
           {ordered.map((trade) => {
             const pnl = trade.realisedPnlRaw;
             return (
-              <tr key={`${trade.pairIndex}-${trade.tradeId}-${trade.index}`} data-testid={`history-row-${trade.tradeId}`}>
+              <tr key={trade.rowKey} data-testid={`history-row-${trade.rowKey}`}>
                 <td>
                   {marketLabelByIndex(trade.pairIndex, markets)}{' '}
                   <span className={styles.subtle}>{formatLeverage(trade.leverage)}</span>
@@ -85,6 +85,7 @@ export function TradeHistoryTable({ trades, markets }: { trades: ClosedTrade[]; 
                   )}
                 </td>
                 <td className={styles.subtle}>
+                  {trade.isPartial ? `Partial ${trade.percentageClosed ?? ''}% · ` : ''}
                   {explainCloseReason(trade.closeReason) ?? <Dash reason="no close reason on this record" />}
                 </td>
               </tr>

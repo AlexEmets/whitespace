@@ -31,6 +31,9 @@ interface ClosedPositionWire {
   percentProfit?: string;
   closePrice?: string;
   closedAt?: number;
+  closeOrderId?: string;
+  isPartial?: boolean;
+  percentageClosed?: string;
 }
 
 /** Human-readable label for `closed_position.close_reason` as the indexer writes it. */
@@ -66,6 +69,11 @@ export interface ClosedTrade {
   openedAt: number;
   closedAt: number | null;
   tradeId: string;
+  /** Unique per close. A trade closed in parts has one row per part, all sharing `tradeId`. */
+  rowKey: string;
+  /** True for a partial close; `percentageClosed` is then e.g. "25.00". */
+  isPartial: boolean;
+  percentageClosed: string | null;
   closeReason: string | null;
   /** Raw 6-decimal signed PnL, or `null` when the wire carried nothing to derive it from. */
   realisedPnlRaw: bigint | null;
@@ -104,6 +112,9 @@ export function toClosedTrade(raw: ClosedPositionSummary): ClosedTrade {
     openedAt: raw.openedAt,
     closedAt: typeof wire.closedAt === 'number' ? wire.closedAt : null,
     tradeId: raw.tradeId,
+    rowKey: typeof wire.closeOrderId === 'string' ? wire.closeOrderId : `${raw.tradeId}-${raw.pairIndex}-${raw.index}`,
+    isPartial: wire.isPartial === true,
+    percentageClosed: typeof wire.percentageClosed === 'string' ? wire.percentageClosed : null,
     closeReason: typeof wire.closeReason === 'string' ? wire.closeReason : null,
     realisedPnlRaw,
     notionalRaw: notionalRaw(raw.collateral, raw.leverage),
@@ -118,7 +129,7 @@ export interface TradeStats {
   realisedPnlRaw: bigint | null;
   /** Sum of opening notional across closed trades, raw 6-decimal. */
   closedNotionalRaw: bigint;
-  /** Distinct pairIndex count across closed trades. */
+  /** Distinct pairIndex count across closed rows. */
   marketsTraded: number;
   wins: number;
   losses: number;

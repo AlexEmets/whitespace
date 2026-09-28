@@ -75,6 +75,26 @@ describe('toClosedTrade', () => {
   });
 });
 
+describe('toClosedTrade — partial closes', () => {
+  it('keys each close by its close order, so a trade closed in parts yields distinct rows', () => {
+    const a = toClosedTrade(wireRow({ closeOrderId: '11', isPartial: true, percentageClosed: '25.00' } as never));
+    const b = toClosedTrade(wireRow({ closeOrderId: '12', isPartial: false, percentageClosed: '100.00' } as never));
+    expect(a.tradeId).toBe(b.tradeId);
+    expect(a.rowKey).toBe('11');
+    expect(b.rowKey).toBe('12');
+    expect(a.isPartial).toBe(true);
+    expect(a.percentageClosed).toBe('25.00');
+    expect(b.isPartial).toBe(false);
+  });
+
+  it('falls back to a trade-based key when the API predates closeOrderId', () => {
+    const t = toClosedTrade(wireRow());
+    expect(t.rowKey).toBe(`${t.tradeId}-${t.pairIndex}-${t.index}`);
+    expect(t.isPartial).toBe(false);
+    expect(t.percentageClosed).toBeNull();
+  });
+});
+
 describe('notionalRaw', () => {
   it('cancels leverage\'s two implied decimals exactly', () => {
     expect(notionalRaw('100.000000', '10.00')).toBe(1_000_000000n);
