@@ -2,7 +2,8 @@
 
 import { parseEventLogs, zeroAddress, type Address } from 'viem';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
-import { OPEN_ORDER_TYPE_MARKET, TRADING_ABI } from '@/lib/abi';
+import { OPEN_ORDER_TYPE, TRADING_ABI, type OpenOrderKind } from '@/lib/abi';
+import { slippageForSubmission } from '@/lib/orderRules';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
 
@@ -24,9 +25,12 @@ export interface OpenTradeParams {
   slippageBps: bigint;
   tp?: bigint;
   sl?: bigint;
+  /** MARKET fills at the next report; LIMIT/STOP rest until the automation bot triggers them,
+   * with `wantedPriceRaw` as the trigger. Defaults to MARKET. */
+  kind?: OpenOrderKind;
 }
 
-/** Submits `openTrade` directly against the Trading contract (wallet-signed, not through
+/** Submits `openTrade` (MARKET, LIMIT or STOP) directly against the Trading contract (wallet-signed, not through
  * the API — see the phase-5 brief). This only confirms the *request* landed on-chain;
  * the position opens or is cancelled later, when a keeper delivers the signed price
  * report (design §5.1). Callers must not treat a successful receipt here as "position
@@ -39,6 +43,7 @@ export function useOpenTrade() {
   async function openTrade(params: OpenTradeParams) {
     if (!address) throw new Error('useOpenTrade: wallet not connected');
     if (!publicClient) throw new Error('useOpenTrade: no public client');
+    const kind = params.kind ?? 'MARKET';
 
     const hash = await writeContractAsync({
       address: TRADING_ADDRESS,
@@ -63,12 +68,17 @@ export function useOpenTrade() {
           isDayTrade: false,
         },
         { builder: zeroAddress, builderFee: 0 },
-        OPEN_ORDER_TYPE_MARKET,
-        params.slippageBps,
+        OPEN_ORDER_TYPE[kind],
+        // The contract requires 0 for LIMIT/STOP and (0, 100e2) for MARKET (openTrade).
+        slippageForSubmission(kind, params.slippageBps),
       ],
     });
 
-    const receipt = await confirmTx(publicClient, hash, 'open the position');
+    const receipt = await confirmTx(publicClient, hash, kind === 'MARKET' ? 'open the position' : 'place the order');
+    if (kind !== 'MARKET') {
+      const placed = parseEventLogs({ abi: TRADING_ABI, eventName: 'OpenLimitPlacedV2', logs: receipt.logs });
+      return { hash, receipt, orderId: undefined, limitIndex: placed[0]?.args.index };
+    }
     const events = parseEventLogs({
       abi: TRADING_ABI,
       eventName: 'MarketOpenOrderInitiated',
@@ -76,7 +86,7 @@ export function useOpenTrade() {
     });
     const orderId = events[0]?.args.orderId;
 
-    return { hash, receipt, orderId };
+    return { hash, receipt, orderId, limitIndex: undefined };
   }
 
   return { openTrade, isPending };
