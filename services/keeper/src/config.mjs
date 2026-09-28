@@ -34,6 +34,11 @@ export const DEFAULT_MAX_LOOKBACK_BLOCKS = 300;
  *   deadLetterFilePath: string|null,
  *   cursorPath: string|null,
  *   maxLookbackBlocks: number,
+ *   concurrency: number,
+ *   receiptTimeoutMs: number,
+ *   maxGasBumps: number,
+ *   metricsHost: string,
+ *   metricsPort: number,
  * }}
  */
 export function loadConfig(env = process.env) {
@@ -59,6 +64,25 @@ export function loadConfig(env = process.env) {
   const deadLetterFilePath = env.KEEPER_DEAD_LETTER_PATH ?? null;
   const cursorPath = env.KEEPER_CURSOR_PATH ?? null;
   const maxLookbackBlocks = Number(env.KEEPER_MAX_LOOKBACK_BLOCKS ?? DEFAULT_MAX_LOOKBACK_BLOCKS);
+  const concurrency = Number(env.KEEPER_CONCURRENCY ?? 4);
+  const receiptTimeoutMs = Number(env.KEEPER_RECEIPT_TIMEOUT_MS ?? 30_000);
+  const maxGasBumps = Number(env.KEEPER_MAX_GAS_BUMPS ?? 3);
+  // Loopback by default: /metrics names the forwarder's nonce and backlog, which is
+  // nobody else's business. Scrape through the host, or set 0.0.0.0 deliberately.
+  const metricsHost = env.KEEPER_METRICS_HOST ?? '127.0.0.1';
+  const metricsPort = Number(env.KEEPER_METRICS_PORT ?? 9465);
+
+  for (const [name, v, min] of [
+    ['KEEPER_POLLING_INTERVAL_MS', pollingIntervalMs, 1],
+    ['KEEPER_MAX_RETRIES', maxRetries, 0],
+    ['KEEPER_MAX_LOOKBACK_BLOCKS', maxLookbackBlocks, 1],
+    ['KEEPER_CONCURRENCY', concurrency, 1],
+    ['KEEPER_RECEIPT_TIMEOUT_MS', receiptTimeoutMs, 1],
+    ['KEEPER_MAX_GAS_BUMPS', maxGasBumps, 0],
+    ['KEEPER_METRICS_PORT', metricsPort, 0],
+  ]) {
+    if (!Number.isInteger(v) || v < min) throw new Error(`loadConfig: ${name} must be an integer >= ${min}, got ${v}`);
+  }
 
   return {
     chainId,
@@ -71,6 +95,11 @@ export function loadConfig(env = process.env) {
     deadLetterFilePath,
     cursorPath,
     maxLookbackBlocks,
+    concurrency,
+    receiptTimeoutMs,
+    maxGasBumps,
+    metricsHost,
+    metricsPort,
   };
 }
 
