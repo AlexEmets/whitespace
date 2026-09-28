@@ -16,6 +16,20 @@ cbor_metadata = false
 
 fs_permissions = [{ access = "read", path = "./script/config" }]
 
+# Nightly depth for the protocol invariant suite and the economics fuzz tests. The default
+# profile keeps runs modest (inline `forge-config: default.*` on each test) so `forge test`
+# stays fast; this profile ignores those and uses the values below:
+#   FOUNDRY_PROFILE=invariant forge test --match-path 'test/{invariant,unit}/*'
+[profile.invariant]
+
+[profile.invariant.invariant]
+runs = 256
+depth = 200
+fail_on_revert = false
+
+[profile.invariant.fuzz]
+runs = 1024
+
 [rpc_endpoints]
 whitechain_testnet_op = "https://rpc.testnet.whitechain.io"
 whitechain_testnet_legacy = "https://rpc-testnet.whitechain.io"
