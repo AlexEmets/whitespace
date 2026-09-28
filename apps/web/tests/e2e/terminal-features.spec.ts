@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installMockBackend } from './mockBackend';
 import { installMockWallet } from './installMockWallet';
-import { TestState } from './testState';
+import { MOCK_TRADER_ADDRESS, TestState } from './testState';
 
 /**
  * The Variational-style terminal end to end against the mock chain and API: the vault quote on
@@ -147,4 +147,28 @@ test('the funding rate is read from chain into the header', async ({ page, baseU
     s.fundingRatePerBlock = 31_709_791_983n;
   });
   await expect(page.getByTestId('funding-rate')).toHaveText('+0.0114%');
+});
+
+test('an open position can be shared: the dialog previews its card and posts the link to X', async ({ page, baseURL }) => {
+  const { errors } = await setUp(page, baseURL, (s) => {
+    s.positions.push({
+      pairIndex: 0, index: 0, buy: true, collateral: '1000000000', leverage: '1000',
+      openPrice: s.markPrice, tp: '0', sl: '0', openedAt: 1_790_000_000, tradeId: '900',
+    });
+  });
+  const address = MOCK_TRADER_ADDRESS.toLowerCase();
+  await page.getByTestId('tab-positions').click();
+  await page.getByTestId('position-share-0-0').click();
+
+  await expect(page.getByTestId('share-dialog')).toBeVisible();
+  await expect(page.getByTestId('share-preview')).toHaveAttribute('src', `/share/${address}/o900/card.png`);
+  const href = await page.getByTestId('share-x').getAttribute('href');
+  const intent = new URL(href!);
+  expect(intent.origin + intent.pathname).toBe('https://x.com/intent/tweet');
+  expect(intent.searchParams.get('url')).toBe(`${baseURL}/share/${address}/o900`);
+  expect(intent.searchParams.get('text')).toMatch(/^Riding a 10× long on BTC-PERP, [+-]\d+\.\d{2}% so far, on Whitespace testnet$/);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('share-dialog')).toBeHidden();
+  expect(errors).toEqual([]);
 });
