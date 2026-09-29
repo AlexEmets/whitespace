@@ -300,7 +300,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
             </button>
             <button
               type="button"
-              className="close-more"
+              className="close-more close-chevron"
               aria-expanded={partialOpen}
               aria-label="Close part of this position"
               data-testid="close-partial-toggle"

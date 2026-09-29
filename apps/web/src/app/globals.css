@@ -1311,6 +1311,9 @@ table.markets-table td a:hover {
   min-height: 0;
   overflow: auto;
   padding: 0 0.31rem 0.46rem;
+  /* A size container, so a row's contents can be held to the visible width while the
+     table beneath them scrolls sideways (see .manager-row). */
+  container-type: inline-size;
 }
 
 .terminal-tabs .tab-content > p {
@@ -1633,25 +1636,24 @@ table.data-table td button {
   font-family: var(--font-sans);
 }
 
-/* The positions table spreads its columns across the panel and pins the action to the
-   right edge, instead of letting auto layout bunch every value to the left. */
-table.data-table[data-testid='positions-table'] {
-  table-layout: fixed;
-}
-
-table.data-table[data-testid='positions-table'] th,
-table.data-table[data-testid='positions-table'] td {
-  width: 12%;
-}
-
-table.data-table[data-testid='positions-table'] th:first-child,
-table.data-table[data-testid='positions-table'] td:first-child {
-  width: 20%;
-}
-
+/* Eleven columns do not fit the terminal's centre column on a laptop, and a fixed layout
+   at a set share per column squeezed every cell to fit anyway: values ran into their
+   neighbours and the row's controls spilled over TP / SL. Auto layout sizes each column to
+   what it holds and the tab content scrolls sideways when they do not all fit. The actions
+   column shrinks to its controls and sticks to the right edge, so Close is never scrolled
+   out of reach; the figures pass beneath it on an opaque ground rather than through it. */
 table.data-table[data-testid='positions-table'] th:last-child,
 table.data-table[data-testid='positions-table'] td:last-child {
+  position: sticky;
+  right: 0;
+  width: 1%;
   text-align: right;
+  background: var(--bg-panel);
+  box-shadow: -14px 0 12px -12px rgba(0, 0, 0, 0.9);
+}
+
+table.data-table[data-testid='positions-table'] th:last-child {
+  z-index: 2;
 }
 
 /* The side marker before each position's symbol. */
@@ -1721,12 +1723,21 @@ table.data-table[data-testid='positions-table'] td:last-child {
   font-size: 0.85rem;
   line-height: 1;
   color: var(--fg-muted);
-  transform: rotate(-90deg);
 }
 
 .close-control .close-more[aria-expanded='true'] {
-  transform: rotate(90deg);
   color: var(--fg);
+}
+
+/* Only the partial-close chevron turns — down when shut, up when open. The TP/SL · Margin
+   toggle beside it shares the .close-more look but is text, and turning it stood the
+   label on end. */
+.close-control .close-chevron {
+  transform: rotate(-90deg);
+}
+
+.close-control .close-chevron[aria-expanded='true'] {
+  transform: rotate(90deg);
 }
 
 .close-partial {
@@ -1770,6 +1781,14 @@ table.data-table[data-testid='positions-table'] td:last-child {
   flex-wrap: wrap;
   gap: 1rem 1.6rem;
   align-items: flex-end;
+}
+
+/* The manager row spans the whole table, which can be wider than the panel. Its fields
+   stay in the visible part at any scroll position rather than riding off with the columns. */
+.manager-row .position-manager {
+  position: sticky;
+  left: 0.92rem;
+  max-width: calc(100cqi - 2.5rem);
 }
 
 .position-manager .manager-field {
