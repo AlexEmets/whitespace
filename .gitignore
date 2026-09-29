@@ -9,6 +9,7 @@ node_modules/
 *.key
 *.pem
 keystore/
+keys/
 
 # solidity build output (Foundry / Hardhat)
 out/
