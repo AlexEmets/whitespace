@@ -190,6 +190,11 @@ export function createMockChain(state: TestState) {
         // 1_000000 = $1.00 flat oracle fee (PRECISION_6), per the ruling's stated config.
         return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairOracleFee', result: 1_000_000n });
       }
+      if (decoded.functionName === 'pairMinLevPos') {
+        // 1,500 USDW collateral x leverage (PRECISION_6): the close dialog's floor for
+        // what a partial close must leave behind.
+        return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairMinLevPos', result: 1_500_000000n });
+      }
     }
 
     throw new UnmockedCallError(to, data);

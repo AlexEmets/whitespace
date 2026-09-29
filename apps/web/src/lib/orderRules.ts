@@ -92,7 +92,10 @@ export function updateSlError(p: {
  */
 export function triggerPriceError(kind: OpenOrderKind, buy: boolean, trigger: bigint, mark: bigint): string | null {
   if (kind === 'MARKET') return null;
-  if (trigger <= 0n) return 'Enter a trigger price.';
+  // A trigger nobody has typed yet is not a mistake to point at — the message met the trader
+  // the moment they switched to Limit. The form keeps the order unplaceable until there is
+  // a price instead (OpenPositionForm's canSubmit).
+  if (trigger <= 0n) return null;
   if (kind === 'LIMIT' && (buy ? trigger >= mark : trigger <= mark)) {
     return buy ? 'A limit buy must be below the current price.' : 'A limit sell must be above the current price.';
   }

@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { MarketsRail } from '@/components/terminal/MarketsRail';
 import { MarketHeaderBar } from '@/components/terminal/MarketHeaderBar';
-import { OracleStatus } from '@/components/terminal/OracleStatus';
 import { TerminalTabs } from '@/components/terminal/TerminalTabs';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
 import { AccountSummary } from '@/components/terminal/AccountSummary';
@@ -11,7 +10,7 @@ import { PriceChart } from '@/components/PriceChart';
 import { useMarkets } from '@/hooks/useMarkets';
 import { leverageToRaw } from '@/lib/money';
 
-/** The trading terminal: markets rail (with the oracle and account cards at its foot),
+/** The trading terminal: markets rail (with the account card at its foot),
  * centre header + chart + tabbed account tables, and the order ticket. There is no order
  * book — like Variational's RFQ terminal, the ticket carries the vault's two-sided quote
  * for the size being entered (see lib/quote.ts), because a vault has no resting depth to
@@ -32,7 +31,6 @@ export default function TradePage() {
   return (
     <div className="terminal-grid">
       <MarketsRail pairIndex={pairIndex} onSelect={setPairIndex}>
-        <OracleStatus pairIndex={pairIndex} />
         <AccountSummary />
       </MarketsRail>
 

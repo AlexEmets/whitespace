@@ -1081,24 +1081,6 @@ table.markets-table td a:hover {
   color: var(--fg-muted);
 }
 
-.rail-card .signer-dots {
-  display: flex;
-  gap: 0.31rem;
-}
-
-.rail-card .signer-dots span {
-  width: 0.54rem;
-  height: 0.54rem;
-  border-radius: 50%;
-  box-sizing: border-box;
-  border: 1px solid var(--fg-dim);
-}
-
-.rail-card .signer-dots span.on {
-  border: none;
-  background: var(--accent);
-}
-
 .terminal-center {
   display: flex;
   flex-direction: column;
@@ -1311,6 +1293,9 @@ table.markets-table td a:hover {
   min-height: 0;
   overflow: auto;
   padding: 0 0.31rem 0.46rem;
+  /* A size container, so a row's contents can be held to the visible width while the
+     table beneath them scrolls sideways (see .manager-row). */
+  container-type: inline-size;
 }
 
 .terminal-tabs .tab-content > p {
@@ -1633,25 +1618,24 @@ table.data-table td button {
   font-family: var(--font-sans);
 }
 
-/* The positions table spreads its columns across the panel and pins the action to the
-   right edge, instead of letting auto layout bunch every value to the left. */
-table.data-table[data-testid='positions-table'] {
-  table-layout: fixed;
-}
-
-table.data-table[data-testid='positions-table'] th,
-table.data-table[data-testid='positions-table'] td {
-  width: 12%;
-}
-
-table.data-table[data-testid='positions-table'] th:first-child,
-table.data-table[data-testid='positions-table'] td:first-child {
-  width: 20%;
-}
-
+/* Eleven columns do not fit the terminal's centre column on a laptop, and a fixed layout
+   at a set share per column squeezed every cell to fit anyway: values ran into their
+   neighbours and the row's controls spilled over TP / SL. Auto layout sizes each column to
+   what it holds and the tab content scrolls sideways when they do not all fit. The actions
+   column shrinks to its controls and sticks to the right edge, so Close is never scrolled
+   out of reach; the figures pass beneath it on an opaque ground rather than through it. */
 table.data-table[data-testid='positions-table'] th:last-child,
 table.data-table[data-testid='positions-table'] td:last-child {
+  position: sticky;
+  right: 0;
+  width: 1%;
   text-align: right;
+  background: var(--bg-panel);
+  box-shadow: -14px 0 12px -12px rgba(0, 0, 0, 0.9);
+}
+
+table.data-table[data-testid='positions-table'] th:last-child {
+  z-index: 2;
 }
 
 /* The side marker before each position's symbol. */
@@ -1682,7 +1666,7 @@ table.data-table[data-testid='positions-table'] td:last-child {
   color: var(--fg-muted);
 }
 
-/* Close control: `Close` plus a chevron for the partial sizes the contract supports.
+/* Close control: `Close` (which opens ClosePositionDialog) and the TP/SL · Margin toggle.
    Neutral, not red — closing is the ordinary way out of a position, not a warning. */
 .close-control {
   display: inline-flex;
@@ -1721,41 +1705,10 @@ table.data-table[data-testid='positions-table'] td:last-child {
   font-size: 0.85rem;
   line-height: 1;
   color: var(--fg-muted);
-  transform: rotate(-90deg);
 }
 
 .close-control .close-more[aria-expanded='true'] {
-  transform: rotate(90deg);
   color: var(--fg);
-}
-
-.close-partial {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.3rem;
-  margin: 0.3rem 0;
-}
-
-.close-partial button {
-  height: 1.69rem;
-  padding: 0 0.55rem;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--fg-muted);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.close-partial button:hover:not(:disabled) {
-  color: var(--fg);
-  border-color: rgba(255, 255, 255, 0.24);
-}
-
-.close-partial button:disabled {
-  color: var(--fg-dim);
-  cursor: not-allowed;
 }
 
 /* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */
@@ -1770,6 +1723,14 @@ table.data-table[data-testid='positions-table'] td:last-child {
   flex-wrap: wrap;
   gap: 1rem 1.6rem;
   align-items: flex-end;
+}
+
+/* The manager row spans the whole table, which can be wider than the panel. Its fields
+   stay in the visible part at any scroll position rather than riding off with the columns. */
+.manager-row .position-manager {
+  position: sticky;
+  left: 0.92rem;
+  max-width: calc(100cqi - 2.5rem);
 }
 
 .position-manager .manager-field {

@@ -136,6 +136,12 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
   await test.step('close the position and see the pending-close state honestly', async () => {
     const positionRow = page.getByTestId('position-row-0-0');
     await positionRow.getByTestId('close-position-button').click();
+    // Close asks first; the dialog opens on a full close, one confirmation away.
+    const dialog = page.getByTestId('close-dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByTestId('close-share')).toHaveText('100%');
+    await dialog.getByTestId('close-confirm').click();
+    await expect(dialog).toBeHidden();
     await expect(positionRow.getByTestId('close-pending')).toContainText('pending keeper execution');
 
     // The mock chain removes the position from shared state as soon as the

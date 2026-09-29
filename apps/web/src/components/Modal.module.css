@@ -30,6 +30,10 @@
   animation: rise 150ms cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 
+.wide {
+  width: min(28rem, 100%);
+}
+
 .header {
   display: flex;
   align-items: center;

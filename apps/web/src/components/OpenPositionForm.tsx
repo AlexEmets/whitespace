@@ -202,6 +202,7 @@ export function OpenPositionForm({
     !insufficientBalance &&
     !leverageTooHigh &&
     !triggerError &&
+    (kind === 'MARKET' || (triggerRaw !== null && triggerRaw > 0n)) &&
     !tpSl.tp &&
     !tpSl.sl &&
     (kind !== 'MARKET' || quote !== null) &&

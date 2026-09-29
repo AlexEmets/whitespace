@@ -620,6 +620,23 @@ describe('<OpenPositionForm>', () => {
     expect(screen.queryByTestId('trigger-price-input')).not.toBeInTheDocument();
   });
 
+  /**
+   * Nothing is wrong with a trigger nobody has typed yet. The red "Enter a trigger price."
+   * met the trader the instant they switched to Limit — before they had done anything —
+   * so an empty trigger now says nothing and simply leaves the order unplaceable.
+   */
+  it('says nothing about an empty trigger, and keeps the order unplaceable until there is one', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    for (const kind of ['limit', 'stop'] as const) {
+      fireEvent.click(screen.getByTestId(`order-kind-${kind}`));
+      expect(screen.queryByTestId('trigger-error')).not.toBeInTheDocument();
+
+      fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+      expect(screen.queryByTestId('trigger-error')).not.toBeInTheDocument();
+      expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+    }
+  });
+
   it('a limit buy must rest below the market', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     fireEvent.click(screen.getByTestId('order-kind-limit'));
