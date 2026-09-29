@@ -115,7 +115,12 @@ export const TRADING_STORAGE_ABI = parseAbi([
   'function openTradesInfo(address trader, uint16 pairIndex, uint8 index) view returns (uint256 tradeId, uint256 oiNotional, uint32 initialLeverage, uint32 tpLastUpdated, uint32 slLastUpdated, uint32 createdAt, bool deprecatedBeingMarketClosed)',
 ]);
 
-export const PAIRS_STORAGE_ABI = parseAbi(['function pairOracleFee(uint16 pairIndex) view returns (uint64)']);
+export const PAIRS_STORAGE_ABI = parseAbi([
+  'function pairOracleFee(uint16 pairIndex) view returns (uint64)',
+  // PRECISION_6: the smallest collateral × leverage a position may have — a partial close
+  // that would leave less reverts BelowMinLevPos (TradingLib.getCloseTradeRevert).
+  'function pairMinLevPos(uint16 pairIndex) view returns (uint64)',
+]);
 
 /** IOstiumTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. TWAP does not exist in the
  * contracts. A LIMIT entry fills at a better price than its trigger (long: at or below it),

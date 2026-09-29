@@ -42,6 +42,7 @@ export function Modal({
   testId,
   initialFocusRef,
   footer,
+  wide = false,
   children,
 }: {
   open: boolean;
@@ -51,6 +52,8 @@ export function Modal({
   testId: string;
   initialFocusRef?: RefObject<HTMLElement | null>;
   footer?: ReactNode;
+  /** A wider sheet for dialogs that lay figures out in rows, like the close dialog. */
+  wide?: boolean;
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -92,7 +95,7 @@ export function Modal({
     >
       <div
         ref={dialogRef}
-        className={styles.dialog}
+        className={wide ? `${styles.dialog} ${styles.wide}` : styles.dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${testId}-title`}

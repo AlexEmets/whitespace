@@ -1666,7 +1666,7 @@ table.data-table[data-testid='positions-table'] th:last-child {
   color: var(--fg-muted);
 }
 
-/* Close control: `Close` plus a chevron for the partial sizes the contract supports.
+/* Close control: `Close` (which opens ClosePositionDialog) and the TP/SL · Margin toggle.
    Neutral, not red — closing is the ordinary way out of a position, not a warning. */
 .close-control {
   display: inline-flex;
@@ -1709,46 +1709,6 @@ table.data-table[data-testid='positions-table'] th:last-child {
 
 .close-control .close-more[aria-expanded='true'] {
   color: var(--fg);
-}
-
-/* Only the partial-close chevron turns — down when shut, up when open. The TP/SL · Margin
-   toggle beside it shares the .close-more look but is text, and turning it stood the
-   label on end. */
-.close-control .close-chevron {
-  transform: rotate(-90deg);
-}
-
-.close-control .close-chevron[aria-expanded='true'] {
-  transform: rotate(90deg);
-}
-
-.close-partial {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.3rem;
-  margin: 0.3rem 0;
-}
-
-.close-partial button {
-  height: 1.69rem;
-  padding: 0 0.55rem;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  color: var(--fg-muted);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.close-partial button:hover:not(:disabled) {
-  color: var(--fg);
-  border-color: rgba(255, 255, 255, 0.24);
-}
-
-.close-partial button:disabled {
-  color: var(--fg-dim);
-  cursor: not-allowed;
 }
 
 /* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */

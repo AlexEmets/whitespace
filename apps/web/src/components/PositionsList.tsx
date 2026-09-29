@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { maxUint256 } from 'viem';
 import { useAccount, useReadContract } from 'wagmi';
-import { useCloseTrade, FULL_CLOSE_PERCENT } from '@/hooks/useCloseTrade';
+import { useCloseTrade } from '@/hooks/useCloseTrade';
 import { useErc20 } from '@/hooks/useErc20';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarkets } from '@/hooks/useMarkets';
@@ -21,11 +21,8 @@ import { marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positio
 import type { MarketSummary, PositionSummary } from '@/lib/types';
 import { openPositionShareCard } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
+import { ClosePositionDialog, type CloseOutcome } from './ClosePositionDialog';
 import { ShareTradeButton } from './share/ShareTradeButton';
-
-/** Fixed partial-close sizes behind the chevron: the contract takes any percentage, and a
- * fixed set removes the typo class a free input invites on a control that exits leverage. */
-const PARTIAL_PERCENTS = [25, 50, 75] as const;
 
 function parseOptional(text: string, decimals: number): bigint | null {
   if (!text.trim()) return 0n;
@@ -170,11 +167,10 @@ function PositionManager({ position }: { position: PositionSummary }) {
 function PositionRow({ position, market }: { position: PositionSummary; market: MarketSummary | undefined }) {
   const { address } = useAccount();
   const { data: price } = usePrice(position.pairIndex);
-  const { closeTrade, isPending } = useCloseTrade();
-  const [partialOpen, setPartialOpen] = useState(false);
+  const { closeTrade } = useCloseTrade();
+  const [closeOpen, setCloseOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'submitted' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [closeRequested, setCloseRequested] = useState(false);
 
   const collateralRaw = collateralToRaw(position.collateral);
   const leverageRaw = leverageToRaw(position.leverage);
@@ -234,24 +230,22 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
       ? marginUsagePercent({ buy: position.buy, entry: priceToRaw(position.openPrice), mark: markRaw, liq: liqPrice })
       : null;
 
-  async function handleClose(percent: number) {
-    if (!price) return;
-    setStatus('submitting');
-    setErrorMessage(null);
+  /** `share` is the contract's PRECISION_2 percent, 10000 for all of it. Errors are shown
+   * in the dialog, which stays open for them; a declined signature just leaves it open. */
+  async function submitClose(share: number): Promise<CloseOutcome> {
+    if (!price) return { done: false, error: 'There is no live price to close against right now.' };
     try {
       await closeTrade({
         pairIndex: position.pairIndex,
         index: position.index,
-        closePercentage: percent === 100 ? FULL_CLOSE_PERCENT : Math.round((percent / 100) * FULL_CLOSE_PERCENT),
+        closePercentage: share,
         marketPriceRaw: priceToRaw(price.mark),
         slippageBps: DEFAULT_SLIPPAGE_BPS,
       });
-      setStatus('submitted');
+      setCloseRequested(true);
+      return { done: true };
     } catch (err) {
-      // A rejected signature is not a failure: back to idle so the row offers Close again.
-      const message = describeTxError(err);
-      setStatus(message === null ? 'idle' : 'error');
-      setErrorMessage(message);
+      return { done: false, error: describeTxError(err) };
     }
   }
 
@@ -293,20 +287,11 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
             <button
               type="button"
               data-testid="close-position-button"
-              disabled={!price || isPending || status === 'submitting'}
-              onClick={() => handleClose(100)}
+              aria-haspopup="dialog"
+              disabled={!price}
+              onClick={() => setCloseOpen(true)}
             >
-              {status === 'submitting' ? 'Closing…' : 'Close'}
-            </button>
-            <button
-              type="button"
-              className="close-more close-chevron"
-              aria-expanded={partialOpen}
-              aria-label="Close part of this position"
-              data-testid="close-partial-toggle"
-              onClick={() => setPartialOpen((v) => !v)}
-            >
-              ‹
+              Close
             </button>
             <button
               type="button"
@@ -326,33 +311,23 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
               testId={`position-share-${position.pairIndex}-${position.index}`}
             />
           ) : null}
-          {partialOpen ? (
-            <div className="close-partial" data-testid="close-partial-row">
-              {PARTIAL_PERCENTS.map((pct) => (
-                <button
-                  key={pct}
-                  type="button"
-                  data-testid={`close-partial-${pct}`}
-                  disabled={!price || isPending || status === 'submitting'}
-                  onClick={() => handleClose(pct)}
-                >
-                  {pct}%
-                </button>
-              ))}
-            </div>
-          ) : null}
-          {status === 'submitted' ? (
+          {closeRequested ? (
             <span data-testid="close-pending" role="status">
               {' '}
               Close requested — pending keeper execution.
             </span>
           ) : null}
-          {status === 'error' ? (
-            <span role="alert" className="error-text">
-              {' '}
-              {errorMessage}
-            </span>
-          ) : null}
+          <ClosePositionDialog
+            open={closeOpen}
+            onClose={() => setCloseOpen(false)}
+            position={position}
+            marketName={marketLabel(market, position.pairIndex)}
+            baseAsset={market?.from ?? 'BASE'}
+            sizeBaseRaw={sizeBase}
+            pnlRaw={pnl}
+            canClose={Boolean(price)}
+            onConfirm={submitClose}
+          />
         </td>
       </tr>
       {manageOpen ? (

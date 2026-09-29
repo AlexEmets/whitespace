@@ -60,7 +60,7 @@ for (const width of [1280, 1440, 1920]) {
   });
 }
 
-test('the TP/SL · Margin button reads left to right; only the partial-close chevron turns', async ({ page, baseURL }) => {
+test('the TP/SL · Margin button reads left to right', async ({ page, baseURL }) => {
   const state = new TestState();
   state.positions.push({
     pairIndex: 0, index: 0, buy: true, collateral: '1000000000', leverage: '1000',
@@ -79,7 +79,33 @@ test('the TP/SL · Margin button reads left to right; only the partial-close che
   const box = await manage.boundingBox();
   // One line of text: wider than it is tall.
   expect(box!.width).toBeGreaterThan(box!.height);
+});
 
-  const chevron = page.getByTestId('close-partial-toggle');
-  expect(await chevron.evaluate((el) => getComputedStyle(el).transform)).not.toBe('none');
+/** The close dialog is a centred sheet, not a strip that unrolls at the table's right edge. */
+test('Close opens a dialog in the middle of the screen, and a partial close goes through it', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const state = new TestState();
+  state.positions.push({
+    pairIndex: 0, index: 0, buy: true, collateral: '1000000000', leverage: '1000',
+    openPrice: state.markPrice, tp: '0', sl: '0', openedAt: 1_790_000_000, tradeId: '900',
+  });
+  await installMockWallet(page, state);
+  await installMockBackend(page, state, `${baseURL}/__api`);
+
+  await page.goto('/trade');
+  await page.getByTestId('connect-wallet-button').click();
+  await page.getByTestId('tab-positions').click();
+  await page.getByTestId('close-position-button').click();
+
+  const dialog = page.getByTestId('close-dialog');
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  const centre = box!.x + box!.width / 2;
+  expect(Math.abs(centre - 720)).toBeLessThan(40);
+
+  await dialog.getByTestId('close-quick-25').click();
+  await dialog.getByTestId('close-confirm').click();
+  await expect(page.getByTestId('close-pending')).toContainText('pending keeper execution');
+  const close = [...state.sentTrading].reverse().find((c) => c.functionName === 'closeTradeMarket');
+  expect(close?.args[2]).toBe(2500);
 });

@@ -28,6 +28,8 @@ const LIQ_PRICE_RAW = 90909090909090909090n;
 /** Accrued funding 1.50 and rollover 0.25 USDW owed by the trader (contract sign). */
 const FUNDING_OWED = 1_500_000n;
 const ROLLOVER_OWED = 250_000n;
+/** The pair's minimum collateral × leverage (PRECISION_6); tests raise it to hit the floor. */
+const minLevPos = vi.hoisted(() => ({ value: 1_500_000000n }));
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
@@ -40,6 +42,7 @@ vi.mock('wagmi', () => ({
     if (functionName === 'getTradeRolloverFee') return { data: ROLLOVER_OWED, isLoading: false };
     if (functionName === 'openTradesInfo') return { data: [7n, 0n, 1000, 0, 0, 0, false], isLoading: false };
     if (functionName === 'maxSl_P') return { data: 75, isLoading: false };
+    if (functionName === 'pairMinLevPos') return { data: minLevPos.value, isLoading: false };
     return { data: LIQ_PRICE_RAW, isLoading: false };
   },
 }));
@@ -240,9 +243,26 @@ describe('<PositionsList>', () => {
     expect(screen.getByTestId('unrealized-pnl')).toHaveTextContent('+1,000.00');
   });
 
-  it('closes the full position by default and calls closeTradeMarket with the live mark price', async () => {
+  /**
+   * Close opens a confirmation rather than acting: leaving a leveraged position deserves one
+   * look before the wallet opens, and the dialog is where the size is chosen.
+   */
+  it('asks before closing: the row button opens the close dialog and signs nothing', () => {
     render(<PositionsList />);
     fireEvent.click(screen.getByTestId('close-position-button'));
+
+    expect(screen.getByTestId('close-dialog')).toBeInTheDocument();
+    expect(closeTradeMock).not.toHaveBeenCalled();
+  });
+
+  it('starts at a full close and confirms it against the live mark', async () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    // 1,000 collateral x 10x at 100.00 = 100 BTC; the whole of it.
+    expect(screen.getByTestId('close-amount-input')).toHaveValue('100');
+    expect(screen.getByTestId('close-share')).toHaveTextContent('100%');
+    expect(screen.getByTestId('close-preview-remaining')).toHaveTextContent('None');
+    fireEvent.click(screen.getByTestId('close-confirm'));
 
     await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
     expect(closeTradeMock).toHaveBeenCalledWith({
@@ -253,33 +273,88 @@ describe('<PositionsList>', () => {
       slippageBps: 50n,
     });
     expect(await screen.findByTestId('close-pending')).toHaveTextContent(/pending keeper execution/i);
+    expect(screen.queryByTestId('close-dialog')).not.toBeInTheDocument();
   });
 
-  /**
-   * The row now ends in a single `Close` (terminal_design.pdf), so the default action must
-   * be a FULL close — a button labelled Close that silently exited 25% of a leveraged
-   * position would be the worst possible default.
-   */
-  it('closes the whole position from the row button', async () => {
+  it('closes the quick size picked in the dialog', async () => {
     render(<PositionsList />);
     fireEvent.click(screen.getByTestId('close-position-button'));
-
-    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
-    expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 10000 }); // FULL_CLOSE_PERCENT
-  });
-
-  /** Partial closing moved behind the chevron rather than being removed: the contract
-   * takes a percentage and dropping the capability to match a picture would lose real
-   * function. It must stay hidden until asked for, and then submit the exact percentage. */
-  it('keeps partial closing available behind the chevron', async () => {
-    render(<PositionsList />);
-    expect(screen.queryByTestId('close-partial-row')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('close-partial-toggle'));
-    fireEvent.click(screen.getByTestId('close-partial-25'));
+    fireEvent.click(screen.getByTestId('close-quick-25'));
+    expect(screen.getByTestId('close-amount-input')).toHaveValue('25');
+    expect(screen.getByTestId('close-confirm')).toHaveTextContent('Close 25%');
+    fireEvent.click(screen.getByTestId('close-confirm'));
 
     await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
     expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 2500 });
+  });
+
+  it('closes a typed amount as its share of the position', async () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.change(screen.getByTestId('close-amount-input'), { target: { value: '40' } });
+    expect(screen.getByTestId('close-share')).toHaveTextContent('40%');
+    expect(screen.getByTestId('close-preview-remaining')).toHaveTextContent('60 BTC');
+    // +1,000.00 unrealised, 40% of it.
+    expect(screen.getByTestId('close-preview-pnl')).toHaveTextContent('+400.00 USDW');
+    fireEvent.click(screen.getByTestId('close-confirm'));
+
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
+    expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 4000 });
+  });
+
+  it('closes the share set on the slider', async () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.change(screen.getByTestId('close-share-slider'), { target: { value: '30' } });
+    expect(screen.getByTestId('close-amount-input')).toHaveValue('30');
+    fireEvent.click(screen.getByTestId('close-confirm'));
+
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
+    expect(closeTradeMock.mock.calls[0]?.[0]).toMatchObject({ closePercentage: 3000 });
+  });
+
+  it('cannot confirm with no amount', () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.change(screen.getByTestId('close-amount-input'), { target: { value: '' } });
+    expect(screen.getByTestId('close-confirm')).toBeDisabled();
+  });
+
+  /** BelowMinLevPos, caught before the wallet opens: the dialog does the contract's own
+   * arithmetic and says how far the trader can go instead. */
+  it('refuses a partial close that would leave less than the market minimum, and says how much is allowed', () => {
+    // 6,000 USDW minimum on a 10,000 USDW position: at most 40% can go.
+    minLevPos.value = 6_000_000000n;
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-quick-50'));
+
+    expect(screen.getByTestId('close-too-little')).toHaveTextContent(/minimum position of 6,000.00 USDW.*up to 40%, or all of it/);
+    expect(screen.getByTestId('close-confirm')).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('close-quick-100'));
+    expect(screen.queryByTestId('close-too-little')).not.toBeInTheDocument();
+    expect(screen.getByTestId('close-confirm')).toBeEnabled();
+    minLevPos.value = 1_500_000000n;
+  });
+
+  it('keeps the dialog open with the reason when the close fails', async () => {
+    closeTradeMock.mockRejectedValueOnce(new Error('The close could not be simulated.'));
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-confirm'));
+
+    expect(await screen.findByTestId('close-error')).toHaveTextContent('The close could not be simulated.');
+    expect(screen.getByTestId('close-dialog')).toBeInTheDocument();
+    expect(screen.queryByTestId('close-pending')).not.toBeInTheDocument();
+  });
+
+  it('closes nothing on Cancel', () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-cancel'));
+    expect(screen.queryByTestId('close-dialog')).not.toBeInTheDocument();
+    expect(closeTradeMock).not.toHaveBeenCalled();
   });
 
   it('offers a share button on an open position once it has a mark', () => {
