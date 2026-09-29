@@ -77,8 +77,10 @@ describe('triggerPriceError', () => {
   it('ignores market orders', () => {
     expect(triggerPriceError('MARKET', true, 0n, P)).toBeNull();
   });
-  it('requires a positive trigger', () => {
-    expect(triggerPriceError('LIMIT', true, 0n, P)).toMatch(/trigger/);
+  it('has nothing to say about a trigger that has not been typed', () => {
+    // An empty trigger is not an error to show; the form keeps the order unplaceable instead.
+    expect(triggerPriceError('LIMIT', true, 0n, P)).toBeNull();
+    expect(triggerPriceError('STOP', false, 0n, P)).toBeNull();
   });
   it('a limit waits on the better side of the market', () => {
     expect(triggerPriceError('LIMIT', true, P - 1n, P)).toBeNull();
