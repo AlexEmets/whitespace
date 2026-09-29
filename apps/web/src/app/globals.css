@@ -1081,24 +1081,6 @@ table.markets-table td a:hover {
   color: var(--fg-muted);
 }
 
-.rail-card .signer-dots {
-  display: flex;
-  gap: 0.31rem;
-}
-
-.rail-card .signer-dots span {
-  width: 0.54rem;
-  height: 0.54rem;
-  border-radius: 50%;
-  box-sizing: border-box;
-  border: 1px solid var(--fg-dim);
-}
-
-.rail-card .signer-dots span.on {
-  border: none;
-  background: var(--accent);
-}
-
 .terminal-center {
   display: flex;
   flex-direction: column;

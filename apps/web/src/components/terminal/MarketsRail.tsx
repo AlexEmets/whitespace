@@ -60,7 +60,7 @@ function RailRow({
 
 /** Left markets rail. Rendered directly from `/markets` — as many rows as the API
  * returns, never padded toward a fuller-looking list. `children` are pinned to the foot of
- * the rail (the terminal puts the oracle and account cards there). */
+ * the rail (the terminal puts the account card there). */
 export function MarketsRail({
   pairIndex,
   onSelect,

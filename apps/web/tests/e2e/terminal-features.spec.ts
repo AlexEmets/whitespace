@@ -142,6 +142,12 @@ test('history tabs show funding, orders and realised totals', async ({ page, bas
   await expect(page.getByTestId('no-order-history')).toBeVisible();
 });
 
+test('the markets rail carries no oracle card, only the account', async ({ page, baseURL }) => {
+  await setUp(page, baseURL);
+  await expect(page.getByTestId('account-summary')).toBeVisible();
+  await expect(page.getByTestId('oracle-status')).toHaveCount(0);
+});
+
 test('the funding rate is read from chain into the header', async ({ page, baseURL }) => {
   await setUp(page, baseURL, (s) => {
     s.fundingRatePerBlock = 31_709_791_983n;
