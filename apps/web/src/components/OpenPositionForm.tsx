@@ -16,7 +16,7 @@ import { explainCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { tpSlErrors, triggerPriceError } from '@/lib/orderRules';
+import { tpCapError, tpSlErrors, triggerPriceError } from '@/lib/orderRules';
 import {
   computeTicket,
   convertSizeInput,
@@ -150,7 +150,12 @@ export function OpenPositionForm({
   const tpSl =
     tpRaw === null || slRaw === null
       ? { tp: tpRaw === null ? 'Not a price.' : null, sl: slRaw === null ? 'Not a price.' : null }
-      : tpSlErrors({ buy, entryPrice, tp: tpRaw, sl: slRaw });
+      : (() => {
+          const sides = tpSlErrors({ buy, entryPrice, tp: tpRaw, sl: slRaw });
+          // The wrong-side rule reverts at open; the cap does not — it is silently clamped or
+          // erased on fill, so refuse it here rather than let the trader think it took.
+          return { tp: sides.tp ?? tpCapError({ buy, entryPrice, leverage: leverageRaw, tp: tpRaw }), sl: sides.sl };
+        })();
   const triggerError = kind === 'MARKET' ? null : triggerRaw === null ? 'Not a price.' : triggerPriceError(kind, buy, triggerRaw, markRaw);
 
   // The minimum tolerance that accepts the quoted fill. A default below it would cancel a large

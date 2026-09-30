@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   slippageForSubmission,
+  tpCapError,
   tpSlErrors,
   triggerPriceError,
   updateSlError,
@@ -32,6 +33,36 @@ describe('tpSlErrors (TradingLib.getOpenTradeRevert)', () => {
       tp: 'Take profit cannot be negative.',
       sl: 'Stop loss cannot be negative.',
     });
+  });
+});
+
+describe('tpCapError (TradingCallbacksLib.correctTp, checked at open)', () => {
+  it('ignores an absent TP, price or leverage — those are other rules or not yet known', () => {
+    expect(tpCapError({ buy: true, entryPrice: P, leverage: 1_000n, tp: 0n })).toBeNull();
+    expect(tpCapError({ buy: true, entryPrice: 0n, leverage: 1_000n, tp: P })).toBeNull();
+    expect(tpCapError({ buy: true, entryPrice: P, leverage: 0n, tp: P })).toBeNull();
+  });
+
+  it('accepts a long TP exactly at the +900% boundary and refuses one wei past it', () => {
+    // 10x: maxDist = P * 900 / 1000 = 0.9 P
+    expect(tpCapError({ buy: true, entryPrice: P, leverage: 1_000n, tp: P + (P * 9n) / 10n })).toBeNull();
+    expect(tpCapError({ buy: true, entryPrice: P, leverage: 1_000n, tp: P + (P * 9n) / 10n + 1n })).toMatch(/900%/);
+  });
+
+  it('tightens the cap as leverage rises — a 50x long is capped far closer to entry', () => {
+    // 50x: maxDist = P * 900 / 5000 = 0.18 P; a +90% TP that a 10x trade allows is now over the cap.
+    expect(tpCapError({ buy: true, entryPrice: P, leverage: 5_000n, tp: P + (P * 9n) / 10n })).toMatch(/900%/);
+  });
+
+  it('mirrors the boundary for a short and refuses one wei below it', () => {
+    // 10x short: maxDist 0.9 P, floor at 0.1 P
+    expect(tpCapError({ buy: false, entryPrice: P, leverage: 1_000n, tp: P / 10n })).toBeNull();
+    expect(tpCapError({ buy: false, entryPrice: P, leverage: 1_000n, tp: P / 10n - 1n })).toMatch(/900%/);
+  });
+
+  it('floors the short boundary at zero — a low-leverage short can never reach the cap', () => {
+    // 1x: maxDist = 9 P > P, so any positive TP is within the cap (matches the contract clamp math).
+    expect(tpCapError({ buy: false, entryPrice: P, leverage: 100n, tp: 1n })).toBeNull();
   });
 });
 

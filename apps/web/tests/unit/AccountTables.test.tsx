@@ -110,6 +110,17 @@ describe('<LimitOrdersList>', () => {
     expect(screen.getByText('Take profit must be above the entry price.')).toBeInTheDocument();
   });
 
+  it('refuses a TP past the +900% cap for the order’s leverage', () => {
+    // 10x, trigger 60,000 → the cap sits at +900% = 114,000. A 200,000 TP is above the trigger,
+    // so the wrong-side rule is happy, but the contract would clamp it on fill — refuse it here.
+    limitOrders = [limitBuy];
+    render(<LimitOrdersList />);
+    fireEvent.click(screen.getByTestId('limit-edit-0-2'));
+    fireEvent.change(screen.getByTestId('limit-tp-input-0-2'), { target: { value: '200000' } });
+    expect(screen.getByTestId('limit-save-0-2')).toBeDisabled();
+    expect(screen.getByText(/900%/)).toBeInTheDocument();
+  });
+
   it('refuses an empty trigger', () => {
     limitOrders = [limitBuy];
     render(<LimitOrdersList />);

@@ -8,8 +8,8 @@ import { useTradingActions } from '@/hooks/useTradingActions';
 import { explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
-import { formatLeverage, formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { tpSlErrors } from '@/lib/orderRules';
+import { formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
+import { tpCapError, tpSlErrors } from '@/lib/orderRules';
 import type { FeeCharge, LimitOrderSummary, MarketSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
 import { formatUtcMinute as formatTime } from '@/components/portfolio/formatTime';
@@ -43,7 +43,14 @@ function LimitOrderRow({ order, market }: { order: LimitOrderSummary; market: Ma
   const slRaw = parsePrice(sl);
   const rules =
     triggerRaw && tpRaw !== null && slRaw !== null
-      ? tpSlErrors({ buy: order.buy, entryPrice: triggerRaw, tp: tpRaw, sl: slRaw })
+      ? (() => {
+          const sides = tpSlErrors({ buy: order.buy, entryPrice: triggerRaw, tp: tpRaw, sl: slRaw });
+          // Same +900% cap the contract clamps to on fill — enforce it before the edit is signed.
+          return {
+            tp: sides.tp ?? tpCapError({ buy: order.buy, entryPrice: triggerRaw, leverage: leverageToRaw(order.leverage), tp: tpRaw }),
+            sl: sides.sl,
+          };
+        })()
       : { tp: null, sl: null };
   const invalid = !triggerRaw || tpRaw === null || slRaw === null || rules.tp !== null || rules.sl !== null;
 

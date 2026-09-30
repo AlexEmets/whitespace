@@ -701,6 +701,31 @@ describe('<OpenPositionForm>', () => {
     expect(screen.getByTestId('submit-open-button')).toBeDisabled();
   });
 
+  // The bug: the open form used to check only the wrong-side rule, so an over-cap TP looked
+  // accepted and was then silently clamped (or, for a short, zeroed) by the contract on fill.
+  // At 100x the +900% cap sits ~9% above a ~65,001 entry, so an 80,000 TP is over it even though
+  // it is above the entry. The form must refuse it here rather than let it be quietly changed.
+  it('refuses a take profit past the +900% cap for the chosen leverage', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '80000' } });
+    expect(screen.getByTestId('tp-error')).toHaveTextContent(/900%/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  // The same TP that is over the cap at 100x is comfortably within it at 10x — the rule must
+  // track leverage, not reject a good TP outright.
+  it('accepts that same take profit once the leverage is low enough to allow it', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '10' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '80000' } });
+    expect(screen.queryByTestId('tp-error')).not.toBeInTheDocument();
+  });
+
   it('submits a valid take profit and stop loss with the order', async () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });

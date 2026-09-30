@@ -42,6 +42,27 @@ export function tpSlErrors({ buy, entryPrice, tp, sl }: TpSlInput): { tp: string
 }
 
 /**
+ * The +900% gain cap, checked at OPEN (market and resting limit/stop), where the wrong-side
+ * rules of `tpSlErrors` never look at leverage. The contract does NOT revert an over-cap TP at
+ * open: `TradingCallbacksLib.correctTp` silently clamps it to the cap distance — and, for a
+ * short whose cap distance exceeds the entry, drops it to 0 (= no TP at all). So a TP that looks
+ * accepted here is quietly changed, or erased, on fill unless we refuse it first — exactly what
+ * the edit panel already does with `updateTpError`. At open `initialLeverage == leverage`, so the
+ * cap distance is `entryPrice * MAX_GAIN_P / leverage`.
+ *
+ * TP == 0 (no take profit) and wrong-side TPs are not this function's job — `tpSlErrors` owns them.
+ */
+export function tpCapError(p: { buy: boolean; entryPrice: bigint; leverage: bigint; tp: bigint }): string | null {
+  if (p.tp <= 0n || p.entryPrice <= 0n || p.leverage <= 0n) return null;
+  const maxDist = (p.entryPrice * MAX_GAIN_P) / p.leverage;
+  if (p.buy && p.tp > p.entryPrice + maxDist) return 'Take profit is beyond the +900% cap for this leverage.';
+  if (!p.buy && p.tp < (maxDist < p.entryPrice ? p.entryPrice - maxDist : 0n)) {
+    return 'Take profit is beyond the +900% cap for this leverage.';
+  }
+  return null;
+}
+
+/**
  * solidity: OstiumTrading.updateTp — a new TP may not be zero and may not sit further than
  * `openPrice * MAX_GAIN_P / max(initialLeverage, leverage)` beyond the entry.
  */
