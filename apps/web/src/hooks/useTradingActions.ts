@@ -6,6 +6,7 @@ import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { padGas } from '@/lib/gas';
 import { confirmTx } from '@/lib/tx';
+import { useSessionKey } from './useSessionKey';
 
 type TradingWrite =
   | { functionName: 'updateTp'; args: readonly [number, number, bigint] }
@@ -40,12 +41,19 @@ export function useTradingActions() {
   const publicClient = usePublicClient();
   const { address: account } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const session = useSessionKey();
   const [pending, setPending] = useState<TradingWrite['functionName'] | null>(null);
 
   async function send(call: TradingWrite) {
     if (!publicClient) throw new Error('useTradingActions: no public client');
     setPending(call.functionName);
     try {
+      // With one-click trading on, sign locally through the session key (no popup); its send()
+      // simulates delegatedAction first, keeping the same before-you-sign revert reasons.
+      if (session.active) {
+        const { receipt } = await session.send(call.functionName, call.args, ACTION_LABEL[call.functionName]);
+        return receipt;
+      }
       const { request } = await publicClient.simulateContract({
         account,
         address: TRADING_ADDRESS,

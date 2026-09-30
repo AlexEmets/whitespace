@@ -5,6 +5,7 @@ import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { padGas } from '@/lib/gas';
 import { confirmTx } from '@/lib/tx';
+import { useSessionKey } from './useSessionKey';
 
 /** PRECISION_2 percent, PERCENT_BASE per contracts/src/vendor/ostium/OstiumTrading.sol:28. */
 export const FULL_CLOSE_PERCENT = 10000;
@@ -29,9 +30,23 @@ export function useCloseTrade() {
   const publicClient = usePublicClient();
   const { address: account } = useAccount();
   const { writeContractAsync, isPending } = useWriteContract();
+  const session = useSessionKey();
 
   async function closeTrade(params: CloseTradeParams) {
     if (!publicClient) throw new Error('useCloseTrade: no public client');
+    const args = [
+      params.pairIndex,
+      params.index,
+      params.closePercentage,
+      params.marketPriceRaw,
+      Number(params.slippageBps),
+    ] as const;
+
+    // With one-click trading on, the session key signs the close locally (no popup) — its own
+    // send() simulates delegatedAction first, so the revert-reason benefit below is preserved.
+    if (session.active) {
+      return session.send('closeTradeMarket', args, 'close the position');
+    }
 
     // Simulated before it is sent, which is the only point at which the chain will say
     // *why* a close cannot happen. Once mined, a revert reason is not in the receipt — see
@@ -51,7 +66,7 @@ export function useCloseTrade() {
       address: TRADING_ADDRESS,
       abi: TRADING_ABI,
       functionName: 'closeTradeMarket',
-      args: [params.pairIndex, params.index, params.closePercentage, params.marketPriceRaw, Number(params.slippageBps)],
+      args,
     });
 
     const hash = await writeContractAsync(await padGas(publicClient, request as never));
