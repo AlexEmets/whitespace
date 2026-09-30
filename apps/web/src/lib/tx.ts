@@ -81,10 +81,29 @@ function rejectedInWallet(err: unknown): boolean {
   return (err as { code?: unknown } | null | undefined)?.code === 4001;
 }
 
+const isHexData = (v: unknown): v is Hex => typeof v === 'string' && /^0x[0-9a-fA-F]{8,}$/.test(v);
+
 function revertData(err: unknown): Hex | undefined {
-  if (!(err instanceof BaseError)) return undefined;
-  const reverted = err.walk((e) => e instanceof ContractFunctionRevertedError);
-  return reverted instanceof ContractFunctionRevertedError ? reverted.raw : undefined;
+  // Same-realm fast path: viem's own walk finds the revert and hands back its raw data.
+  if (err instanceof BaseError) {
+    const reverted = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (reverted instanceof ContractFunctionRevertedError && isHexData(reverted.raw)) return reverted.raw;
+  }
+  // Resilient path: viem can be duplicated across module realms in the Next bundle, so
+  // `instanceof BaseError` is false for a real viem error and the fast path misses it — which
+  // is how a one-click `delegatedAction` revert surfaced as the raw "…with the following
+  // signature:" line. Recover the revert data by shape: walk the cause chain and take the first
+  // node carrying hex revert data (`raw`, or `data` when it holds the bytes rather than a decode).
+  const seen = new Set<unknown>();
+  let node: unknown = err;
+  while (node && typeof node === 'object' && !seen.has(node)) {
+    seen.add(node);
+    const n = node as { raw?: unknown; data?: unknown; cause?: unknown };
+    if (isHexData(n.raw)) return n.raw;
+    if (isHexData(n.data)) return n.data;
+    node = n.cause;
+  }
+  return undefined;
 }
 
 function explainRevert(data: Hex): string | null {

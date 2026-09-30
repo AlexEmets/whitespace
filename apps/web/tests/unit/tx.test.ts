@@ -105,6 +105,25 @@ describe('describeTxError', () => {
     expect(text).not.toMatch(/oracle fee/i);
   });
 
+  /**
+   * The one-click (delegatedAction) revert as it actually arrives in the browser: viem is
+   * duplicated in the Next bundle, so the thrown error is NOT `instanceof BaseError` across
+   * module realms. It still carries the revert data on a nested `cause`. Before the fix this
+   * fell through to `err.message` and rendered "…reverted with the following signature:" with
+   * the selector on the discarded next line. The reason must be decoded from the shape instead.
+   */
+  it('decodes the revert even when instanceof fails (viem duplicated in the bundle)', () => {
+    const crossRealm = {
+      name: 'ContractFunctionExecutionError',
+      message: 'The contract function "delegatedAction" reverted with the following signature:\n0xe450d38c\n\nviem noise',
+      cause: { name: 'ContractFunctionRevertedError', raw: INSUFFICIENT, signature: '0xe450d38c' },
+    };
+    const text = describeTxError(crossRealm) ?? '';
+    expect(text).toContain('1.00');
+    expect(text).toContain('0.06');
+    expect(text).not.toMatch(/signature/i);
+  });
+
   it('says when the faucet unlocks rather than that a transaction reverted', () => {
     const availableAt = 1790097009n;
     const data = encodeErrorResult({
