@@ -127,7 +127,7 @@ function ShareDialog({
   }
 
   return (
-    <Modal open onClose={onClose} title="Share trade" testId="share-dialog">
+    <Modal open onClose={onClose} title="Share trade" testId="share-dialog" size="large">
       <div className={styles.body}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img className={styles.preview} src={imagePath} alt={text} width={1200} height={630} data-testid="share-preview" />

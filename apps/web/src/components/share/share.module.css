@@ -30,7 +30,10 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding: 16px;
+  min-height: 0;
+  padding: 18px 20px 20px;
+  /* The large sheet can outgrow a short laptop screen; scroll inside it rather than clip. */
+  overflow-y: auto;
 }
 
 .preview {
@@ -43,10 +46,21 @@
   background: var(--bg);
 }
 
+/* Post on X across the top; the rest share one row beneath it, however many the browser
+   offers (the system share sheet only exists where files can be shared). */
 .actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.actions > * {
+  flex: 1 1 0;
+  min-width: 8rem;
+}
+
+.actions > .primary {
+  flex-basis: 100%;
 }
 
 .primary,
@@ -63,7 +77,6 @@
 }
 
 .primary {
-  grid-column: 1 / -1;
   border: none;
   background: var(--accent);
   color: var(--on-color);

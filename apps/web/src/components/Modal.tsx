@@ -42,7 +42,7 @@ export function Modal({
   testId,
   initialFocusRef,
   footer,
-  wide = false,
+  size = 'default',
   children,
 }: {
   open: boolean;
@@ -52,8 +52,11 @@ export function Modal({
   testId: string;
   initialFocusRef?: RefObject<HTMLElement | null>;
   footer?: ReactNode;
-  /** A wider sheet for dialogs that lay figures out in rows, like the close dialog. */
-  wide?: boolean;
+  /**
+   * `wide` for dialogs that lay figures out in rows (the close dialog); `large` for one
+   * built around an image that has to be legible (the share card).
+   */
+  size?: 'default' | 'wide' | 'large';
   children: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -95,7 +98,8 @@ export function Modal({
     >
       <div
         ref={dialogRef}
-        className={wide ? `${styles.dialog} ${styles.wide}` : styles.dialog}
+        className={size === 'default' ? styles.dialog : `${styles.dialog} ${styles[size]}`}
+        data-size={size}
         role="dialog"
         aria-modal="true"
         aria-labelledby={`${testId}-title`}

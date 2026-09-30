@@ -37,6 +37,13 @@ afterEach(() => {
 });
 
 describe('<ShareTradeButton>', () => {
+  /** At the default 23rem the 1200×630 card previewed at about 300px wide — too small to
+   *  read the figures on it before posting them. */
+  it('opens as a large sheet, so the card preview can be read', () => {
+    renderButton();
+    expect(screen.getByTestId('share-dialog')).toHaveAttribute('data-size', 'large');
+  });
+
   it('previews the card image the link will show, in the current theme', () => {
     renderButton();
     expect(screen.getByTestId('share-preview')).toHaveAttribute(

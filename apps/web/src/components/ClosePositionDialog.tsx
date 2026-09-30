@@ -146,7 +146,7 @@ export function ClosePositionDialog({
   const canConfirm = canClose && share !== null && !tooLittle && !submitting;
 
   return (
-    <Modal open={open} onClose={onClose} title="Close position" testId="close-dialog" initialFocusRef={amountRef} wide>
+    <Modal open={open} onClose={onClose} title="Close position" testId="close-dialog" initialFocusRef={amountRef} size="wide">
       <div className={styles.body}>
         <div className={styles.position}>
           <span className={`side-bar ${position.buy ? 'long' : 'short'}`} aria-hidden="true" />
