@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadShareCard, type FetchJson } from '@/lib/shareData';
+import { loadShareCard, serverApiBase, type FetchJson } from '@/lib/shareData';
 
 const ADDRESS = '0x00000000000000000000000000000000000000aa';
 const T0 = Date.UTC(2026, 8, 28, 12, 0, 0) / 1000;
@@ -59,6 +59,25 @@ function fakeApi(overrides: Record<string, unknown> = {}): FetchJson {
     return routes[path];
   });
 }
+
+describe('serverApiBase', () => {
+  it('uses the internal base when the host sets one', () => {
+    expect(serverApiBase({ API_INTERNAL_BASE_URL: 'http://127.0.0.1:4000' }, '/api')).toBe('http://127.0.0.1:4000');
+  });
+
+  it('uses an absolute public base as it is', () => {
+    expect(serverApiBase({}, 'https://www.whitespace.finance/api')).toBe('https://www.whitespace.finance/api');
+  });
+
+  /**
+   * Production builds with NEXT_PUBLIC_API_BASE_URL=/api, which the browser resolves against
+   * the page and Node's fetch cannot resolve at all — every share page and card.png threw
+   * and rendered a 404. On the host the API listens on 127.0.0.1:4000 behind Caddy.
+   */
+  it('reaches the API on the host directly when the public base is only a path', () => {
+    expect(serverApiBase({}, '/api')).toBe('http://127.0.0.1:4000');
+  });
+});
 
 describe('loadShareCard', () => {
   it('finds a close by its close-order id and names its market', async () => {

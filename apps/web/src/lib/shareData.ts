@@ -8,13 +8,22 @@ import type { ClosedPositionSummary, MarketSummary, PositionSummary } from './ty
  * network, and so the server can point it at the API directly. */
 export type FetchJson = (path: string) => Promise<unknown>;
 
+/** Where services/api listens on the host, behind Caddy's `/api` route (deploy/Caddyfile). */
+const HOST_API_BASE = 'http://127.0.0.1:4000';
+
 /**
- * The API as the Next server reaches it. `API_INTERNAL_BASE_URL` lets the host skip the
- * public round trip (http://127.0.0.1:4000 behind Caddy); without it the server uses the
- * same public base URL the browser does.
+ * The API as the Next server reaches it. `API_INTERNAL_BASE_URL` lets the host name it
+ * outright; otherwise the server uses the public base the browser does — unless that is
+ * only a path. Production builds with `/api`, which a browser resolves against the page
+ * but Node's fetch cannot resolve at all: every share page and card threw and rendered a
+ * 404. A path means "this host", so the server goes to the API on the host directly.
  */
-export function serverApiBase(): string {
-  return process.env.API_INTERNAL_BASE_URL ?? API_BASE_URL;
+export function serverApiBase(
+  env: Record<string, string | undefined> = process.env,
+  publicBase: string = API_BASE_URL,
+): string {
+  if (env.API_INTERNAL_BASE_URL) return env.API_INTERNAL_BASE_URL;
+  return publicBase.startsWith('/') ? HOST_API_BASE : publicBase;
 }
 
 export function apiFetchJson(base: string = serverApiBase()): FetchJson {
