@@ -38,6 +38,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 0,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: null,
@@ -70,6 +71,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: null,
@@ -98,6 +100,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 0,
         requestedAtBlock: '7437171',
         status: 'executed',
+        expired: false,
         resolvedAt: 10,
         cancelReason: null,
         tradeId: '7',
@@ -119,6 +122,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 0,
         requestedAtBlock: '7437171',
         status: 'cancelled',
+        expired: false,
         resolvedAt: 10,
         cancelReason: 'SLIPPAGE',
         tradeId: null,
@@ -150,6 +154,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: null,
@@ -178,6 +183,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: null,
@@ -203,6 +209,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: '5',
@@ -220,6 +227,36 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(await screen.findByTestId('order-reclaimed-10')).toHaveTextContent(/close it again/);
   });
 
+  /**
+   * Past the fill window, "Pending — waiting for keeper" is a lie: no report will ever
+   * arrive. The status reads "Expired", and because a market order still holds the trader's
+   * collateral the reclaim control stays alongside it.
+   */
+  it('shows an expired market order as expired, still with the reclaim control', () => {
+    headBlock = 7_438_551n; // past the reclaim timeout too
+    ordersState = [
+      {
+        orderId: '12',
+        pairIndex: 0,
+        kind: 'open',
+        buy: null,
+        collateral: null,
+        leverage: null,
+        requestedAt: 1789033539,
+        requestedAtBlock: '7437171',
+        status: 'pending',
+        expired: true,
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
+      },
+    ];
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-status-12')).toHaveTextContent(/expired/i);
+    expect(screen.getByTestId('order-status-12')).not.toHaveTextContent(/waiting for keeper/i);
+    expect(screen.getByTestId('order-reclaim-12')).toBeInTheDocument();
+  });
+
   it('never offers a reclaim for an automation order, which the trader cannot time out', () => {
     headBlock = 7_438_551n;
     ordersState = [
@@ -233,6 +270,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
+        expired: false,
         resolvedAt: null,
         cancelReason: null,
         tradeId: '5',

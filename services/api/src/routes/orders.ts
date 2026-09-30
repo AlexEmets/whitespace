@@ -27,6 +27,25 @@ type OrderRow = {
 const RESOLVED_WINDOW_SECONDS = 3600;
 const MAX_ORDERS = 50;
 
+/**
+ * How long a pending order can wait before its price request is unfillable. The keeper
+ * must deliver a report whose timestamp matches the request within the contract's report
+ * max-age (10 s); once a pending order is older than this it will never fill. 60 s is six
+ * times that window — comfortably past a healthy fill, so a still-filling order is never
+ * mislabelled, yet tight enough that a dead one clears within a minute.
+ *
+ * Two consequences, by kind:
+ *  - market open/close carry the trader's collateral and can be reclaimed
+ *    (openTradeMarketTimeout), so they STAY in the list, flagged `expired`, until reclaimed.
+ *  - automation open/close are triggered resting-limit orders: the collateral is on the
+ *    limit order, not here, and there is NO per-order recovery path (openTradeMarketTimeout
+ *    reverts NoTradeToTimeoutFound). A stale one can never resolve and nothing on chain ever
+ *    emits an event to close it out, so it would otherwise sit "waiting for keeper" forever.
+ *    Once expired it is dropped from the list — the only way those dead rows leave the UI.
+ */
+const PENDING_EXPIRY_SECONDS = 60;
+const AUTOMATION_KINDS = ['automation_open', 'automation_close'];
+
 // GET /orders/:address -> pending orders, plus those resolved in the last hour.
 //
 // It used to be pending-only, and that made the order lifecycle unobservable from the
@@ -49,14 +68,22 @@ const MAX_ORDERS = 50;
  * poller cannot disagree about which orders exist. */
 export async function resolveOrders(address: string): Promise<unknown[]> {
   const trader = address.toLowerCase();
-  const cutoff = Math.floor(Date.now() / 1000) - RESOLVED_WINDOW_SECONDS;
+  const now = Math.floor(Date.now() / 1000);
+  const resolvedCutoff = now - RESOLVED_WINDOW_SECONDS;
+  const expiryCutoff = now - PENDING_EXPIRY_SECONDS;
+  // Keep every pending order EXCEPT an automation order past the fill window — that one can
+  // never fill and has no recovery action, so it is dropped rather than shown forever. A
+  // market order past the window is kept (it is reclaimable) and merely flagged `expired`.
   const rows = await query<OrderRow>(
     `SELECT * FROM "order"
       WHERE trader = $1
-        AND (status = 'pending' OR COALESCE(resolved_at, requested_at) >= $2)
+        AND (
+          (status = 'pending' AND NOT (kind = ANY($3) AND requested_at < $4))
+          OR COALESCE(resolved_at, requested_at) >= $2
+        )
       ORDER BY requested_at DESC
-      LIMIT $3`,
-    [trader, cutoff, MAX_ORDERS],
+      LIMIT $5`,
+    [trader, resolvedCutoff, AUTOMATION_KINDS, expiryCutoff, MAX_ORDERS],
   );
   return rows.map((r) => ({
     orderId: fmtId(r.order_id),
@@ -68,6 +95,10 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
     collateral: collateral(r.collateral),
     leverage: fmtLeverage(r.leverage),
     status: r.status,
+    // A pending order whose price request is older than the fill window will never fill.
+    // For a market order this is the cue to reclaim rather than keep waiting; the UI reads
+    // it to replace "waiting for keeper" with "expired". Always false once resolved.
+    expired: r.status === 'pending' && r.requested_at < expiryCutoff,
     requestedAt: r.requested_at,
     // The BLOCK, not just the timestamp: `OstiumTrading.openTradeMarketTimeout` gates the
     // trader's refund on `block.number >= requestBlock + marketOrdersTimeout`, so a client

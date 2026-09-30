@@ -37,6 +37,9 @@ describe('GET /orders/:address', () => {
         collateral: null,
         leverage: null,
         status: 'pending',
+        // 1788882000 is far in the past, so this pending market order is past the fill
+        // window — flagged expired, but kept because it is reclaimable.
+        expired: true,
         requestedAt: 1788882000,
         // The block, not just the timestamp: the trader's timeout refund is gated on
         // `block.number >= requestBlock + marketOrdersTimeout`, so the client needs the
@@ -98,6 +101,55 @@ describe('GET /orders/:address', () => {
     const body = await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json();
     expect(body).toHaveLength(1);
     expect(body[0].status).toBe('pending');
+  });
+
+  it('flags a fresh pending order as not expired', async () => {
+    await seedPendingOrder();
+    // Pull the request time up to now: within the fill window, so it can still fill.
+    await getPool().query(`UPDATE "order" SET requested_at = $1 WHERE order_id = 99`, [Math.floor(Date.now() / 1000)]);
+    const body = await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json();
+    expect(body).toHaveLength(1);
+    expect(body[0].status).toBe('pending');
+    expect(body[0].expired).toBe(false);
+  });
+
+  /**
+   * A market open past the fill window stays visible: its collateral is locked and only the
+   * trader's openTradeMarketTimeout gets it back, so the row (and its reclaim button) must
+   * remain. This is the counterpart to the automation case below — same age, opposite fate,
+   * because only one of them has a recovery path.
+   */
+  it('keeps a stale MARKET order (it is reclaimable) but marks it expired', async () => {
+    await seedPendingOrder(); // kind 'open', requested_at far in the past
+    const body = await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json();
+    expect(body).toHaveLength(1);
+    expect(body[0].kind).toBe('open');
+    expect(body[0].expired).toBe(true);
+  });
+
+  /**
+   * An automation order is a triggered resting-limit order: its collateral is on the limit
+   * order, not here, and openTradeMarketTimeout reverts NoTradeToTimeoutFound — there is no
+   * per-order recovery and nothing on chain ever resolves it. Left in, it sits "waiting for
+   * keeper" forever. Once past the fill window it is dropped, which is the only way those
+   * dead rows leave the UI.
+   */
+  it('drops a stale AUTOMATION order — it can never fill and has no recovery path', async () => {
+    await seedPendingOrder();
+    await getPool().query(`UPDATE "order" SET kind = 'automation_open' WHERE order_id = 99`);
+    const res = await fetch(`${server.baseUrl}/orders/${TRADER}`);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it('keeps a FRESH automation order — it may still fill', async () => {
+    await seedPendingOrder();
+    await getPool().query(`UPDATE "order" SET kind = 'automation_open', requested_at = $1 WHERE order_id = 99`, [
+      Math.floor(Date.now() / 1000),
+    ]);
+    const body = await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json();
+    expect(body).toHaveLength(1);
+    expect(body[0].kind).toBe('automation_open');
+    expect(body[0].expired).toBe(false);
   });
 
   it('orders are scoped per-trader (filter proven both ways)', async () => {

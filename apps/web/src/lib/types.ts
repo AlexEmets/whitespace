@@ -100,6 +100,11 @@ export interface OrderSummary {
    * reclaim their collateral. */
   requestedAtBlock: string | null;
   status: OrderStatus;
+  /** True when a still-pending order's price request is older than the fill window and can
+   * no longer be filled. For a market order it means "reclaim, don't keep waiting"; the API
+   * has already dropped any expired automation order (those have no recovery path). Always
+   * false once resolved. */
+  expired: boolean;
   /** Unix seconds when the order stopped being pending; null while it still is. */
   resolvedAt: number | null;
   /** Non-null only once status is 'cancelled'. Raw IOstiumTradingCallbacks.CancelReason

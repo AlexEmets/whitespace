@@ -122,7 +122,13 @@ export function OrdersList() {
                 <Money value={o.collateral} decimals={COLLATERAL_DECIMALS} suffix="USDW" />
               )}
             </td>
-            <td data-testid={`order-status-${o.orderId}`}>{STATUS_LABEL[o.status] ?? o.status}</td>
+            {/* Once a pending order is past the fill window it will never fill, so "waiting
+                for keeper" becomes a lie — say "Expired" and let the Detail column offer the
+                reclaim. (The API has already dropped any expired automation order, which has
+                no reclaim path; what reaches here is a reclaimable market order.) */}
+            <td data-testid={`order-status-${o.orderId}`}>
+              {o.status === 'pending' && o.expired ? 'Expired — no keeper report' : (STATUS_LABEL[o.status] ?? o.status)}
+            </td>
             <td>
               {o.status === 'cancelled' ? (
                 <span className="error-text">
