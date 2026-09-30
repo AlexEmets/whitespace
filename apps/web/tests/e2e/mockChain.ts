@@ -117,6 +117,14 @@ export function createMockChain(state: TestState) {
       if (decoded.functionName === 'triggerTimeout') {
         return encodeFunctionResult({ abi: TRADING_ABI, functionName: 'triggerTimeout', result: 30 });
       }
+      if (decoded.functionName === 'delegations') {
+        // No one-click session key registered by default, so the offer shows its "Off" state.
+        return encodeFunctionResult({
+          abi: TRADING_ABI,
+          functionName: 'delegations',
+          result: '0x0000000000000000000000000000000000000000',
+        });
+      }
     }
 
     if (addressEquals(to, CALLBACKS_ADDRESS)) {
