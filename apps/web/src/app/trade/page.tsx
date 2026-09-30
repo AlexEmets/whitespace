@@ -5,6 +5,7 @@ import { MarketsRail } from '@/components/terminal/MarketsRail';
 import { MarketHeaderBar } from '@/components/terminal/MarketHeaderBar';
 import { TerminalTabs } from '@/components/terminal/TerminalTabs';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
+import { OneClickTrading } from '@/components/OneClickTrading';
 import { AccountSummary } from '@/components/terminal/AccountSummary';
 import { PriceChart } from '@/components/PriceChart';
 import { useMarkets } from '@/hooks/useMarkets';
@@ -43,6 +44,7 @@ export default function TradePage() {
       </div>
 
       <div className="terminal-right panel">
+        <OneClickTrading />
         <OpenPositionForm pairIndex={pairIndex} maxLeverage={maxLeverage} market={market} />
       </div>
     </div>
