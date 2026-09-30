@@ -10,7 +10,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   active: false,
   writeContractAsync: vi.fn(async () => '0xwallethash'),
-  sessionSend: vi.fn(async () => ({ hash: '0xsessionhash', receipt: { status: 'success', logs: [] } })),
+  sessionSend: vi.fn(
+    async (_functionName: string, _args: readonly unknown[], _describe: string) => ({
+      hash: '0xsessionhash',
+      receipt: { status: 'success', logs: [] },
+    }),
+  ),
   simulateContract: vi.fn(async () => ({ request: { functionName: 'x', args: [], address: '0x', abi: [], account: '0xTRADER' } })),
 }));
 
