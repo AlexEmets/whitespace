@@ -136,3 +136,48 @@ export function slippageForSubmission(kind: OpenOrderKind, slippageBps: bigint):
   if (slippageBps >= 10_000n) return 9_999n;
   return slippageBps;
 }
+
+export interface OpenSizeInputs {
+  /** PRECISION_2 leverage, e.g. 1000n for 10.00x. */
+  leverageRaw: bigint;
+  /** PRECISION_6 percent (30_000 == 0.03%), the taker opening fee. */
+  takerFeeRaw: bigint;
+  /** PRECISION_6 USDW, the flat oracle fee per order. */
+  oracleFeeRaw: bigint;
+  /** PRECISION_6 USDW, the pair's smallest collateral × leverage (`pairMinLevPos`). */
+  minLevPosRaw: bigint;
+}
+
+/**
+ * Whether `openTrade` would refuse this margin for its size, with the contract's own integer
+ * arithmetic. The fees come out of the margin FIRST — at most the taker fee on the full
+ * notional plus the flat oracle fee — so a margin they eat whole reverts `BelowFees`, and one
+ * that leaves less than the pair minimum once they are out reverts `BelowMinLevPos`.
+ *
+ * solidity: TradingLib.getOpenTradeRevert (builder fee is 0 — this app sets no builder).
+ */
+export function openSizeError(p: OpenSizeInputs & { collateralRaw: bigint }): 'below-fees' | 'below-min' | null {
+  if (p.collateralRaw <= 0n) return null;
+  const preFeeNotional = (p.collateralRaw * p.leverageRaw) / 100n;
+  const maxOpeningFee = (preFeeNotional * p.takerFeeRaw) / 1_000_000n / 100n;
+  const totalMaxFees = maxOpeningFee + p.oracleFeeRaw;
+  if (totalMaxFees >= p.collateralRaw) return 'below-fees';
+  if (((p.collateralRaw - totalMaxFees) * p.leverageRaw) / 100n < p.minLevPosRaw) return 'below-min';
+  return null;
+}
+
+/**
+ * The smallest margin `openTrade` accepts at this leverage — what the ticket names when an
+ * order is too small. Found by bisection over `openSizeError` itself, so it cannot disagree
+ * with the check by a rounding step.
+ */
+export function minOpenCollateral(p: OpenSizeInputs): bigint {
+  let lo = 1n;
+  let hi = 1_000_000_000_000_000n; // 1e9 USDW — far beyond any real minimum
+  while (lo < hi) {
+    const mid = (lo + hi) / 2n;
+    if (openSizeError({ ...p, collateralRaw: mid }) === null) hi = mid;
+    else lo = mid + 1n;
+  }
+  return lo;
+}

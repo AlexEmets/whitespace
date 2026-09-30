@@ -29,6 +29,16 @@ export function useMarketFees(pairIndex: number | null) {
     query: { enabled: pairIndex !== null },
   });
 
+  // The pair's smallest collateral × leverage once fees are out — below it `openTrade`
+  // reverts BelowMinLevPos (TradingLib.getOpenTradeRevert). uint64, so already a bigint.
+  const minLevPos = useReadContract({
+    address: PAIRS_STORAGE_ADDRESS,
+    abi: PAIRS_STORAGE_ABI,
+    functionName: 'pairMinLevPos',
+    args: pairIndex === null ? undefined : [pairIndex],
+    query: { enabled: pairIndex !== null },
+  });
+
   // viem types Solidity uint32/uint16/uint8 return values as JS `number`, not `bigint`
   // (only the wider uint64/uint192/uint256 fields decode to bigint — see the same note
   // in useOpenTrade.ts). makerFeeP/takerFeeP here are uint32, so they arrive as `number`
@@ -46,6 +56,8 @@ export function useMarketFees(pairIndex: number | null) {
     takerFeeRaw,
     // PRECISION_6 USDC flat fee. pairOracleFee is uint64 -> already bigint.
     oracleFeeRaw: oracleFee.data ?? null,
+    // PRECISION_6 USDW.
+    minLevPosRaw: minLevPos.data ?? null,
     loading: openingFees.isLoading || oracleFee.isLoading,
   };
 }

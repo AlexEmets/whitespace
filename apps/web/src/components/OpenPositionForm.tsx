@@ -16,7 +16,7 @@ import { explainCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { tpCapError, tpSlErrors, triggerPriceError } from '@/lib/orderRules';
+import { minOpenCollateral, openSizeError, tpCapError, tpSlErrors, triggerPriceError } from '@/lib/orderRules';
 import {
   computeTicket,
   convertSizeInput,
@@ -171,6 +171,17 @@ export function OpenPositionForm({
   const needsApproval = collateralRaw !== null && collateralRaw > 0n && erc20.allowance < collateralRaw;
   const insufficientBalance = collateralRaw !== null && collateralRaw > 0n && erc20.balance < collateralRaw;
   const leverageTooHigh = leverageRaw > maxLeverage;
+
+  // What `openTrade` would refuse for size, checked here with the contract's own arithmetic
+  // so the trader is told the minimum before signing rather than shown a revert after it.
+  const sizeRules =
+    fees.takerFeeRaw !== null && fees.oracleFeeRaw !== null
+      ? { leverageRaw, takerFeeRaw: fees.takerFeeRaw, oracleFeeRaw: fees.oracleFeeRaw, minLevPosRaw: fees.minLevPosRaw ?? 0n }
+      : null;
+  const sizeError = sizeRules && collateralRaw !== null ? openSizeError({ ...sizeRules, collateralRaw }) : null;
+  // Rounded UP to the cent: a minimum rounded down is an order value that is still refused.
+  const minOrderValue =
+    sizeRules && sizeError ? (((minOpenCollateral(sizeRules) * leverageRaw) / 100n + 9_999n) / 10_000n) * 10_000n : null;
   const needsFunds = isConnected && (erc20.balance === 0n || insufficientBalance);
 
   // Everything else this wallet holds on this market, summed as a signed base quantity.
@@ -210,6 +221,7 @@ export function OpenPositionForm({
     entryPrice > 0n &&
     !insufficientBalance &&
     !leverageTooHigh &&
+    !sizeError &&
     !triggerError &&
     (kind === 'MARKET' || (triggerRaw !== null && triggerRaw > 0n)) &&
     !tpSl.tp &&
@@ -476,6 +488,12 @@ export function OpenPositionForm({
       ) : null}
       {leverageTooHigh ? <p className="error-text">Leverage exceeds this market&apos;s maximum.</p> : null}
       {insufficientBalance ? <p className="error-text">Insufficient USDW balance.</p> : null}
+      {minOrderValue !== null ? (
+        <p className="error-text" data-testid="size-too-small">
+          Order too small: at {leverageX}× the minimum order value is {formatMoney(minOrderValue, COLLATERAL_DECIMALS)} USDW —
+          fees come out of the margin first.
+        </p>
+      ) : null}
 
       {needsFunds ? (
         <div className="faucet-row" data-testid="faucet-row">

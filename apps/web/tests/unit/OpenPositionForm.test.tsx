@@ -96,7 +96,7 @@ vi.mock('@/hooks/useErc20', () => ({
 }));
 
 vi.mock('@/hooks/useMarketFees', () => ({
-  useMarketFees: () => ({ makerFeeRaw: 0n, takerFeeRaw: 0n, oracleFeeRaw: 1_000_000n, loading: false }),
+  useMarketFees: () => ({ makerFeeRaw: 0n, takerFeeRaw: 0n, oracleFeeRaw: 1_000_000n, minLevPosRaw: 10_000_000n, loading: false }),
 }));
 
 vi.mock('@/hooks/useOpenTrade', () => ({
@@ -633,6 +633,28 @@ describe('<OpenPositionForm>', () => {
 
     rerender(<OpenPositionForm pairIndex={3} maxLeverage={2500n} market={{ ...BTC_USD, pairIndex: 3, from: 'WBT', maxLeverage: '25.00' }} />);
     expect(screen.getByTestId('leverage-value')).toHaveTextContent('20×');
+  });
+
+  /**
+   * The contract takes the fees out of the margin first and then wants 10 USDW of position
+   * (TradingLib.getOpenTradeRevert). A tiny order used to pass the ticket and come back as a
+   * cut-off revert; the ticket now names the smallest order value that would go through.
+   */
+  it('names the minimum order value when the size is too small, and will not place it', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    // 0.00001 BTC at 65,001 = 0.65 USDW of order value, 0.065 margin at 10x — under the 1.00 oracle fee.
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.00001' } });
+    // (margin − 1.00 oracle fee) × 10 ≥ 10  →  margin ≥ 2.00  →  order value ≥ 20.00.
+    expect(screen.getByTestId('size-too-small')).toHaveTextContent('at 10× the minimum order value is 20.00 USDW');
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  it('says nothing about size once the order clears the minimum', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    // 0.0004 BTC ≈ 26.00 USDW of order value.
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.0004' } });
+    expect(screen.queryByTestId('size-too-small')).not.toBeInTheDocument();
+    expect(screen.getByTestId('submit-open-button')).toBeEnabled();
   });
 
   it('offers Market, Limit and Stop, with Market selected', () => {

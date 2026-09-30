@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  minOpenCollateral,
+  openSizeError,
   slippageForSubmission,
   tpCapError,
   tpSlErrors,
@@ -136,5 +138,46 @@ describe('slippageForSubmission (OstiumTrading.openTrade)', () => {
     expect(slippageForSubmission('MARKET', 50n)).toBe(50n);
     expect(slippageForSubmission('MARKET', 0n)).toBe(1n);
     expect(slippageForSubmission('MARKET', 10_000n)).toBe(9_999n);
+  });
+});
+
+describe('openSizeError — TradingLib.getOpenTradeRevert, lines 61–80', () => {
+  // 0.03% taker (PRECISION_6 percent), 1.00 USDW oracle fee, 10 USDW minimum position.
+  const FEES = { takerFeeRaw: 30_000n, oracleFeeRaw: 1_000_000n, minLevPosRaw: 10_000_000n };
+
+  it('refuses a margin the fees would eat whole (BelowFees)', () => {
+    // 0.10 USDW at 80x: the 1.00 oracle fee alone is more than the margin.
+    expect(openSizeError({ ...FEES, collateralRaw: 100_000n, leverageRaw: 8000n })).toBe('below-fees');
+  });
+
+  it('refuses a position below the minimum once the fees are out (BelowMinLevPos)', () => {
+    // 1.50 USDW at 10x: 1.50 − ~1.00 fees = ~0.50 × 10 = ~5 USDW < 10.
+    expect(openSizeError({ ...FEES, collateralRaw: 1_500_000n, leverageRaw: 1000n })).toBe('below-min');
+  });
+
+  it('accepts an ordinary order', () => {
+    expect(openSizeError({ ...FEES, collateralRaw: 65_000_000n, leverageRaw: 1000n })).toBeNull();
+  });
+
+  it('has nothing to say before a size is entered', () => {
+    expect(openSizeError({ ...FEES, collateralRaw: 0n, leverageRaw: 1000n })).toBeNull();
+  });
+});
+
+describe('minOpenCollateral', () => {
+  const FEES = { takerFeeRaw: 30_000n, oracleFeeRaw: 1_000_000n, minLevPosRaw: 10_000_000n };
+
+  it('is the smallest margin the contract accepts, to the micro-unit', () => {
+    for (const leverageRaw of [100n, 1000n, 2500n, 8000n, 10000n]) {
+      const min = minOpenCollateral({ ...FEES, leverageRaw });
+      expect(openSizeError({ ...FEES, leverageRaw, collateralRaw: min })).toBeNull();
+      expect(openSizeError({ ...FEES, leverageRaw, collateralRaw: min - 1n })).not.toBeNull();
+    }
+  });
+
+  it('is about 2.01 USDW at 10x — the oracle fee comes out of the margin first', () => {
+    const min = minOpenCollateral({ ...FEES, leverageRaw: 1000n });
+    expect(min).toBeGreaterThan(2_000_000n);
+    expect(min).toBeLessThan(2_010_000n);
   });
 });
