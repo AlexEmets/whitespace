@@ -28,6 +28,19 @@ export const TRADING_ABI = parseAbi([
   // Resting LIMIT/STOP entries.
   'function updateOpenLimitOrder(uint16 pairIndex, uint8 index, uint192 price, uint192 tp, uint192 sl)',
   'function cancelOpenLimitOrder(uint16 pairIndex, uint8 index)',
+  // Delegation (one-click trading) — contracts/src/vendor/ostium/abstract/Delegatable.sol.
+  // A trader registers a browser-held session key with setDelegate; the session key then
+  // signs trades locally by wrapping the inner call in delegatedAction(trader, calldata),
+  // and the contract runs it as the trader (_msgSender() == trader). removeDelegate revokes.
+  // delegatedAction cannot re-point or renew the delegation (those selectors are forbidden),
+  // and no trading function pays out to anyone but the trader, so a leaked session key can
+  // trade but cannot move funds to itself.
+  'function setDelegate(address delegate)',
+  'function removeDelegate()',
+  'function delegatedAction(address trader, bytes call_data) returns (bytes)',
+  'function delegations(address delegator) view returns (address)',
+  'event DelegateAdded(address indexed delegator, address indexed delegate)',
+  'event DelegateRemoved(address indexed delegator, address indexed delegate)',
   'event OpenLimitPlacedV2(address indexed trader, uint16 indexed pairIndex, uint8 index, (uint256 collateral,uint192 openPrice,uint192 tp,uint192 sl,address trader,uint32 leverage,uint16 pairIndex,uint8 index,bool buy,bool isDayTrade) trade, uint8 orderType, (address builder,uint32 builderFee) builderFee)',
   'event MarketOpenOrderInitiated(uint256 indexed orderId, address indexed trader, uint16 indexed pairIndex)',
   'event MarketCloseOrderInitiatedV2(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint16 pairIndex, uint16 closePercentage)',
