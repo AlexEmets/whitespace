@@ -14,6 +14,15 @@ import type { Theme } from '@/lib/theme';
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
+/** The ring's circle in card pixels: the 2px rim drawn over the glow's inner edge. The
+ * glow disc shares its centre. */
+export const CARD_RING = { cx: 1020, cy: 360, r: 208 } as const;
+const GLOW_RADIUS = 320;
+
+/** The one-line footer — date, network, site — pinned under the ring: its distance from the
+ * card's bottom edge and its line box. Two lines at the old height ran across the ring. */
+export const FOOTER = { bottom: 26, lineHeight: 24 } as const;
+
 const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: string; rim: string; markRim: string; flare: string }> = {
   solar: {
     bg: '#030305',
@@ -90,10 +99,10 @@ export function ShareCardImage({ card, theme }: { card: ShareCard; theme: Theme 
       <div
         style={{
           position: 'absolute',
-          right: -140,
-          top: 40,
-          width: 640,
-          height: 640,
+          right: CARD_WIDTH - (CARD_RING.cx + GLOW_RADIUS),
+          top: CARD_RING.cy - GLOW_RADIUS,
+          width: GLOW_RADIUS * 2,
+          height: GLOW_RADIUS * 2,
           borderRadius: 9999,
           backgroundImage: `radial-gradient(circle, ${p.bg} 0%, ${p.bg} 44%, ${p.glow} 47%, ${p.halo} 58%, rgba(0,0,0,0) 72%)`,
           display: 'flex',
@@ -102,12 +111,12 @@ export function ShareCardImage({ card, theme }: { card: ShareCard; theme: Theme 
       <div
         style={{
           position: 'absolute',
-          // Same centre as the disc above (1020, 360); radius 208 sits on the glow's
-          // inner edge — 47% of the gradient's farthest-corner radius, 320·√2.
-          right: -28,
-          top: 152,
-          width: 416,
-          height: 416,
+          // Same centre as the disc above; radius 208 sits on the glow's inner edge — 47% of
+          // the gradient's farthest-corner radius, 320·√2.
+          right: CARD_WIDTH - (CARD_RING.cx + CARD_RING.r),
+          top: CARD_RING.cy - CARD_RING.r,
+          width: CARD_RING.r * 2,
+          height: CARD_RING.r * 2,
           borderRadius: 9999,
           border: `2px solid ${p.rim}`,
           display: 'flex',
@@ -167,11 +176,24 @@ export function ShareCardImage({ card, theme }: { card: ShareCard; theme: Theme 
               <div style={{ fontFamily: 'Azeret Mono', fontSize: 28 }}>{card.exit}</div>
             </div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-            <div style={{ fontSize: 20, color: MUTED }}>{`${card.date} · Whitechain testnet`}</div>
-            <div style={{ fontSize: 22, color: p.accent }}>whitespace.finance</div>
-          </div>
         </div>
+      </div>
+
+      <div
+        data-testid="card-footer"
+        style={{
+          position: 'absolute',
+          right: 64,
+          bottom: FOOTER.bottom,
+          height: FOOTER.lineHeight,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontSize: 19,
+        }}
+      >
+        <div style={{ display: 'flex', color: MUTED }}>{`${card.date} · Whitechain testnet ·`}</div>
+        <div style={{ display: 'flex', color: p.accent }}>whitespace.finance</div>
       </div>
     </div>
   );

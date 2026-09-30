@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { ShareCardImage } from '@/components/share/ShareCardImage';
+import { CARD_HEIGHT, CARD_RING, FOOTER, ShareCardImage } from '@/components/share/ShareCardImage';
 import { BRAND_STAR_PATH } from '@/lib/brandMark';
 import type { ShareCard } from '@/lib/shareCard';
 
@@ -32,5 +32,24 @@ describe('<ShareCardImage>', () => {
     const lunar = renderToStaticMarkup(<ShareCardImage card={CARD} theme="lunar" />);
     expect(solar).toContain('fill="#fff4e0"');
     expect(lunar).toContain('fill="#eef7ff"');
+  });
+
+  /**
+   * The date and the site sat in two lines at the bottom right, across the ring's lower arc.
+   * They are one line now, pinned under the ring: its top edge stays below the ring's
+   * lowest point with room to spare.
+   */
+  it('keeps the footer below the ring rather than across it', () => {
+    const footerTop = CARD_HEIGHT - FOOTER.bottom - FOOTER.lineHeight;
+    expect(footerTop).toBeGreaterThan(CARD_RING.cy + CARD_RING.r + 8);
+  });
+
+  it('sets the date, the network and the site as one line', () => {
+    const html = renderToStaticMarkup(<ShareCardImage card={CARD} theme="solar" />);
+    const footer = html.slice(html.indexOf('data-testid="card-footer"'));
+    const line = footer.slice(0, footer.indexOf('</div></div>'));
+    expect(line).toContain('28 Sep 2026');
+    expect(line).toContain('Whitechain testnet');
+    expect(line).toContain('whitespace.finance');
   });
 });
