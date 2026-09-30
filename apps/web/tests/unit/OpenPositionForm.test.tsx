@@ -612,6 +612,29 @@ describe('<OpenPositionForm>', () => {
   // Limit and stop entries
   // ---------------------------------------------------------------------------------------
 
+  /**
+   * The slider is clamped to the market's maximum by the browser, but the leverage the form
+   * holds was not: 80× chosen on BTC stayed 80× on a 25× market, the label disagreed with the
+   * slider, and the order was refused as "Leverage exceeds this market's maximum".
+   */
+  it('brings a chosen leverage down to the new market maximum when the market changes', () => {
+    const { rerender } = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '80' } });
+    expect(screen.getByTestId('leverage-value')).toHaveTextContent('80×');
+
+    rerender(<OpenPositionForm pairIndex={3} maxLeverage={2500n} market={{ ...BTC_USD, pairIndex: 3, from: 'WBT', maxLeverage: '25.00' }} />);
+    expect(screen.getByTestId('leverage-value')).toHaveTextContent('25×');
+    expect(screen.queryByText(/Leverage exceeds/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a chosen leverage that the new market allows', () => {
+    const { rerender } = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '20' } });
+
+    rerender(<OpenPositionForm pairIndex={3} maxLeverage={2500n} market={{ ...BTC_USD, pairIndex: 3, from: 'WBT', maxLeverage: '25.00' }} />);
+    expect(screen.getByTestId('leverage-value')).toHaveTextContent('20×');
+  });
+
   it('offers Market, Limit and Stop, with Market selected', () => {
     render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
     expect(screen.getByTestId('order-kind-market')).toHaveAttribute('aria-selected', 'true');

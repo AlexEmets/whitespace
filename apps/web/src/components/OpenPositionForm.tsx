@@ -104,9 +104,13 @@ export function OpenPositionForm({
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
 
   // `maxLeverage` is 0n until /markets resolves; re-derive the default then unless the trader
-  // already chose one, or the default stays clamped at 1x forever.
+  // already chose one, or the default stays clamped at 1x forever. A chosen leverage is kept
+  // across a market change only as far as the new market allows: the slider is clamped by
+  // the browser, and a form still holding 80x on a 25x market showed one number, refused the
+  // order for another, and left the trader to work out why.
   useEffect(() => {
     if (!leverageTouched) setLeverageX(Math.min(10, Math.max(1, maxLeverageX)));
+    else if (maxLeverage > 0n) setLeverageX((x) => Math.min(x, maxLeverageX));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxLeverageX]);
 
