@@ -117,6 +117,36 @@ describe('describeTxError', () => {
     expect(text).toMatch(/already/i);
   });
 
+  /**
+   * Found in a QA pass on production: a too-small order came back as "The contract function
+   * "openTrade" reverted with the following signature:" — and nothing after the colon. The
+   * app's ABIs carry no error entries, so viem could not name the revert, and the selector
+   * sat on the line the UI cut off.
+   */
+  describe('contract errors', () => {
+    const OSTIUM = parseAbi(['error BelowFees()', 'error BelowMinLevPos()', 'error NotGov(address a)']);
+    const encode = (errorName: 'BelowFees' | 'BelowMinLevPos') => encodeErrorResult({ abi: OSTIUM, errorName });
+
+    it('tells the trader what BelowFees means and what to do', () => {
+      expect(describeTxError(reverted(encode('BelowFees')))).toBe('This order is too small to cover its fees. Increase the size.');
+    });
+
+    it('tells the trader what BelowMinLevPos means and what to do', () => {
+      expect(describeTxError(reverted(encode('BelowMinLevPos')))).toMatch(/below the market's minimum size.*Increase the size/);
+    });
+
+    it('names a contract error it has no sentence for, rather than showing a selector', () => {
+      const data = encodeErrorResult({ abi: OSTIUM, errorName: 'NotGov', args: ['0x43Ac53c54EaE7E31b6c717FE17a8cE31ba2cB06B'] });
+      expect(describeTxError(reverted(data))).toBe('The contract refused this: NotGov.');
+    });
+
+    it('still says what happened when the error is unknown, never a sentence cut at its colon', () => {
+      const text = describeTxError(reverted('0xdeadbeef')) ?? '';
+      expect(text).toBe('The contract refused this transaction (error 0xdeadbeef).');
+      expect(text).not.toMatch(/:$/);
+    });
+  });
+
   /** The complaint that started this: viem's `message` is a multi-paragraph block with a
    *  docs link and a version stamp, and five call sites rendered it verbatim. */
   it('never returns viem’s multi-line dump for an unrecognised error', () => {

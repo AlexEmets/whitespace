@@ -10,6 +10,7 @@ import {
   type TransactionReceipt,
 } from 'viem';
 import { COLLATERAL_DECIMALS } from './config';
+import { CONTRACT_ERRORS_ABI, CONTRACT_ERROR_MESSAGES } from './contractErrors';
 import { formatMoney } from './money';
 
 /**
@@ -91,8 +92,8 @@ function explainRevert(data: Hex): string | null {
   try {
     decoded = decodeErrorResult({ abi: EXPLAINED_ERRORS, data });
   } catch {
-    // Not one of ours — the selector belongs to some other contract's error.
-    return null;
+    // Not one that needs its arguments spelled out — name it from the contracts' own list.
+    return nameContractError(data);
   }
 
   if (decoded.errorName === 'ERC20InsufficientBalance') {
@@ -118,6 +119,18 @@ function explainRevert(data: Hex): string | null {
   return null;
 }
 
+/** A sentence for the reverts a trader can cause and act on, the error's name for any other
+ * contract error, or null for a selector no deployed contract declares. */
+function nameContractError(data: Hex): string | null {
+  let errorName: string;
+  try {
+    ({ errorName } = decodeErrorResult({ abi: CONTRACT_ERRORS_ABI, data }));
+  } catch {
+    return null;
+  }
+  return CONTRACT_ERROR_MESSAGES[errorName] ?? `The contract refused this: ${errorName}.`;
+}
+
 /**
  * One sentence a trader can act on, or `null` for "say nothing".
  *
@@ -136,6 +149,10 @@ export function describeTxError(err: unknown): string | null {
   if (data) {
     const explained = explainRevert(data);
     if (explained) return explained;
+    // A revert nothing deployed declares. viem's summary would end "…with the following
+    // signature:" and put the selector on the next line, which the split below discards —
+    // so say it here, in one sentence that stops where it should.
+    return `The contract refused this transaction (error ${data.slice(0, 10)}).`;
   }
 
   // `shortMessage` is viem's own one-line summary; `message` is the block. Split anyway —
