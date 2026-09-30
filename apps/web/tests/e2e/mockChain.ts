@@ -199,9 +199,9 @@ export function createMockChain(state: TestState) {
         return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairOracleFee', result: 1_000_000n });
       }
       if (decoded.functionName === 'pairMinLevPos') {
-        // 1,500 USDW collateral x leverage (PRECISION_6): the close dialog's floor for
-        // what a partial close must leave behind.
-        return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairMinLevPos', result: 1_500_000000n });
+        // 10 USDW collateral x leverage (PRECISION_6) — what every pair on Whitechain 1874
+        // returns (read 2026-09-30). The order ticket and the close dialog both check it.
+        return encodeFunctionResult({ abi: PAIRS_STORAGE_ABI, functionName: 'pairMinLevPos', result: 10_000000n });
       }
     }
 
