@@ -109,6 +109,33 @@ describe('<PointsPanel>', () => {
     expect(card).toHaveTextContent('+50');
   });
 
+  it('says how far the next tier is, not only which tier this is', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    // 939 points: Trader (500–2,000), 1,061 short of Pro.
+    const tier = screen.getByTestId('points-tier');
+    expect(tier).toHaveTextContent('Trader');
+    expect(tier).toHaveTextContent('1,061 pts to Pro');
+  });
+
+  it('lays the four ways to earn out as rows, each with what is accruing against its daily cap', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    expect(screen.getByTestId('earn-missions')).toHaveTextContent('2 of 12 done · up to 850');
+    expect(screen.getByTestId('card-time')).toHaveTextContent(/Accruing [\d.]+ · max 100 \/ day/);
+    expect(screen.getByTestId('card-streak')).toHaveTextContent('Day 5 of 7 · ×1.33');
+    expect(screen.getByTestId('card-lp')).toHaveTextContent(/Accruing [\d.]+ · max 50 \/ day/);
+  });
+
+  it('states every anti-farm rule once, in one line at the foot', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    const rules = screen.getByTestId('points-note');
+    expect(rules).toHaveTextContent('under 5 min');
+    expect(rules).toHaveTextContent('each mission counts once per wallet');
+    expect(screen.queryByText(/Anti-farm/)).not.toBeInTheDocument();
+  });
+
   it('asks for a wallet when disconnected but still shows what can be earned', () => {
     connected.value = false;
     render(<PointsPanel />);
