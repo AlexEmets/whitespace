@@ -92,6 +92,9 @@ async function main() {
     deliveryMarginSec: config.deliveryMarginSec,
     evaluationConcurrency: config.evaluationConcurrency,
     maxOpenBackoffMs: config.maxOpenBackoffMs,
+    instanceIndex: config.instanceIndex,
+    instanceCount: config.instanceCount,
+    takeoverMs: config.takeoverMs,
     liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });

@@ -50,6 +50,13 @@
  * hit (the market moved; a new situation) or leaves the indexer (filled or cancelled).
  * Close kinds are not backed off: a liquidation must never wait minutes behind a NOT_HIT.
  *
+ * Ownership: two instances run side by side. Firing every trigger from both doubled the
+ * gas and the reports, and the loser's transaction only came back PENDING_TRIGGER. Each
+ * trigger key now has one owner, ownerIndex(key, instanceCount) === instanceIndex, which
+ * sends it as soon as it is hit. The other instance holds back ('not_owner') and only takes
+ * over if the trigger is still hit and still not pending on chain takeoverMs after it first
+ * saw it so — the owner is down, out of gas or stuck. A single instance owns everything.
+ *
  * Batch isolation: executeAutomationOrder can revert (pair delisted, trading done) and a
  * revert of one entry reverts the whole batch. When a multi-trigger batch REVERTS (mined,
  * or refused by estimateGas), its keys are marked isolated and go out one per transaction
@@ -76,6 +83,9 @@ export const DEFAULT_DELIVERY_MARGIN_SEC = 4;
 export const DEFAULT_EVALUATION_CONCURRENCY = 16;
 /** Ceiling of the entry backoff: a cancelled entry is retried at least this often. */
 export const DEFAULT_OPEN_BACKOFF_MAX_MS = 15 * 60_000;
+/** How long a non-owner waits on a hit, not-pending trigger before sending it itself: a
+ * few of the owner's sweeps plus a block or two for its transaction. */
+export const DEFAULT_TAKEOVER_MS = 10_000;
 
 const LIMIT_ORDER_CODE = { TP: LimitOrder.TP, SL: LimitOrder.SL, LIQ: LimitOrder.LIQ, OPEN: LimitOrder.OPEN };
 const CLOSE_KINDS = [TriggerKind.LIQ, TriggerKind.SL, TriggerKind.TP];
@@ -83,6 +93,20 @@ const CLOSE_KINDS = [TriggerKind.LIQ, TriggerKind.SL, TriggerKind.TP];
 /** A failure caused by what the batch asked the contract to do, rather than by delivery. */
 export function isRevert(result) {
   return result.reverted === true || /revert/i.test(String(result.reason ?? ''));
+}
+
+/**
+ * Which of `instanceCount` instances owns a trigger key: FNV-1a over the key, mod count.
+ * Stable across processes and restarts, and spreads keys evenly.
+ * @param {string} key @param {number} instanceCount
+ */
+export function ownerIndex(key, instanceCount) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h % instanceCount;
 }
 
 export function triggerKey(trader, pairIndex, index, kind) {
@@ -128,6 +152,9 @@ export async function mapLimit(items, limit, fn) {
  * @param {number} [deps.deliveryMarginSec]
  * @param {number} [deps.evaluationConcurrency]
  * @param {number} [deps.maxOpenBackoffMs]
+ * @param {number} [deps.instanceIndex] this instance, 0-based
+ * @param {number} [deps.instanceCount] instances splitting the triggers
+ * @param {number} [deps.takeoverMs]
  * @param {boolean} [deps.liquidateWhenDegraded]
  * @param {object} [deps.metrics] see metrics.mjs
  */
@@ -150,6 +177,9 @@ export function createAutomationEngine({
   deliveryMarginSec = DEFAULT_DELIVERY_MARGIN_SEC,
   evaluationConcurrency = DEFAULT_EVALUATION_CONCURRENCY,
   maxOpenBackoffMs = DEFAULT_OPEN_BACKOFF_MAX_MS,
+  instanceIndex = 0,
+  instanceCount = 1,
+  takeoverMs = DEFAULT_TAKEOVER_MS,
   liquidateWhenDegraded = false,
   metrics = {},
 }) {
@@ -160,12 +190,18 @@ export function createAutomationEngine({
     throw new Error(`createAutomationEngine: deliveryMarginSec (${deliveryMarginSec}) must leave at least 1 s of reportMaxAgeSec (${reportMaxAgeSec})`);
   }
 
+  if (!(Number.isInteger(instanceCount) && instanceCount >= 1 && Number.isInteger(instanceIndex) && instanceIndex >= 0 && instanceIndex < instanceCount)) {
+    throw new Error(`createAutomationEngine: instanceIndex ${instanceIndex} must be an integer in [0, instanceCount=${instanceCount})`);
+  }
+
   /** key -> ms until which the key is not re-sent */
   const cooldownUntil = new Map();
   /** keys whose last multi-trigger batch reverted; sent one per tx until one succeeds */
   const isolated = new Set();
   /** OPEN key -> triggers sent in a row while the entry stayed resting and hit */
   const openStreak = new Map();
+  /** key owned by another instance -> ms at which it was first seen hit and not pending */
+  const waitingSince = new Map();
   const startedAt = now();
   let lastPriceOkAt = null;
 
@@ -223,6 +259,8 @@ export function createAutomationEngine({
     const thresholdOnce = memo(readLiqMarginThresholdP);
 
     let belowMaintenance = 0;
+    /** non-owned keys seen hit and not pending this sweep; the rest stop waiting */
+    const stillWaiting = new Set();
 
     // Candidates are evaluated concurrently, so each writes into its own `out` and the
     // results and triggers are put back in candidate order afterwards: the same output and
@@ -238,6 +276,14 @@ export function createAutomationEngine({
       const key = triggerKey(trader, pairIndex, index, kind);
       if (coolingDown(key, t0)) return skip(out, candidate, kind, 'cooldown');
       if (await readTriggerPending(trader, pairIndex, index, LIMIT_ORDER_CODE[kind])) return skip(out, candidate, kind, 'pending_trigger');
+      if (ownerIndex(key, instanceCount) !== instanceIndex) {
+        stillWaiting.add(key);
+        if (!waitingSince.has(key)) waitingSince.set(key, t0);
+        if (t0 - waitingSince.get(key) < takeoverMs) return skip(out, candidate, kind, 'not_owner');
+        // The owner had its chance and the trigger is still hit and not pending.
+        metrics.takeovers?.inc(1, { kind });
+        extra = { ...extra, takeover: true };
+      }
       out.trigger = { key, kind, trader, pairIndex, index, limitOrder: LIMIT_ORDER_CODE[kind] };
       out.results.push({ candidate, kind, action: 'queued', ...extra });
     }
@@ -350,6 +396,8 @@ export function createAutomationEngine({
       results.push(...out.results);
       if (out.trigger) triggers.set(out.trigger.key, out.trigger);
     }
+
+    for (const key of waitingSince.keys()) if (!stillWaiting.has(key)) waitingSince.delete(key);
 
     metrics.positionsBelowMaintenance?.set(belowMaintenance);
     const sent = await sendTriggers([...triggers.values()]);

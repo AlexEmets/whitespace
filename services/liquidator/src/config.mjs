@@ -4,8 +4,10 @@
  * Two instances run side by side with no coordination (design spec §1, §4): each gets its
  * own env file with its own LIQUIDATOR_INSTANCE_NAME, LIQUIDATOR_FORWARDER_KEY_PATH,
  * LIQUIDATOR_METRICS_PORT and LIQUIDATOR_DEAD_LETTER_PATH. They read the same indexer
- * database and race on chain; the loser's trigger comes back PENDING_TRIGGER / NO_TRADE,
- * a status rather than a revert, so a lost race costs gas and nothing else.
+ * database. With LIQUIDATOR_INSTANCE_COUNT=2 and LIQUIDATOR_INSTANCE_INDEX=0 / 1 they split
+ * the triggers between them and each takes over the other's after LIQUIDATOR_TAKEOVER_MS;
+ * left at the default (1 / 0) both fire everything and race on chain, where the loser's
+ * trigger comes back PENDING_TRIGGER / NO_TRADE — a status, so it costs gas only.
  */
 
 import { readFileSync } from 'node:fs';
@@ -18,6 +20,7 @@ import {
   DEFAULT_DELIVERY_MARGIN_SEC,
   DEFAULT_EVALUATION_CONCURRENCY,
   DEFAULT_OPEN_BACKOFF_MAX_MS,
+  DEFAULT_TAKEOVER_MS,
 } from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
 import { SEQUENCER_STALL_THRESHOLD_MS, SEQUENCER_RECOVERY_WINDOW_MS } from './sequencerLiveness.mjs';
@@ -37,6 +40,14 @@ function positiveInt(env, key, fallback) {
   if (raw === undefined || raw === '') return fallback;
   const n = Number(raw);
   if (!Number.isInteger(n) || n <= 0) throw new Error(`loadConfig: ${key} must be a positive integer, got ${JSON.stringify(raw)}`);
+  return n;
+}
+
+function nonNegativeInt(env, key, fallback) {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`loadConfig: ${key} must be a non-negative integer, got ${JSON.stringify(raw)}`);
   return n;
 }
 
@@ -68,9 +79,20 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     throw new Error('loadConfig: LIQUIDATOR_FORWARDER_KEY_PATH is required (each instance signs with its own forwarder key)');
   }
 
+  // Trigger ownership (automationEngine.mjs): instance i of n sends the keys it owns at
+  // once and the others' only after takeoverMs. n = 1 (the default) owns everything.
+  const instanceCount = positiveInt(env, 'LIQUIDATOR_INSTANCE_COUNT', 1);
+  const instanceIndex = nonNegativeInt(env, 'LIQUIDATOR_INSTANCE_INDEX', 0);
+  if (instanceIndex >= instanceCount) {
+    throw new Error(`loadConfig: LIQUIDATOR_INSTANCE_INDEX (${instanceIndex}) must be below LIQUIDATOR_INSTANCE_COUNT (${instanceCount})`);
+  }
+
   return {
     chainId,
     instanceName: env.LIQUIDATOR_INSTANCE_NAME || 'automation-bot',
+    instanceIndex,
+    instanceCount,
+    takeoverMs: positiveInt(env, 'LIQUIDATOR_TAKEOVER_MS', DEFAULT_TAKEOVER_MS),
     tradingStorageAddress: requireAddress('LIQUIDATOR_TRADING_STORAGE_ADDRESS', 'tradingStorage'),
     pairInfosAddress: requireAddress('LIQUIDATOR_PAIR_INFOS_ADDRESS', 'pairInfos'),
     pairsStorageAddress: requireAddress('LIQUIDATOR_PAIRS_STORAGE_ADDRESS', 'pairsStorage'),

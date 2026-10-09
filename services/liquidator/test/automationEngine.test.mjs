@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAutomationEngine, triggerKey } from '../src/automationEngine.mjs';
+import { createAutomationEngine, triggerKey, ownerIndex } from '../src/automationEngine.mjs';
 import { createLiquidatorMetrics } from '../src/metrics.mjs';
 import { LimitOrder } from '../src/abi.mjs';
 
@@ -635,6 +635,72 @@ test('isolation is forgotten for a slot the indexer no longer lists', async () =
   await engine.sweep();
   assert.equal(engine.isIsolated(triggerKey(A, 0, 0, 'LIQ')), false);
   assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), true);
+});
+
+// ---------------------------------------------------------------- ownership between instances
+
+/** A trader address whose LIQ key on pair 0 index 0 is owned by instance `owner` of 2. */
+function traderOwnedBy(owner) {
+  for (let i = 1; ; i++) {
+    const t = `0x${i.toString(16).padStart(40, '0')}`;
+    if (ownerIndex(triggerKey(t, 0, 0, 'LIQ'), 2) === owner) return t;
+  }
+}
+
+test('ownerIndex is deterministic and partitions keys between instances', () => {
+  const keys = Array.from({ length: 200 }, (_, i) => triggerKey(`0x${i.toString(16).padStart(40, '0')}`, i % 3, i % 5, 'LIQ'));
+  const owners = keys.map((k) => ownerIndex(k, 2));
+  assert.deepEqual(owners, keys.map((k) => ownerIndex(k, 2)));
+  const zero = owners.filter((o) => o === 0).length;
+  assert.ok(zero > 60 && zero < 140, `both instances own a fair share (${zero}/200)`);
+  assert.ok(keys.every((k) => ownerIndex(k, 1) === 0));
+});
+
+test("two instances: the owner sends at once, the other only takes over after takeoverMs if it is still not pending", async () => {
+  const mine = traderOwnedBy(0);
+  const theirs = traderOwnedBy(1);
+  const { w, engine, metrics } = world({ price: LIQ_PRICE, deps: { instanceIndex: 0, instanceCount: 2, takeoverMs: 10_000 } });
+  w.positions = [pos(mine, 0), pos(theirs, 0)];
+  w.trades[`${mine}-0-0`] = { ...TRADE };
+  w.trades[`${theirs}-0-0`] = { ...TRADE };
+
+  const { results } = await engine.sweep();
+  assert.deepEqual(sentKinds(w), [[mine, 0, LimitOrder.LIQ]]);
+  assert.equal(results.find((r) => r.candidate.trader === theirs).reason, 'not_owner');
+
+  w.now += 9_999;
+  await engine.sweep();
+  assert.equal(w.sends.length, 1, 'still the owner\'s turn');
+
+  w.now += 1;
+  const r = await engine.sweep();
+  assert.deepEqual(w.sends[1].trades.map((t) => t.trader), [theirs], 'the owner never sent it: take over');
+  assert.equal(r.results.find((x) => x.candidate.trader === theirs).takeover, true);
+  assert.equal(metrics.takeovers.value({ kind: 'LIQ' }), 1);
+});
+
+test('two instances: a trigger the owner did send (pending on chain) is never taken over, and the wait restarts', async () => {
+  const theirs = traderOwnedBy(1);
+  const { w, engine } = world({ price: LIQ_PRICE, deps: { instanceIndex: 0, instanceCount: 2, takeoverMs: 10_000 } });
+  w.positions = [pos(theirs, 0)];
+  w.trades[`${theirs}-0-0`] = { ...TRADE };
+  await engine.sweep(); // first seen at 0
+  w.now += 5_000;
+  w.pending.add(`${theirs}-0-0-${LimitOrder.LIQ}`); // the owner's trigger landed
+  await engine.sweep();
+  w.now += 30_000;
+  w.pending.clear(); // ... and came back NOT_HIT: hit again, a fresh wait
+  await engine.sweep();
+  assert.equal(w.sends.length, 0, 'the 10 s wait counts from now, not from the first sighting');
+  w.now += 10_000;
+  await engine.sweep();
+  assert.equal(w.sends.length, 1);
+});
+
+test('rejects an instance index outside [0, instanceCount)', () => {
+  assert.throws(() => world({ deps: { instanceIndex: 2, instanceCount: 2 } }), /instanceIndex/);
+  assert.throws(() => world({ deps: { instanceIndex: -1, instanceCount: 2 } }), /instanceIndex/);
+  assert.throws(() => world({ deps: { instanceIndex: 0, instanceCount: 0 } }), /instanceIndex/);
 });
 
 test('rejects a batch size below 1', () => {

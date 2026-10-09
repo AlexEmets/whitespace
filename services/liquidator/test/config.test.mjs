@@ -24,6 +24,7 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.equal(c.triggerCooldownMs, 30_000);
   assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [10, 4, 16]);
   assert.equal(c.maxOpenBackoffMs, 900_000);
+  assert.deepEqual([c.instanceIndex, c.instanceCount, c.takeoverMs], [0, 1, 10_000], 'one instance owns every trigger');
   assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [30_000, 300_000], 'a recovery window of minutes, not an hour');
   assert.equal(c.receiptTimeoutMs, 4_000, 'seconds, not the shared 30 s: a trigger expires 10 s after its timestamp');
   assert.equal(c.liquidateWhenDegraded, false, 'never liquidate on an under-confirmed price unless opted in (degradedMode.mjs)');
@@ -103,6 +104,15 @@ test('invalid numbers and booleans are rejected, not coerced', () => {
   }
   assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: 'maybe' }, { deployment: DEPLOYMENT }), /must be true or false/);
   assert.equal(loadConfig({ ...ENV, LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: '0' }, { deployment: DEPLOYMENT }).liquidateWhenDegraded, false);
+});
+
+test('two instances split the triggers: index below count, both validated', () => {
+  const two = loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '1', LIQUIDATOR_INSTANCE_COUNT: '2', LIQUIDATOR_TAKEOVER_MS: '6000' }, { deployment: DEPLOYMENT });
+  assert.deepEqual([two.instanceIndex, two.instanceCount, two.takeoverMs], [1, 2, 6_000]);
+  assert.equal(loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '0', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }).instanceIndex, 0);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '2', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }), /INSTANCE_INDEX \(2\) must be below/);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '-1', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }), /non-negative integer/);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_COUNT: '0' }, { deployment: DEPLOYMENT }), /positive integer/);
 });
 
 test('describeConfig never prints the database password', () => {
