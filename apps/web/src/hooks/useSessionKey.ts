@@ -127,7 +127,13 @@ export function useSessionKey(): SessionKeyState {
   );
 
   const enable = useCallback(async () => {
-    if (!address || !walletClient || !publicClient) return;
+    if (!address) return;
+    // wagmi hands out the wallet client a moment after connecting. Returning silently here
+    // made "Enable one-click trading" a button that did nothing at all when clicked early.
+    if (!walletClient || !publicClient) {
+      setError('Your wallet is not ready yet — try again in a moment.');
+      return;
+    }
     setError(null);
     setEnabling(true);
     try {
@@ -156,7 +162,11 @@ export function useSessionKey(): SessionKeyState {
   }, [address, walletClient, publicClient, sessionKey, delegation, sendGasTopUp]);
 
   const disable = useCallback(async () => {
-    if (!address || !walletClient || !publicClient) return;
+    if (!address) return;
+    if (!walletClient || !publicClient) {
+      setError('Your wallet is not ready yet — try again in a moment.');
+      return;
+    }
     setError(null);
     setDisabling(true);
     try {

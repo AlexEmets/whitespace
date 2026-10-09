@@ -14,6 +14,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 const state = vi.hoisted(() => ({
   delegate: '0x0000000000000000000000000000000000000000' as string,
   lastReadQuery: undefined as { refetchInterval?: number } | undefined,
+  walletReady: true,
   refetch: vi.fn(async () => undefined),
   writeContract: vi.fn(async (_args: { functionName: string; args?: readonly unknown[] }) => '0xhash'),
 }));
@@ -24,7 +25,7 @@ vi.mock('wagmi', () => ({
     waitForTransactionReceipt: async () => ({ status: 'success', logs: [] }),
     getBalance: async () => 10n ** 18n,
   }),
-  useWalletClient: () => ({ data: { writeContract: state.writeContract, sendTransaction: vi.fn() } }),
+  useWalletClient: () => ({ data: state.walletReady ? { writeContract: state.writeContract, sendTransaction: vi.fn() } : undefined }),
   useReadContract: (args: { query?: { refetchInterval?: number } }) => {
     state.lastReadQuery = args.query;
     return { data: state.delegate, refetch: state.refetch };
@@ -38,6 +39,7 @@ import { clearSessionKey } from '@/lib/sessionKey';
 beforeEach(() => {
   clearSessionKey(TRADER);
   state.delegate = ZERO;
+  state.walletReady = true;
   state.writeContract.mockClear();
   // The on-chain delegate becomes whatever setDelegate registered.
   state.writeContract.mockImplementation(async (args) => {
@@ -93,5 +95,15 @@ describe('useSessionKey shares one key across every instance', () => {
   it('re-reads the on-chain delegate on a timer, so a revoke elsewhere turns the badge off', () => {
     renderHook(() => useSessionKey());
     expect(state.lastReadQuery?.refetchInterval).toBe(DELEGATION_REFRESH_MS);
+  });
+
+  it('says so when enable is clicked before the wallet client is ready, instead of doing nothing', async () => {
+    state.walletReady = false;
+    const toggle = renderHook(() => useSessionKey());
+    await act(async () => {
+      await toggle.result.current.enable();
+    });
+    expect(toggle.result.current.error).toMatch(/not ready/);
+    expect(state.writeContract).not.toHaveBeenCalled();
   });
 });
