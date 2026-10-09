@@ -527,6 +527,67 @@ test('a failed multi-trigger batch is retried one trigger per transaction; succe
   assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), false, 'success clears isolation');
 });
 
+test('a reverted shared batch costs the innocent keys no cooldown: each goes alone on the next sweep', async () => {
+  for (const failure of [
+    { ok: false, reverted: true, hash: '0xr', reason: 'reverted: 0xr' }, // mined revert
+    { ok: false, reason: 'execution reverted: PairNotListed' }, // refused by estimateGas
+  ]) {
+    const { w, engine, metrics } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0), pos(B, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.trades[`${B}-0-0`] = { ...TRADE };
+    w.sendResults = [failure];
+    await engine.sweep();
+    for (const t of [A, B]) {
+      assert.equal(engine.isCoolingDown(triggerKey(t, 0, 0, 'LIQ')), false);
+      assert.equal(engine.isIsolated(triggerKey(t, 0, 0, 'LIQ')), true);
+    }
+    assert.equal(metrics.triggersFailed.value({ kind: 'LIQ' }), 2);
+
+    // A poisoned, B fine: B lands at once, only A is cooled down.
+    w.now += 1_000;
+    w.sendResults = [{ ok: false, reverted: true, reason: 'reverted: 0xa' }, { ok: true, hash: '0xb' }];
+    await engine.sweep();
+    assert.deepEqual(w.sends.map((s) => s.trades.map((x) => x.trader)), [[A, B], [A], [B]]);
+    assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), true, 'the poisoned key, alone, is cooled down');
+    assert.equal(engine.isCoolingDown(triggerKey(B, 0, 0, 'LIQ')), true, 'B was sent');
+    assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), false);
+  }
+});
+
+test('a shared batch that failed without a revert isolates nobody and is cooled down (it may still mine)', async () => {
+  for (const failure of [{ ok: false, reason: 'receipt_timeout: no receipt for nonce 5 after 2 replacement(s)' }, new Error('fetch failed')]) {
+    const { w, engine } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0), pos(B, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.trades[`${B}-0-0`] = { ...TRADE };
+    w.sendResults = [failure];
+    await engine.sweep();
+    for (const t of [A, B]) {
+      assert.equal(engine.isIsolated(triggerKey(t, 0, 0, 'LIQ')), false);
+      assert.equal(engine.isCoolingDown(triggerKey(t, 0, 0, 'LIQ')), true);
+    }
+  }
+});
+
+test('isolation is forgotten for a slot the indexer no longer lists', async () => {
+  const { w, engine } = world({ price: LIQ_PRICE });
+  w.positions = [pos(A, 0), pos(B, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  w.trades[`${B}-0-0`] = { ...TRADE };
+  w.sendResults = [{ ok: false, reverted: true, reason: 'reverted' }];
+  await engine.sweep();
+  assert.equal(engine.isIsolated(triggerKey(A, 0, 0, 'LIQ')), true);
+
+  // A's trade was closed; B is still listed (not hit any more, but listed).
+  w.positions = [pos(B, 0)];
+  w.price = SAFE_PRICE;
+  w.now += 1_000;
+  await engine.sweep();
+  assert.equal(engine.isIsolated(triggerKey(A, 0, 0, 'LIQ')), false);
+  assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), true);
+});
+
 test('rejects a batch size below 1', () => {
   assert.throws(() => world({ deps: { maxBatchSize: 0 } }), /maxBatchSize/);
 });

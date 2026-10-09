@@ -42,9 +42,13 @@
  * gets PENDING_TRIGGER / NO_TRADE / NO_LIMIT, which is a status, not a revert.
  *
  * Batch isolation: executeAutomationOrder can revert (pair delisted, trading done) and a
- * revert of one entry reverts the whole batch. When a multi-trigger batch fails, its
- * keys are marked isolated and go out one per transaction next time, so one poisoned
- * trigger cannot hold every other trigger hostage.
+ * revert of one entry reverts the whole batch. When a multi-trigger batch REVERTS (mined,
+ * or refused by estimateGas), its keys are marked isolated and go out one per transaction
+ * on the very next sweep, without a cooldown: a reverted batch set nothing on chain, and
+ * all but one of its keys are innocent. Only the key that then reverts on its own is cooled
+ * down. Any other failure (receipt timeout, RPC, nonce) says nothing about the batch's
+ * contents, so it isolates nobody — and is cooled down, since the transaction may still
+ * mine. Isolation is forgotten for a key whose slot is no longer listed by the indexer.
  */
 
 import { LimitOrder } from './abi.mjs';
@@ -64,6 +68,11 @@ export const DEFAULT_EVALUATION_CONCURRENCY = 16;
 
 const LIMIT_ORDER_CODE = { TP: LimitOrder.TP, SL: LimitOrder.SL, LIQ: LimitOrder.LIQ, OPEN: LimitOrder.OPEN };
 const CLOSE_KINDS = [TriggerKind.LIQ, TriggerKind.SL, TriggerKind.TP];
+
+/** A failure caused by what the batch asked the contract to do, rather than by delivery. */
+export function isRevert(result) {
+  return result.reverted === true || /revert/i.test(String(result.reason ?? ''));
+}
 
 export function triggerKey(trader, pairIndex, index, kind) {
   return `${String(trader).toLowerCase()}-${pairIndex}-${index}-${kind}`;
@@ -307,6 +316,14 @@ export function createAutomationEngine({
       return out;
     });
 
+    // A key isolated for a slot the indexer no longer lists (closed, filled, cancelled)
+    // would otherwise stay in the set for the life of the process.
+    const listed = new Set([
+      ...positions.flatMap((p) => CLOSE_KINDS.map((k) => triggerKey(p.trader, p.pairIndex, p.index, k))),
+      ...limitOrders.map((o) => triggerKey(o.trader, o.pairIndex, o.index, TriggerKind.OPEN)),
+    ]);
+    for (const key of isolated) if (!listed.has(key)) isolated.delete(key);
+
     const results = [];
     const triggers = new Map(); // key -> trigger; the first listing of a slot wins
     for (const out of outs) {
@@ -352,21 +369,23 @@ export function createAutomationEngine({
     // Expired while still queued: nothing reached the chain, so there is nothing to wait
     // out. The next sweep re-decides it with a fresh timestamp.
     const neverSent = !result.ok && result.expired === true && !(result.attempts > 0);
+    // A shared batch that reverted: split it up and retry every key alone next sweep.
+    const splitUp = !result.ok && batch.length > 1 && isRevert(result);
     const until = now() + cooldownMs;
     for (const t of batch) {
       if (neverSent) {
         metrics.triggersExpired?.inc(1, { kind: t.kind });
         continue;
       }
-      cooldownUntil.set(t.key, until);
       metrics.triggersAttempted?.inc(1, { kind: t.kind });
       if (result.ok) {
         isolated.delete(t.key);
         metrics.triggersSent?.inc(1, { kind: t.kind });
       } else {
         metrics.triggersFailed?.inc(1, { kind: t.kind });
-        if (batch.length > 1) isolated.add(t.key);
       }
+      if (splitUp) isolated.add(t.key);
+      else cooldownUntil.set(t.key, until);
     }
     metrics.batchesSent?.inc(1, { ok: String(result.ok) });
     return {
