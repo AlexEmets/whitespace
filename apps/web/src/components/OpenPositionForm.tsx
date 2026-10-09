@@ -7,6 +7,7 @@ import { useErc20 } from '@/hooks/useErc20';
 import { useFaucet } from '@/hooks/useFaucet';
 import { useEstimatedLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
+import { useMaxSlP } from '@/hooks/useMaxSlP';
 import { useOpenTrade } from '@/hooks/useOpenTrade';
 import { useOrders } from '@/hooks/useOrders';
 import { usePositions } from '@/hooks/usePositions';
@@ -16,7 +17,7 @@ import { explainCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { minOpenCollateral, openSizeError, tpCapError, tpSlErrors, triggerPriceError } from '@/lib/orderRules';
+import { minOpenCollateral, openSizeError, tpCapError, tpSlErrors, triggerPriceError, updateSlError } from '@/lib/orderRules';
 import {
   computeTicket,
   convertSizeInput,
@@ -87,6 +88,7 @@ export function OpenPositionForm({
   const { orders } = useOrders(address);
   const { positions } = usePositions(address);
   const fees = useMarketFees(pairIndex);
+  const maxSlP = useMaxSlP();
 
   const [kind, setKind] = useState<OpenOrderKind>('MARKET');
   const [buy, setBuy] = useState(true);
@@ -158,7 +160,13 @@ export function OpenPositionForm({
           const sides = tpSlErrors({ buy, entryPrice, tp: tpRaw, sl: slRaw });
           // The wrong-side rule reverts at open; the cap does not — it is silently clamped or
           // erased on fill, so refuse it here rather than let the trader think it took.
-          return { tp: sides.tp ?? tpCapError({ buy, entryPrice, leverage: leverageRaw, tp: tpRaw }), sl: sides.sl };
+          // The stop has the same problem in the other direction: beyond maxSl_P it is pulled in
+          // to the boundary on fill (correctSl), so a 5% stop at 50x quietly became ~1.7%.
+          const slCap =
+            maxSlP === null || entryPrice <= 0n || leverageRaw <= 0n
+              ? null
+              : updateSlError({ buy, openPrice: entryPrice, leverage: leverageRaw, maxSlP, newSl: slRaw });
+          return { tp: sides.tp ?? tpCapError({ buy, entryPrice, leverage: leverageRaw, tp: tpRaw }), sl: sides.sl ?? slCap };
         })();
   const triggerError = kind === 'MARKET' ? null : triggerRaw === null ? 'Not a price.' : triggerPriceError(kind, buy, triggerRaw, markRaw);
 

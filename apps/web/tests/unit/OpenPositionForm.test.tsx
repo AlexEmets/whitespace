@@ -73,6 +73,10 @@ vi.mock('wagmi', () => ({
     query?.enabled === false ? { data: undefined, isLoading: false } : { data: EST_LIQ_PRICE_RAW, isLoading: false },
 }));
 
+// maxSl_P on 1874: the widest stop is an 85% loss of margin.
+let maxSlPState: bigint | null = 85n;
+vi.mock('@/hooks/useMaxSlP', () => ({ useMaxSlP: () => maxSlPState }));
+
 vi.mock('@/hooks/usePrice', () => ({
   usePrice: () => ({ data: priceState, error: null, loading: false, refetch: vi.fn() }),
 }));
@@ -159,6 +163,7 @@ beforeEach(() => {
   balanceState = 10_000_000_000n;
   positionsState = [];
   ordersMockState = [];
+  maxSlPState = 85n;
   // A zero-width quote at the mark with no size impact: fills land exactly on 65,001.00, so the
   // collateral arithmetic below is the plain size x price / leverage.
   quoteInputs = {
@@ -800,6 +805,37 @@ describe('<OpenPositionForm>', () => {
     fireEvent.click(screen.getByTestId('tpsl-toggle'));
     fireEvent.change(screen.getByTestId('tp-input'), { target: { value: '80000' } });
     expect(screen.queryByTestId('tp-error')).not.toBeInTheDocument();
+  });
+
+  // At 50x an 85% loss of margin is ~1.7% of price, so a 60,000 stop under a ~65,001 entry
+  // (7.7% away) would be pulled in to ~63,896 on fill. The form must say so, not submit it.
+  it('refuses a stop loss beyond the maxSl_P limit for the chosen leverage', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '60000' } });
+    expect(screen.getByTestId('sl-error')).toHaveTextContent(/85% loss limit/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  it('accepts a stop loss inside the maxSl_P limit at that same leverage', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '64500' } });
+    expect(screen.queryByTestId('sl-error')).not.toBeInTheDocument();
+  });
+
+  it('does not block a stop loss while maxSl_P is still unknown', () => {
+    maxSlPState = null;
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.change(screen.getByTestId('leverage-slider'), { target: { value: '50' } });
+    fireEvent.click(screen.getByTestId('tpsl-toggle'));
+    fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '60000' } });
+    expect(screen.queryByTestId('sl-error')).not.toBeInTheDocument();
   });
 
   it('submits a valid take profit and stop loss with the order', async () => {

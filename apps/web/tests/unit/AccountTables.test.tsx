@@ -35,6 +35,9 @@ const actions = {
   cancelLimitOrder: vi.fn(async () => ({})),
 };
 vi.mock('@/hooks/useTradingActions', () => ({ useTradingActions: () => actions }));
+let markState: string | null = '65000.000000000000000000';
+vi.mock('@/hooks/usePrice', () => ({ usePrice: () => ({ data: markState ? { mark: markState } : undefined }) }));
+vi.mock('@/hooks/useMaxSlP', () => ({ useMaxSlP: () => 85n }));
 
 const limitBuy: LimitOrderSummary = {
   pairIndex: 0,
@@ -56,6 +59,7 @@ beforeEach(() => {
   orderHistory = [];
   fees = [];
   pnl = undefined;
+  markState = '65000.000000000000000000';
   actions.updateLimitOrder.mockClear();
   actions.cancelLimitOrder.mockClear();
 });
@@ -119,6 +123,36 @@ describe('<LimitOrdersList>', () => {
     fireEvent.change(screen.getByTestId('limit-tp-input-0-2'), { target: { value: '200000' } });
     expect(screen.getByTestId('limit-save-0-2')).toBeDisabled();
     expect(screen.getByText(/900%/)).toBeInTheDocument();
+  });
+
+  // Placement refuses a LIMIT buy above the market; an edit must not be a way round it.
+  it('refuses moving a limit buy trigger above the market', () => {
+    limitOrders = [limitBuy];
+    render(<LimitOrdersList />);
+    fireEvent.click(screen.getByTestId('limit-edit-0-2'));
+    fireEvent.change(screen.getByTestId('limit-trigger-input-0-2'), { target: { value: '66000' } });
+    expect(screen.getByTestId('limit-save-0-2')).toBeDisabled();
+    expect(screen.getByTestId('limit-trigger-error-0-2')).toHaveTextContent(/below the current price/);
+  });
+
+  it('does not block an edit while the market price is unknown', () => {
+    markState = null;
+    limitOrders = [limitBuy];
+    render(<LimitOrdersList />);
+    fireEvent.click(screen.getByTestId('limit-edit-0-2'));
+    fireEvent.change(screen.getByTestId('limit-trigger-input-0-2'), { target: { value: '66000' } });
+    expect(screen.getByTestId('limit-save-0-2')).not.toBeDisabled();
+  });
+
+  // 10x at a 60,000 trigger: an 85% loss of margin is 8.5% of price, so the stop may sit no
+  // lower than 54,900. A 50,000 stop would be pulled in on fill.
+  it('refuses a stop loss beyond the maxSl_P limit for the order', () => {
+    limitOrders = [limitBuy];
+    render(<LimitOrdersList />);
+    fireEvent.click(screen.getByTestId('limit-edit-0-2'));
+    fireEvent.change(screen.getByTestId('limit-sl-input-0-2'), { target: { value: '50000' } });
+    expect(screen.getByTestId('limit-save-0-2')).toBeDisabled();
+    expect(screen.getByTestId('limit-sl-error-0-2')).toHaveTextContent(/85% loss limit/);
   });
 
   it('refuses an empty trigger', () => {

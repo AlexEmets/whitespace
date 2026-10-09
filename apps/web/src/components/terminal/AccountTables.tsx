@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useFees, useLimitOrders, useOrderHistory, usePnl } from '@/hooks/useAccountHistory';
 import { useMarkets } from '@/hooks/useMarkets';
+import { useMaxSlP } from '@/hooks/useMaxSlP';
+import { usePrice } from '@/hooks/usePrice';
 import { useTradingActions } from '@/hooks/useTradingActions';
 import { explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
 import { formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { tpCapError, tpSlErrors } from '@/lib/orderRules';
+import { tpCapError, tpSlErrors, triggerPriceError, updateSlError } from '@/lib/orderRules';
 import type { FeeCharge, LimitOrderSummary, MarketSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
 import { formatUtcMinute as formatTime } from '@/components/portfolio/formatTime';
@@ -37,8 +39,15 @@ function LimitOrderRow({ order, market }: { order: LimitOrderSummary; market: Ma
   const [tp, setTp] = useState(priceToRaw(order.tp) > 0n ? order.tp : '');
   const [sl, setSl] = useState(priceToRaw(order.sl) > 0n ? order.sl : '');
   const [error, setError] = useState<string | null>(null);
+  const { data: price } = usePrice(order.pairIndex);
+  const maxSlP = useMaxSlP();
 
   const triggerRaw = parsePrice(trigger);
+  // Placement refuses a trigger on the wrong side of the market (a LIMIT buy above it fills on
+  // the next sweep); an edit must too, or moving the trigger is a way round that check.
+  const markRaw = price ? priceToRaw(price.mark) : 0n;
+  const triggerSide =
+    triggerRaw && markRaw > 0n ? triggerPriceError(order.orderType, order.buy, triggerRaw, markRaw) : null;
   const tpRaw = parsePrice(tp);
   const slRaw = parsePrice(sl);
   const rules =
@@ -46,13 +55,17 @@ function LimitOrderRow({ order, market }: { order: LimitOrderSummary; market: Ma
       ? (() => {
           const sides = tpSlErrors({ buy: order.buy, entryPrice: triggerRaw, tp: tpRaw, sl: slRaw });
           // Same +900% cap the contract clamps to on fill — enforce it before the edit is signed.
+          const leverage = leverageToRaw(order.leverage);
           return {
-            tp: sides.tp ?? tpCapError({ buy: order.buy, entryPrice: triggerRaw, leverage: leverageToRaw(order.leverage), tp: tpRaw }),
-            sl: sides.sl,
+            tp: sides.tp ?? tpCapError({ buy: order.buy, entryPrice: triggerRaw, leverage, tp: tpRaw }),
+            sl:
+              sides.sl ??
+              (maxSlP === null ? null : updateSlError({ buy: order.buy, openPrice: triggerRaw, leverage, maxSlP, newSl: slRaw })),
           };
         })()
       : { tp: null, sl: null };
-  const invalid = !triggerRaw || tpRaw === null || slRaw === null || rules.tp !== null || rules.sl !== null;
+  const invalid =
+    !triggerRaw || tpRaw === null || slRaw === null || triggerSide !== null || rules.tp !== null || rules.sl !== null;
 
   async function run(fn: () => Promise<unknown>) {
     setError(null);
@@ -119,8 +132,9 @@ function LimitOrderRow({ order, market }: { order: LimitOrderSummary; market: Ma
               >
                 Save
               </button>
+              {triggerSide ? <span className="error-text" data-testid={`limit-trigger-error-${id}`}>{triggerSide}</span> : null}
               {rules.tp ? <span className="error-text">{rules.tp}</span> : null}
-              {rules.sl ? <span className="error-text">{rules.sl}</span> : null}
+              {rules.sl ? <span className="error-text" data-testid={`limit-sl-error-${id}`}>{rules.sl}</span> : null}
             </div>
           </td>
         </tr>
