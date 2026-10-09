@@ -343,7 +343,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
 
 export function PositionsList() {
   const { address } = useAccount();
-  const { positions, loading, error } = usePositions(address);
+  const { positions, loading, error, stale } = usePositions(address);
   const { markets } = useMarkets();
 
   if (!address) return <p>Connect your wallet to see positions.</p>;
@@ -352,27 +352,34 @@ export function PositionsList() {
   if (positions.length === 0) return <p data-testid="no-positions">No open positions.</p>;
 
   return (
-    <table className="data-table" data-testid="positions-table">
-      <thead>
-        <tr>
-          <th>Instrument</th>
-          <th>Quantity</th>
-          <th>Mark</th>
-          <th>Value</th>
-          <th>Entry</th>
-          <th>Liq. price</th>
-          <th>Margin (usage)</th>
-          <th>Funding</th>
-          <th>UPnL</th>
-          <th>TP / SL</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {positions.map((p) => (
-          <PositionRow key={`${p.pairIndex}-${p.index}`} position={p} market={markets.find((m) => m.pairIndex === p.pairIndex)} />
-        ))}
-      </tbody>
-    </table>
+    <>
+      {stale ? (
+        <p role="status" className="error-text" data-testid="positions-stale">
+          Live data is unavailable right now — showing the last known positions.
+        </p>
+      ) : null}
+      <table className="data-table" data-testid="positions-table">
+        <thead>
+          <tr>
+            <th>Instrument</th>
+            <th>Quantity</th>
+            <th>Mark</th>
+            <th>Value</th>
+            <th>Entry</th>
+            <th>Liq. price</th>
+            <th>Margin (usage)</th>
+            <th>Funding</th>
+            <th>UPnL</th>
+            <th>TP / SL</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((p) => (
+            <PositionRow key={`${p.pairIndex}-${p.index}`} position={p} market={markets.find((m) => m.pairIndex === p.pairIndex)} />
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }

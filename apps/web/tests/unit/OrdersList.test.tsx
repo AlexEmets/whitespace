@@ -7,6 +7,7 @@ import type { OrderSummary } from '@/lib/types';
 // their full fraction digits ("100.000000" is 100 USDW at 6 decimals, "10.00" is 10x at
 // PRECISION_2), never the raw scaled integers the contract stores.
 let ordersState: OrderSummary[] = [];
+let staleState = false;
 
 /** Chain head the reclaim countdown compares against. `marketOrdersTimeout` is 30 blocks
  * on 1874, so a request at 7437171 unlocks at 7437201. */
@@ -22,7 +23,7 @@ vi.mock('wagmi', () => ({
 }));
 
 vi.mock('@/hooks/useOrders', () => ({
-  useOrders: () => ({ orders: ordersState, error: null, loading: false, refetch: vi.fn() }),
+  useOrders: () => ({ orders: ordersState, error: null, stale: staleState, loading: false, refetch: vi.fn() }),
 }));
 
 describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => {
@@ -321,6 +322,15 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     render(<OrdersList />);
     expect(screen.queryByTestId('order-lapsed-50')).toBeNull();
     expect(screen.getByTestId('order-row-50')).toHaveTextContent(/Waiting for a keeper report/);
+  });
+
+  it('keeps the orders and their reclaim control on screen when a refresh fails', () => {
+    ordersState = [{ ...base, expired: true, requestedAtBlock: '1' }];
+    staleState = true;
+    render(<OrdersList />);
+    expect(screen.getByTestId('orders-stale')).toBeInTheDocument();
+    expect(screen.getByTestId('order-reclaim-50')).toBeInTheDocument();
+    staleState = false;
   });
 
   it('renders a no-orders message when there are none', () => {

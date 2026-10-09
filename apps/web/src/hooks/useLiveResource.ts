@@ -17,27 +17,41 @@ export function useLiveResource<T>(opts: {
   extractFromWs: (msg: WsMessage) => T | null;
   pollMs?: number;
   enabled?: boolean;
-}): { data: T | null; error: Error | null; loading: boolean; refetch: () => void } {
+}): { data: T | null; error: Error | null; stale: boolean; loading: boolean; refetch: () => void } {
   const { channel, fetcher, extractFromWs, pollMs = 5000, enabled = true } = opts;
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<Error | null>(null);
+  const [fetchError, setFetchError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
+  // Bumped whenever the channel changes. A response started for the previous channel (the
+  // previous wallet, say) can resolve after the switch; without this it overwrote the new
+  // channel's data with the old one's.
+  const generation = useRef(0);
 
   const refetch = useCallback(() => {
     if (!enabled) return;
+    const gen = generation.current;
     fetcherRef
       .current()
       .then((next) => {
+        if (gen !== generation.current) return;
         setData(next);
-        setError(null);
+        setFetchError(null);
       })
-      .catch((err: unknown) => setError(err instanceof Error ? err : new Error(String(err))))
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => {
+        if (gen !== generation.current) return;
+        setFetchError(err instanceof Error ? err : new Error(String(err)));
+      })
+      .finally(() => {
+        if (gen === generation.current) setLoading(false);
+      });
   }, [enabled]);
 
   useEffect(() => {
+    generation.current += 1;
+    setData(null);
+    setFetchError(null);
     if (!enabled) return;
     setLoading(true);
     refetch();
@@ -53,7 +67,7 @@ export function useLiveResource<T>(opts: {
       const extracted = extractFromWs(msg);
       if (extracted !== null) {
         setData(extracted);
-        setError(null);
+        setFetchError(null);
         setLoading(false);
       }
     });
@@ -61,5 +75,15 @@ export function useLiveResource<T>(opts: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, channel]);
 
-  return { data, error, loading, refetch };
+  // A failed refresh does not throw away what the last good one returned. Every table used to
+  // swap itself for "Failed to load…" on one bad poll, which during an API or indexer outage
+  // hid the Close and Reclaim buttons — the escape paths that must keep working when the read
+  // side is down. `error` now means "nothing to show"; `stale` means "showing the last data".
+  return {
+    data,
+    error: data === null ? fetchError : null,
+    stale: data !== null && fetchError !== null,
+    loading,
+    refetch,
+  };
 }

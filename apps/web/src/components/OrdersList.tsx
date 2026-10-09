@@ -97,7 +97,7 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
  */
 export function OrdersList() {
   const { address } = useAccount();
-  const { orders, loading, error } = useOrders(address);
+  const { orders, loading, error, stale } = useOrders(address);
 
   if (!address) return <p>Connect your wallet to see orders.</p>;
   if (loading) return <p>Loading orders…</p>;
@@ -105,55 +105,62 @@ export function OrdersList() {
   if (orders.length === 0) return <p data-testid="no-orders">No orders.</p>;
 
   return (
-    <table className="data-table" data-testid="orders-table">
-      <thead>
-        <tr>
-          <th>Side</th>
-          <th>Collateral</th>
-          <th>Status</th>
-          <th>Detail</th>
-        </tr>
-      </thead>
-      <tbody>
-        {orders.map((o) => (
-          <tr key={o.orderId} data-testid={`order-row-${o.orderId}`} data-status={o.status}>
-            {/* buy/collateral/leverage are null while an open order is still pending:
-                `MarketOpenOrderInitiated` does not carry the Trade payload — only
-                `MarketOpenExecuted` does (see the indexer's trading handler and the note
-                on GET /orders/:address). Rendering them needs care in both directions:
-                `<Money value={null}>` throws, and `o.buy ? 'Long' : 'Short'` quietly
-                reports a pending LONG as "Short", because null is falsy. An unknown value
-                gets the same em-dash the rest of the app uses, never a guess. */}
-            <td className={o.buy === null ? 'dash' : ''} title={o.buy === null ? 'Not known until the keeper executes this order' : undefined}>
-              {o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}
-            </td>
-            <td className={o.collateral === null ? 'dash' : ''}>
-              {o.collateral === null ? (
-                <span title="Not known until the keeper executes this order">—</span>
-              ) : (
-                <Money value={o.collateral} decimals={COLLATERAL_DECIMALS} suffix="USDW" />
-              )}
-            </td>
-            {/* Once a pending order is past the fill window it will never fill, so "waiting
-                for keeper" becomes a lie — say "Expired" and let the Detail column offer the
-                reclaim. (The API has already dropped any expired automation order, which has
-                no reclaim path; what reaches here is a reclaimable market order.) */}
-            <td data-testid={`order-status-${o.orderId}`}>
-              {o.status === 'pending' && o.expired ? 'Expired — no keeper report' : (STATUS_LABEL[o.status] ?? o.status)}
-            </td>
-            <td>
-              {o.status === 'cancelled' ? (
-                <span className="error-text">
-                  {o.cancelReason ?? 'unknown'} — {explainCancelReason(o.cancelReason ?? '')}
-                </span>
-              ) : null}
-              {o.status === 'executed' ? 'Position opened.' : null}
-              {o.status === 'timeout' ? (o.kind === 'close' ? 'Position released, still open.' : 'Collateral returned in full.') : null}
-              {o.status === 'pending' ? <ReclaimCell order={o} /> : null}
-            </td>
+    <>
+      {stale ? (
+        <p role="status" className="error-text" data-testid="orders-stale">
+          Live data is unavailable right now — showing the last known orders.
+        </p>
+      ) : null}
+      <table className="data-table" data-testid="orders-table">
+        <thead>
+          <tr>
+            <th>Side</th>
+            <th>Collateral</th>
+            <th>Status</th>
+            <th>Detail</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {orders.map((o) => (
+            <tr key={o.orderId} data-testid={`order-row-${o.orderId}`} data-status={o.status}>
+              {/* buy/collateral/leverage are null while an open order is still pending:
+                  `MarketOpenOrderInitiated` does not carry the Trade payload — only
+                  `MarketOpenExecuted` does (see the indexer's trading handler and the note
+                  on GET /orders/:address). Rendering them needs care in both directions:
+                  `<Money value={null}>` throws, and `o.buy ? 'Long' : 'Short'` quietly
+                  reports a pending LONG as "Short", because null is falsy. An unknown value
+                  gets the same em-dash the rest of the app uses, never a guess. */}
+              <td className={o.buy === null ? 'dash' : ''} title={o.buy === null ? 'Not known until the keeper executes this order' : undefined}>
+                {o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}
+              </td>
+              <td className={o.collateral === null ? 'dash' : ''}>
+                {o.collateral === null ? (
+                  <span title="Not known until the keeper executes this order">—</span>
+                ) : (
+                  <Money value={o.collateral} decimals={COLLATERAL_DECIMALS} suffix="USDW" />
+                )}
+              </td>
+              {/* Once a pending order is past the fill window it will never fill, so "waiting
+                  for keeper" becomes a lie — say "Expired" and let the Detail column offer the
+                  reclaim. (The API has already dropped any expired automation order, which has
+                  no reclaim path; what reaches here is a reclaimable market order.) */}
+              <td data-testid={`order-status-${o.orderId}`}>
+                {o.status === 'pending' && o.expired ? 'Expired — no keeper report' : (STATUS_LABEL[o.status] ?? o.status)}
+              </td>
+              <td>
+                {o.status === 'cancelled' ? (
+                  <span className="error-text">
+                    {o.cancelReason ?? 'unknown'} — {explainCancelReason(o.cancelReason ?? '')}
+                  </span>
+                ) : null}
+                {o.status === 'executed' ? 'Position opened.' : null}
+                {o.status === 'timeout' ? (o.kind === 'close' ? 'Position released, still open.' : 'Collateral returned in full.') : null}
+                {o.status === 'pending' ? <ReclaimCell order={o} /> : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
