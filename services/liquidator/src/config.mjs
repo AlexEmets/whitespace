@@ -23,6 +23,7 @@ import {
   DEFAULT_TAKEOVER_MS,
 } from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
+import { DEFAULT_MAX_SWEEP_AGE_MS } from './healthServer.mjs';
 import { DEFAULT_DB_CONNECT_TIMEOUT_MS, DEFAULT_DB_STATEMENT_TIMEOUT_MS } from './candidateSource.mjs';
 import { SEQUENCER_STALL_THRESHOLD_MS, SEQUENCER_RECOVERY_WINDOW_MS } from './sequencerLiveness.mjs';
 
@@ -125,6 +126,7 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     deadLetterFilePath: env.LIQUIDATOR_DEAD_LETTER_PATH || null,
     metricsPort: positiveInt(env, 'LIQUIDATOR_METRICS_PORT', 9464),
     metricsHost: env.LIQUIDATOR_METRICS_HOST || '127.0.0.1',
+    healthMaxSweepAgeMs: positiveInt(env, 'LIQUIDATOR_HEALTH_MAX_SWEEP_AGE_MS', DEFAULT_MAX_SWEEP_AGE_MS),
   };
 }
 

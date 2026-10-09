@@ -99,7 +99,11 @@ async function main() {
     metrics,
   });
 
-  const healthServer = createHealthServerApp(metrics);
+  let lastSweepCompletedAt = null;
+  const healthServer = createHealthServerApp(metrics, {
+    lastSweepCompletedAt: () => lastSweepCompletedAt,
+    maxSweepAgeMs: config.healthMaxSweepAgeMs,
+  });
   healthServer.listen(config.metricsPort, config.metricsHost, () => log(`health/metrics on ${config.metricsHost}:${config.metricsPort}`));
 
   const stopLiveness = watchLiveness({
@@ -116,6 +120,7 @@ async function main() {
       metrics.setSequencerState(sequencerMonitor.state);
       metrics.deadLetterDepth.set(deadLetter.size());
       const { results, sent, error } = await engine.sweep();
+      lastSweepCompletedAt = Date.now();
       if (error) logError('sweep:', error);
       if (metrics.limitOrderTableAvailable.value() === 0 && !warnedNoLimitTable) {
         warnedNoLimitTable = true;
