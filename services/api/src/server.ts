@@ -95,8 +95,16 @@ export function createApp(opts: { wsPollIntervalMs?: number; ws?: WsManagerOptio
         res.writeHead(code, { ...cors, 'content-type': 'application/json' });
         res.end(JSON.stringify(body));
       } catch (err) {
+        // The detail stays in the server log. It used to be echoed in the body, which handed
+        // any caller raw Postgres errors — table and schema names, constraint names, and
+        // connection details while the database was down.
+        console.error(`[api] ${req.method} ${req.url} failed:`, err);
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
         res.writeHead(500, { ...cors, 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: 'internal error', message: (err as Error).message }));
+        res.end(JSON.stringify({ error: 'internal error' }));
       }
     })();
   });
