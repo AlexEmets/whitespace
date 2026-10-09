@@ -47,6 +47,36 @@ sudo systemctl enable --now whitespace-bot@a whitespace-bot@b whitespace-balance
 `/etc/sudoers.d/whitespace` must allow single-unit `systemctl start|stop|restart|is-active`
 for every unit above, including `whitespace-bot@a` and `whitespace-bot@b`.
 
+## Memory budget
+
+The box has 1909 MB usable. Limits are set in two places that must add up together:
+
+| what | soft (MemoryHigh) | hard | V8 heap |
+|---|---|---|---|
+| Postgres (docker) | — | `mem_limit` 600m (+600m swap), `oom_score_adj -900` | — |
+| eRPC (docker) | — | `mem_limit` 160m | — |
+| indexer | 272M | 320M | 208 |
+| web | 184M | 240M | 144 |
+| api | 136M | 176M | 104 |
+| publisher | 80M | 96M | 56 |
+| keeper | 88M | 104M | 64 |
+| bot@a, bot@b | 88M each | 104M each | 64 |
+
+Hard limits sum to 1904 MB, soft limits to 1696 MB. Postgres runs with
+`max_connections=60, shared_buffers=128MB, work_mem=4MB` (`docker-compose.yml`); its
+clients use at most 12 (Ponder, `PONDER_DB_POOL_MAX`) + 10 (API, `PG_POOL_MAX`) + 2 per bot.
+`node --test deploy/test/*.test.mjs` checks all of this; run it after changing any limit.
+
+A changed `docker-compose.yml` only applies once the container is recreated (data volume
+kept): `docker compose up -d postgres` (and `docker compose --profile hosted up -d erpc`).
+Check with `docker inspect whitespace-postgres --format '{{.HostConfig.Memory}} {{.Config.Cmd}}'`.
+
+If Postgres is in a crash/recovery loop (`docker logs whitespace-postgres` shows
+"terminated by signal 9" / "database system was interrupted"): check `dmesg | grep -i oom`
+for the victim, stop the bots and web to free memory, let recovery finish, then bring units
+back one at a time. The API retries its schema setup and keeps serving through a restart;
+it no longer needs restarting after Postgres comes back.
+
 ## Indexer schemas (the views pattern)
 
 Ponder will not start in a schema another build created, so every indexer build writes its own

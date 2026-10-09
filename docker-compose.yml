@@ -21,6 +21,38 @@ services:
     image: postgres:16-alpine
     container_name: whitespace-postgres
     restart: unless-stopped
+    # MEMORY BUDGET (production: 2 GB RAM, 1 vCPU, 2 GB swap — every limit below and the
+    # MemoryHigh/MemoryMax of each deploy/systemd unit are sized together, and
+    # deploy/test/memoryBudget.test.mjs fails if they stop adding up).
+    #
+    # Postgres ran with stock settings and no limit beside eight Node processes. When the
+    # box ran short the kernel OOM killer picked a Postgres backend, the postmaster then
+    # restarted every backend through crash recovery, every client reconnected at once,
+    # and the box ran short again: the recovery loop production was stuck in.
+    #   - explicit, small settings so its footprint is known: max_connections covers the
+    #     indexer (12), API (10), two bots (2 each) and psql/backup with room to spare;
+    #     shared_buffers 128MB; work_mem 4MB per sort/hash;
+    #   - oom_score_adj -900 makes it the LAST thing the kernel kills — a Node unit is
+    #     restarted by systemd in seconds, Postgres takes everything down with it;
+    #   - mem_limit caps it, and memswap_limit lets it page under pressure instead of
+    #     being OOM-killed inside its own cgroup, which would restart the same loop;
+    #   - shm_size: Docker's 64 MB /dev/shm is below what parallel workers can request.
+    command:
+      - postgres
+      - -c
+      - max_connections=60
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - effective_cache_size=512MB
+    mem_limit: 600m
+    memswap_limit: 1200m
+    oom_score_adj: -900
+    shm_size: 128m
     environment:
       POSTGRES_USER: whitespace
       POSTGRES_PASSWORD: whitespace
@@ -46,10 +78,19 @@ services:
   # Published on 4001, not its default 4000, which would collide with services/api.
   # Only started in the hosted deployment; local development does not need it, and
   # `docker compose up -d postgres` still brings up Postgres alone.
+  #
+  # Pinned, not `latest`: a `docker compose pull` or a fresh box must not silently move to a
+  # release nobody has run against deploy/erpc.yaml. 0.3.0 is the release `latest` resolved
+  # to when this was pinned (same digest, checked 2026-10-10). Upgrading is a deliberate
+  # edit here followed by a check of /rpc.
+  #
+  # Part of the memory budget above; a Go proxy with an in-memory cache, capped so the
+  # cache cannot grow into the room Postgres and the Node units are counting on.
   erpc:
-    image: ghcr.io/erpc/erpc:latest
+    image: ghcr.io/erpc/erpc:0.3.0
     container_name: whitespace-erpc
     restart: unless-stopped
+    mem_limit: 160m
     ports:
       - '127.0.0.1:4001:4000'
     volumes:

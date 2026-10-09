@@ -15,7 +15,14 @@ ExecStart=/home/whitespace/whitespace/services/api/node_modules/.bin/tsx src/ser
 Restart=always
 RestartSec=5
 # Measured 89 MB PSS including the tsx/esbuild child process.
-MemoryMax=350M
+# Memory budget (see docker-compose.yml and deploy/test/memoryBudget.test.mjs): MemoryHigh
+# is where systemd starts reclaiming from this unit, MemoryMax the hard kill, and the V8 heap
+# cap sits under both so Node collects garbage before the cgroup has to step in. The sum of
+# every MemoryMax plus the container limits stays inside physical RAM; it used to exceed it,
+# so under load the kernel OOM killer chose for us, and it chose Postgres.
+MemoryHigh=136M
+MemoryMax=176M
+Environment=NODE_OPTIONS=--max-old-space-size=104
 
 [Install]
 WantedBy=multi-user.target

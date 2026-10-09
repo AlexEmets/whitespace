@@ -60,7 +60,28 @@ const startBlock = Number(process.env.CONTRACTS_START_BLOCK ?? 7_284_500);
 // pointless tail; the default only has to be recent relative to whenever it is bumped.
 const heartbeatStartBlock = Number(process.env.HEARTBEAT_START_BLOCK ?? 7_373_000);
 
+// Postgres connections Ponder may hold. Its default is 30 (split as 2 internal + 3 equal
+// pools), on a 2 GB box whose one Postgres also serves the API (10) and both automation bots
+// (2 each), and whose max_connections is 60 (docker-compose.yml). Each backend costs
+// Postgres several MB plus work_mem per sort, so 30 idle-ish connections from one client
+// were a large share of the memory that pushed Postgres into the OOM/recovery loop.
+// 12 gives 2 internal + 3 each to the sync, user and readonly pools — Ponder's pools are
+// split evenly, so anything below 5 leaves a pool with none. PONDER_DB_POOL_MAX overrides.
+const DEFAULT_DB_POOL_MAX = 12;
+const dbPoolMax = Number(process.env.PONDER_DB_POOL_MAX ?? DEFAULT_DB_POOL_MAX);
+if (!Number.isInteger(dbPoolMax) || dbPoolMax < 5) {
+  throw new Error(`PONDER_DB_POOL_MAX must be an integer >= 5, got ${process.env.PONDER_DB_POOL_MAX}`);
+}
+// Only when a Postgres URL is configured: with no `database` block Ponder falls back to
+// PGlite for a bare local run, and declaring `kind: 'postgres'` unconditionally would
+// replace that fallback with a connection attempt to the libpq defaults.
+const database =
+  process.env.DATABASE_URL || process.env.DATABASE_PRIVATE_URL
+    ? ({ kind: 'postgres', poolConfig: { max: dbPoolMax } } as const)
+    : undefined;
+
 export default createConfig({
+  database,
   chains: {
     whitechain1874: {
       id: CHAIN_ID,
