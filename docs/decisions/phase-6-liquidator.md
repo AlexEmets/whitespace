@@ -228,6 +228,13 @@ is L2 block production itself: if the sequencer stalls, no new blocks are produc
 fallback producer), so "no new block for longer than a threshold" is used as the stall
 proxy.
 
+**Revised 2026-10-10.** The stall is judged from the chain's own block TIMESTAMPS, never from
+our RPC failing. A failed poll used to count as "no new block", so a 30 s outage of the one
+configured RPC endpoint — with the chain producing blocks the whole time — put the bot in
+STALLED and then held liquidations for the full recovery window. A stall is now a returned
+head whose timestamp is at least the threshold old, or two heads further apart in time than
+the blocks between them account for (a stall that happened while our RPC was down).
+
 State machine (`SequencerState`): `LIVE → STALLED → RECOVERING → LIVE`, with a stall
 mid-recovery falling back to `STALLED` and the recovery window restarting from scratch
 on the next resumption (no partial credit for a flapping sequencer).
@@ -238,7 +245,7 @@ Named constants (never magic numbers at the use site, per this repo's own conven
 | Constant | Value | Basis |
 |---|---|---|
 | `SEQUENCER_STALL_THRESHOLD_MS` | 30,000 (30 s) | 30x the chain's measured 1.00 s block time (design spec §2.1) — wide enough to avoid false positives from ordinary jitter |
-| `SEQUENCER_RECOVERY_WINDOW_MS` | 3,600,000 (1 h) | Mirrors the grace-period convention in Aave's Arbitrum sequencer-uptime integration (`GRACE_PERIOD_TIME = 3600` seconds) — a documented starting point, **not tuned against any observed outage on this chain** (none has occurred) |
+| `SEQUENCER_RECOVERY_WINDOW_MS` | 300,000 (5 min), `LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS` | Was 1 h, after Aave's Arbitrum grace period. An hour of no liquidations after any blip let underwater positions keep a free option against the vault; five minutes covers the price catching up after a real stall. Both values are configurable. |
 
 Both are starting points explicitly, matching the design spec's own framing of its
 initial parameters ("starting points to be tuned against measured data", §5.2) — tune in
@@ -524,7 +531,7 @@ same holds for fees and price moving between decision and callback (§2.4).
 
 ### 11.3 Gates per kind
 
-| Kind | Sequencer STALLED | RECOVERING (1 h window, §3) | Degraded market |
+| Kind | Sequencer STALLED | RECOVERING (5 min window, §3) | Degraded market |
 |---|---|---|---|
 | LIQ | blocked | blocked | **blocked** (default, §4). `LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED=true` allows it |
 | SL, TP | blocked | allowed | allowed: the trader's own close order, and the publisher signs `LIMIT_CLOSE` while degraded |
@@ -572,7 +579,7 @@ Run under a supervisor with
 |---|---|
 | `setInterval(async …)` let a slow sweep overlap the next one: same candidates, same nonce | `sweepLoop.mjs`: single flight, next sweep scheduled after the previous ends |
 | `readMaxLeverage(pairIndex, false)` hardcoded overnight | uses the trade's `isDayTrade` (callbacks `:537` resolves it the same way) |
-| `watchLiveness` swallowed RPC errors, so a total outage stayed LIVE forever | a failed poll is "no new block" (`observeFailure`); a startup outage stalls from the first failure, and the first block after it enters RECOVERING |
+| `watchLiveness` swallowed RPC errors, so a total outage stayed LIVE forever | superseded 2026-10-10: our RPC failing is not a sequencer stall; stalls are read from block timestamps (§3) |
 | `liquidator_oracle_staleness_ms`, `liquidator_rpc_healthy` declared, never set | staleness = age of the last good `/status`; every RPC endpoint probed separately, labelled by scheme+host only (provider URLs carry keys) |
 | One reader exception aborted the whole sweep | per-candidate isolation |
 | `positionTable.remove` never called | the table is gone; candidates come from the DB every sweep |
