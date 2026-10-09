@@ -13,7 +13,7 @@ const base: TicketInput = {
 
 describe('computeTicket', () => {
   it('an empty field is a zero ticket with no fee, not an error', () => {
-    expect(computeTicket(base)).toEqual({ sizeBaseRaw: 0n, notionalRaw: 0n, collateralRaw: 0n, feeRaw: 0n });
+    expect(computeTicket(base)).toEqual({ sizeBaseRaw: 0n, notionalRaw: 0n, collateralRaw: 0n, feeRaw: 0n, sizeAfterFeesRaw: 0n });
   });
 
   it('base units: 0.1 BTC at 100k and 10x is 10,000 notional on 1,000 margin', () => {
@@ -40,6 +40,20 @@ describe('computeTicket', () => {
   it('an unknown fee rate yields a null fee rather than a guessed one', () => {
     expect(computeTicket({ ...base, sizeInput: '1', takerFeeRaw: null })!.feeRaw).toBeNull();
     expect(computeTicket({ ...base, sizeInput: '1', oracleFeeRaw: null })!.feeRaw).toBeNull();
+  });
+
+  // The callback takes the fees out of the collateral and keeps the leverage, so the position
+  // that opens is (1,000 - 7) x 10 = 9,930 notional = 0.0993 BTC, not the 0.1 typed.
+  it('reports the size that opens once the fees are taken from the margin', () => {
+    expect(computeTicket({ ...base, sizeInput: '0.1' })!.sizeAfterFeesRaw).toBe((993n * E18) / 10_000n);
+  });
+
+  it('opens nothing when the fees eat the whole margin', () => {
+    expect(computeTicket({ ...base, unit: 'USD', sizeInput: '5' })!.sizeAfterFeesRaw).toBe(0n);
+  });
+
+  it('does not guess the post-fee size while a fee rate is unknown', () => {
+    expect(computeTicket({ ...base, sizeInput: '0.1', oracleFeeRaw: null })!.sizeAfterFeesRaw).toBeNull();
   });
 
   it('rejects text that is not a decimal', () => {

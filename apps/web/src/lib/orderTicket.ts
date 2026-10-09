@@ -46,6 +46,13 @@ export interface Ticket {
   collateralRaw: bigint;
   /** Opening fee at the taker rate plus the oracle fee, 1e6. Null if either rate is unknown. */
   feeRaw: bigint | null;
+  /**
+   * The base size that actually opens. The callback takes the fees out of the collateral and
+   * keeps the leverage (TradingCallbacksLib.executeRegisterTrade), so the position is
+   * `(collateral - fees) x leverage` — at the 10 USDW minimum with a 1 USDW oracle fee, ~10%
+   * smaller than the size typed. Null while the fees are unknown.
+   */
+  sizeAfterFeesRaw: bigint | null;
 }
 
 /** Null when the input does not parse; zeros for an empty field. */
@@ -84,7 +91,14 @@ export function computeTicket(t: TicketInput): Ticket | null {
         ? 0n
         : (notionalRaw * t.takerFeeRaw) / 1_000_000n / 100n + t.oracleFeeRaw;
 
-  return { sizeBaseRaw, notionalRaw, collateralRaw, feeRaw };
+  const sizeAfterFeesRaw =
+    feeRaw === null
+      ? null
+      : collateralRaw <= feeRaw
+        ? 0n
+        : baseSizeForNotional(((collateralRaw - feeRaw) * t.leverageRaw) / 100n, t.entryPrice);
+
+  return { sizeBaseRaw, notionalRaw, collateralRaw, feeRaw, sizeAfterFeesRaw };
 }
 
 /**

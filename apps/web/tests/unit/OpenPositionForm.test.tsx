@@ -475,6 +475,14 @@ describe('<OpenPositionForm>', () => {
     expect(openTradeMock.mock.calls[0]?.[0]).toMatchObject({ collateralRaw: COLLATERAL_FOR_0_01_BTC });
   });
 
+  // 65.001 margin less the 1.00 oracle fee is 64.001 at 10x = 640.01 USDW of position, i.e.
+  // 0.009846 BTC at 65,001 — not the 0.01 typed. Saying so before signing is the honest number.
+  it('shows the size that opens after the fees come out of the margin', () => {
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('size-after-fees')).toHaveTextContent('0.009846 BTC');
+  });
+
   /** Sizing in the base asset must not let an order past the balance check: the guard
    * applies to the DERIVED collateral, which is the figure the token actually moves. */
   it('refuses a size whose collateral exceeds the wallet balance', () => {

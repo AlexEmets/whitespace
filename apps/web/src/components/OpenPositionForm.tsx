@@ -563,6 +563,14 @@ export function OpenPositionForm({
             {ticket && ticket.sizeBaseRaw > 0n ? `${formatMoney(ticket.sizeBaseRaw, PRICE_DECIMALS_NUM, { fractionDigits: 6 })} ${baseAsset}` : '—'}
           </dd>
         </div>
+        {ticket && ticket.sizeBaseRaw > 0n && ticket.sizeAfterFeesRaw !== null ? (
+          <div>
+            <dt>Opens after fees</dt>
+            <dd data-testid="size-after-fees">
+              {formatMoney(ticket.sizeAfterFeesRaw, PRICE_DECIMALS_NUM, { fractionDigits: 6 })} {baseAsset}
+            </dd>
+          </div>
+        ) : null}
         <div>
           <dt>Margin required</dt>
           <dd data-testid="margin-required">{collateralRaw !== null ? `${formatMoney(collateralRaw, COLLATERAL_DECIMALS)} USDW` : '—'}</dd>
