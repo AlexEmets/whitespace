@@ -41,6 +41,15 @@ export interface Erc20Handle {
  * arbitrary contract just to satisfy the signature would put a number on screen that
  * describes a relationship the panel has nothing to do with. Omitting it disables the
  * allowance read outright rather than issuing one and ignoring the answer. */
+/**
+ * How often the balance and allowance are re-read. USDW moves without this tab doing
+ * anything: a keeper fills or cancels an order, a close pays out, a reclaim refunds. Only the
+ * faucet and vault flows refetched, so after a trade "Avail.", Max sizing and the
+ * insufficient-balance guard all kept the pre-trade balance until the window regained focus.
+ * Every instance shares one query, so this is one read per interval, not one per component.
+ */
+export const ERC20_REFRESH_MS = 4_000;
+
 export function useErc20(spender?: Address): Erc20Handle {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -51,7 +60,7 @@ export function useErc20(spender?: Address): Erc20Handle {
     abi: ERC20_ABI,
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address) },
+    query: { enabled: Boolean(address), refetchInterval: ERC20_REFRESH_MS },
   });
 
   const allowance = useReadContract({
@@ -59,7 +68,7 @@ export function useErc20(spender?: Address): Erc20Handle {
     abi: ERC20_ABI,
     functionName: 'allowance',
     args: address && spender ? [address, spender] : undefined,
-    query: { enabled: Boolean(address) && Boolean(spender) },
+    query: { enabled: Boolean(address) && Boolean(spender), refetchInterval: ERC20_REFRESH_MS },
   });
 
   /**
