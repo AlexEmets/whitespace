@@ -7,6 +7,7 @@
  */
 
 import type { OpenOrderKind } from './abi';
+import { formatMoney } from './money';
 
 /** solidity: `MAX_GAIN_P = 900` (OstiumTrading.sol:27) — TP is capped at +900% PnL. */
 export const MAX_GAIN_P = 900n;
@@ -180,4 +181,40 @@ export function minOpenCollateral(p: OpenSizeInputs): bigint {
     else lo = mid + 1n;
   }
   return lo;
+}
+
+export interface ExposureState {
+  /** TradingStorage.openInterest(pair, 0|1): the side's OI, priced by `* price / 1e30` into USDW raw. */
+  longOi: bigint;
+  shortOi: bigint;
+  /** TradingStorage.openInterest(pair, 2): the per-side cap, PRECISION_6 USDW. */
+  oiCap: bigint;
+  /** PairsStorage.groupCollateral(pair, long|short) and groupMaxCollateral(pair), PRECISION_6. */
+  groupCollateralLong: bigint;
+  groupCollateralShort: bigint;
+  groupMaxCollateral: bigint;
+}
+
+/**
+ * solidity: TradingCallbacksLib.withinExposureLimits — the order is cancelled EXPOSURE_LIMITS at
+ * fill (and the oracle fee kept) when the side's open interest plus this notional exceeds the
+ * cap, or the group's collateral plus this collateral exceeds its maximum. Checked here against
+ * the live mark so the trader is told before signing rather than after paying the fee.
+ */
+export function exposureError(
+  s: ExposureState,
+  p: { buy: boolean; collateralRaw: bigint; leverageRaw: bigint; mark: bigint },
+): string | null {
+  if (p.collateralRaw <= 0n || p.mark <= 0n) return null;
+  const notional = (p.collateralRaw * p.leverageRaw) / 100n;
+  const sideOi = ((p.buy ? s.longOi : s.shortOi) * p.mark) / 10n ** 18n / 10n ** 12n;
+  if (sideOi + notional > s.oiCap) {
+    const room = s.oiCap > sideOi ? s.oiCap - sideOi : 0n;
+    return `This would take ${p.buy ? 'long' : 'short'} open interest past the market cap — at most ${formatMoney(room, 6)} USDW of position is left.`;
+  }
+  const group = p.buy ? s.groupCollateralLong : s.groupCollateralShort;
+  if (group + p.collateralRaw > s.groupMaxCollateral) {
+    return 'This would take the market group past its collateral cap.';
+  }
+  return null;
 }

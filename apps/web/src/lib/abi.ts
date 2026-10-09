@@ -126,6 +126,8 @@ export const CALLBACKS_ABI = parseAbi(['function maxSl_P() view returns (uint8)'
 // source: IOstiumTradingStorage.openTradesInfo (TradeInfo struct) — initialLeverage bounds updateTp.
 export const TRADING_STORAGE_ABI = parseAbi([
   'function openTradesInfo(address trader, uint16 pairIndex, uint8 index) view returns (uint256 tradeId, uint256 oiNotional, uint32 initialLeverage, uint32 tpLastUpdated, uint32 slLastUpdated, uint32 createdAt, bool deprecatedBeingMarketClosed)',
+  // _type 0 = long OI, 1 = short OI (both in notional/fillPrice units, 1e18 x 1e12), 2 = the cap (PRECISION_6 USDW).
+  'function openInterest(uint16 pairIndex, uint256 _type) view returns (uint256)',
 ]);
 
 export const PAIRS_STORAGE_ABI = parseAbi([
@@ -133,6 +135,8 @@ export const PAIRS_STORAGE_ABI = parseAbi([
   // PRECISION_6: the smallest collateral × leverage a position may have — a partial close
   // that would leave less reverts BelowMinLevPos (TradingLib.getCloseTradeRevert).
   'function pairMinLevPos(uint16 pairIndex) view returns (uint64)',
+  'function groupCollateral(uint16 pairIndex, bool long) view returns (uint256)',
+  'function groupMaxCollateral(uint16 pairIndex) view returns (uint256)',
 ]);
 
 /** IOstiumTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. TWAP does not exist in the

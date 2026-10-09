@@ -75,6 +75,9 @@ vi.mock('wagmi', () => ({
 
 // maxSl_P on 1874: the widest stop is an 85% loss of margin.
 let maxSlPState: bigint | null = 85n;
+// Exposure: generous caps by default; tests tighten them.
+let exposureState: Record<string, bigint> | null = null;
+vi.mock('@/hooks/useExposure', () => ({ useExposure: () => exposureState }));
 vi.mock('@/hooks/useMaxSlP', () => ({ useMaxSlP: () => maxSlPState }));
 
 vi.mock('@/hooks/usePrice', () => ({
@@ -164,6 +167,7 @@ beforeEach(() => {
   positionsState = [];
   ordersMockState = [];
   maxSlPState = 85n;
+  exposureState = null;
   // A zero-width quote at the mark with no size impact: fills land exactly on 65,001.00, so the
   // collateral arithmetic below is the plain size x price / leverage.
   quoteInputs = {
@@ -836,6 +840,42 @@ describe('<OpenPositionForm>', () => {
     fireEvent.click(screen.getByTestId('tpsl-toggle'));
     fireEvent.change(screen.getByTestId('sl-input'), { target: { value: '60000' } });
     expect(screen.queryByTestId('sl-error')).not.toBeInTheDocument();
+  });
+
+  // 0.01 BTC at ~65,001 and 10x is a 650.01 USDW notional. Long OI already sits at 99,500 USDW of
+  // a 100,000 cap (1.5307… BTC priced at the 65,001 mark), so this order would breach it and be
+  // cancelled EXPOSURE_LIMITS at fill with the oracle fee kept.
+  const nearCap = () => ({
+    longOi: (99_500n * 10n ** 6n * 10n ** 30n) / MARK_RAW,
+    shortOi: 0n,
+    oiCap: 100_000n * 10n ** 6n,
+    groupCollateralLong: 0n,
+    groupCollateralShort: 0n,
+    groupMaxCollateral: 10n ** 15n,
+  });
+
+  it('refuses a market order that would breach the open-interest cap', () => {
+    exposureState = nearCap();
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('exposure-error')).toHaveTextContent(/open interest past the market cap/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
+  });
+
+  it('lets the same order through on the other side, whose OI is empty', () => {
+    exposureState = nearCap();
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.click(screen.getByTestId('direction-short'));
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.queryByTestId('exposure-error')).toBeNull();
+  });
+
+  it('refuses a market order past the group collateral cap', () => {
+    exposureState = { ...nearCap(), longOi: 0n, groupCollateralLong: 10n ** 6n, groupMaxCollateral: 50n * 10n ** 6n };
+    render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    expect(screen.getByTestId('exposure-error')).toHaveTextContent(/group past its collateral cap/);
+    expect(screen.getByTestId('submit-open-button')).toBeDisabled();
   });
 
   it('submits a valid take profit and stop loss with the order', async () => {

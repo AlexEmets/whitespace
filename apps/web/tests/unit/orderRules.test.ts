@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  exposureError,
   minOpenCollateral,
   openSizeError,
   slippageForSubmission,
@@ -179,5 +180,47 @@ describe('minOpenCollateral', () => {
     const min = minOpenCollateral({ ...FEES, leverageRaw: 1000n });
     expect(min).toBeGreaterThan(2_000_000n);
     expect(min).toBeLessThan(2_010_000n);
+  });
+});
+
+describe('exposureError (withinExposureLimits)', () => {
+  const E18 = 10n ** 18n;
+  const base = {
+    longOi: 0n,
+    shortOi: 0n,
+    oiCap: 1_000_000000n, // 1,000 USDW
+    groupCollateralLong: 0n,
+    groupCollateralShort: 0n,
+    groupMaxCollateral: 1_000_000_000000n,
+  };
+  const order = { buy: true, collateralRaw: 100_000000n, leverageRaw: 1000n, mark: 100n * E18 }; // 1,000 notional
+
+  it('accepts an order that lands exactly on the cap, as the contract does (<=)', () => {
+    expect(exposureError(base, order)).toBeNull();
+  });
+
+  it('refuses one unit past the cap and says how much room is left', () => {
+    const msg = exposureError(base, { ...order, collateralRaw: 100_000001n });
+    expect(msg).toMatch(/at most 1,000.00 USDW/);
+  });
+
+  it('prices the side’s existing OI at the mark', () => {
+    // 5 base units at 100 = 500 USDW already open, so 600 more does not fit under 1,000.
+    const s = { ...base, longOi: 5n * E18 * 10n ** 12n / 1n };
+    expect(exposureError(s, { ...order, collateralRaw: 60_000000n })).toMatch(/at most 500.00 USDW/);
+    expect(exposureError(s, { ...order, collateralRaw: 50_000000n })).toBeNull();
+  });
+
+  it('treats a zero cap as closed, exactly like the contract', () => {
+    expect(exposureError({ ...base, oiCap: 0n }, order)).not.toBeNull();
+  });
+
+  it('checks the group collateral cap', () => {
+    expect(exposureError({ ...base, groupCollateralLong: 950_000000n, groupMaxCollateral: 1_000_000000n }, order)).toMatch(/group/);
+  });
+
+  it('says nothing for an empty order or no price', () => {
+    expect(exposureError(base, { ...order, collateralRaw: 0n })).toBeNull();
+    expect(exposureError(base, { ...order, mark: 0n })).toBeNull();
   });
 });

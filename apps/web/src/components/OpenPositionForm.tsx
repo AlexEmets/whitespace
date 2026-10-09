@@ -7,6 +7,7 @@ import { useErc20 } from '@/hooks/useErc20';
 import { useFaucet } from '@/hooks/useFaucet';
 import { useEstimatedLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
+import { useExposure } from '@/hooks/useExposure';
 import { useMaxSlP } from '@/hooks/useMaxSlP';
 import { useOpenTrade } from '@/hooks/useOpenTrade';
 import { useOrders } from '@/hooks/useOrders';
@@ -17,7 +18,15 @@ import { explainCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
-import { minOpenCollateral, openSizeError, tpCapError, tpSlErrors, triggerPriceError, updateSlError } from '@/lib/orderRules';
+import {
+  exposureError,
+  minOpenCollateral,
+  openSizeError,
+  tpCapError,
+  tpSlErrors,
+  triggerPriceError,
+  updateSlError,
+} from '@/lib/orderRules';
 import {
   computeTicket,
   convertSizeInput,
@@ -89,6 +98,7 @@ export function OpenPositionForm({
   const { positions } = usePositions(address);
   const fees = useMarketFees(pairIndex);
   const maxSlP = useMaxSlP();
+  const exposure = useExposure(pairIndex);
 
   const [kind, setKind] = useState<OpenOrderKind>('MARKET');
   const [buy, setBuy] = useState(true);
@@ -218,8 +228,16 @@ export function OpenPositionForm({
 
   const submittedOrder = state.phase === 'submitted' ? orders.find((o) => o.orderId === state.orderId) : undefined;
 
+  // An order past the open-interest or group-collateral cap is cancelled EXPOSURE_LIMITS at fill,
+  // and the oracle fee is kept. A market order fills now, so refuse it; a resting order is
+  // checked again when it triggers, so it is only warned about.
+  const exposureMessage =
+    exposure && collateralRaw ? exposureError(exposure, { buy, collateralRaw, leverageRaw, mark: markRaw }) : null;
+  const exposureBlocks = kind === 'MARKET' && exposureMessage !== null;
+
   const canSubmit =
     isConnected &&
+    !exposureBlocks &&
     pairIndex !== null &&
     Boolean(price) &&
     !isDegraded &&
@@ -495,6 +513,12 @@ export function OpenPositionForm({
         <p className="error-text" data-testid="quote-unavailable">No quote: {quoteUnavailable[0]?.detail}</p>
       ) : null}
       {leverageTooHigh ? <p className="error-text">Leverage exceeds this market&apos;s maximum.</p> : null}
+      {exposureMessage ? (
+        <p className="error-text" data-testid="exposure-error">
+          {exposureMessage}
+          {kind === 'MARKET' ? null : ' It is checked again when the order triggers.'}
+        </p>
+      ) : null}
       {insufficientBalance ? <p className="error-text">Insufficient USDW balance.</p> : null}
       {minOrderValue !== null ? (
         <p className="error-text" data-testid="size-too-small">
