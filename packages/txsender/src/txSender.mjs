@@ -14,6 +14,14 @@
  *  - "nonce too low" / "already known" from the node means the local nonce is wrong, so
  *    it is re-read from the `pending` block tag before the next attempt.
  *  - Bounded retries, then a dead letter (see ./deadLetter.mjs), then `retryDeadLetters()`.
+ *  - `pipeline: true` keeps nonce allocation and the first broadcast in the queue but waits
+ *    for receipts outside it, so the next send goes out while the previous one is still
+ *    being mined. For a sender whose work expires (the keeper: a report is only valid for
+ *    `maxAge` seconds after its order) a strictly serial queue spends ~2 s per order
+ *    waiting for a receipt, and the fourth order of a burst is already too old to deliver.
+ *  - A request may carry `deadlineMs`. Nothing is broadcast or retried after it, and a send
+ *    that runs out of time is reported `expired` instead of being dead-lettered: re-sending
+ *    it later could only revert.
  *
  * The clients are viem-shaped but only these methods are used, so tests pass plain mocks:
  *   publicClient.getTransactionCount({ address, blockTag: 'pending' }) -> number
@@ -59,6 +67,7 @@ export function createTxSender({
   bumpNumerator = DEFAULTS.bumpNumerator,
   bumpDenominator = DEFAULTS.bumpDenominator,
   retryOnRevert = DEFAULTS.retryOnRevert,
+  pipeline = false,
   now = () => Date.now(),
   sleep = defaultSleep,
   log = () => {},
@@ -79,6 +88,7 @@ export function createTxSender({
     reverted: registry.counter(`${metricsPrefix}_tx_reverted_total`, 'Transactions mined with status reverted (nonce consumed)'),
     nonceResyncs: registry.counter(`${metricsPrefix}_nonce_resyncs_total`, 'Times the local nonce was re-read from the pending block tag'),
     deadLettered: registry.counter(`${metricsPrefix}_tx_dead_lettered_total`, 'Sends given up on after every retry'),
+    expired: registry.counter(`${metricsPrefix}_tx_expired_total`, 'Sends abandoned because their deadline passed'),
   };
   const gauges = {
     deadLetterDepth: registry.gauge(`${metricsPrefix}_dead_letter_depth`, 'Unresolved dead letters held in memory'),
@@ -139,29 +149,43 @@ export function createTxSender({
     return null;
   }
 
-  /** One nonce, one or more same-nonce broadcasts, until a receipt or the last timeout. */
-  async function attemptOnce(req) {
+  /**
+   * Picks the nonce and sends the first transaction for it. In pipeline mode this is the only
+   * part of an attempt that runs in the queue, so the nonce is claimed as soon as the node has
+   * the transaction rather than once it has mined.
+   */
+  async function firstBroadcast(req) {
     if (nonce === null) await resync();
     const txNonce = nonce;
-    let gasPrice = await publicClient.getGasPrice();
-
-    const hashes = [];
+    const gasPrice = await publicClient.getGasPrice();
     try {
-      hashes.push(await broadcast(req, txNonce, gasPrice));
+      const hash = await broadcast(req, txNonce, gasPrice);
+      if (pipeline) nonce = txNonce + 1;
+      return { txNonce, gasPrice, hash };
     } catch (err) {
       if (isNonceTooLow(err) || isAlreadyKnown(err)) await resyncQuietly();
       // Any other refusal (estimateGas revert, insufficient funds, RPC down) never reached
       // the pool, so the nonce was not consumed and stays where it is.
-      return { ok: false, reason: reasonOf(err) };
+      return { error: reasonOf(err) };
     }
+  }
+
+  /** One nonce, one or more same-nonce broadcasts, until a receipt or the last timeout. */
+  async function attemptOnce(req) {
+    const first = pipeline ? await enqueue(() => firstBroadcast(req)) : await firstBroadcast(req);
+    if (first.error !== undefined) return { ok: false, reason: first.error };
+    const { txNonce } = first;
+    let { gasPrice } = first;
+    const hashes = [first.hash];
 
     let bumps = 0;
     let deadline = now() + receiptTimeoutMs;
     for (;;) {
       const found = await findReceipt(hashes);
       if (found) {
-        // Mined — success or revert, the nonce is spent either way.
-        nonce = txNonce + 1;
+        // Mined — success or revert, the nonce is spent either way. In pipeline mode it was
+        // claimed at broadcast, and later sends may already have moved past it.
+        if (!pipeline) nonce = txNonce + 1;
         if (found.receipt.status === 'success') {
           counters.confirmed.inc();
           return { ok: true, hash: found.hash, receipt: found.receipt, nonce: txNonce, replacements: bumps };
@@ -176,7 +200,8 @@ export function createTxSender({
       if (bumps >= maxBumps) {
         // Still pending after every replacement. It stays in the pool; move the local nonce
         // to wherever the node now says it is (past it, if the node still holds it).
-        await resyncQuietly();
+        if (pipeline) await enqueue(resyncQuietly);
+        else await resyncQuietly();
         return { ok: false, reason: `receipt_timeout: no receipt for nonce ${txNonce} after ${bumps} replacement(s)` };
       }
       bumps += 1;
@@ -204,9 +229,17 @@ export function createTxSender({
     }
   }
 
+  function pastDeadline(req) {
+    return req.deadlineMs !== undefined && now() >= req.deadlineMs;
+  }
+
   async function runJob(req) {
     let last = { ok: false, reason: 'unknown' };
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+      if (pastDeadline(req)) {
+        const reason = `deadline_passed before attempt ${attempt}${attempt > 1 ? ` (last: ${last.reason})` : ''}`;
+        return { ...last, ok: false, expired: true, reason, attempts: attempt - 1 };
+      }
       try {
         last = await attemptOnce(req);
       } catch (err) {
@@ -242,9 +275,14 @@ export function createTxSender({
    */
   function send(req) {
     validate(req);
-    return enqueue(async () => {
+    const job = async () => {
       const result = await runJob(req);
       if (result.ok) return result;
+      if (result.expired) {
+        counters.expired.inc();
+        log('warn', `${req.key ?? req.to}: ${result.reason}`);
+        return result;
+      }
       const entry = deadLetter.add({
         key: req.key ?? null,
         meta: req.meta ?? null,
@@ -256,7 +294,9 @@ export function createTxSender({
       gauges.deadLetterDepth.set(deadLetter.size());
       log('error', `${req.key ?? req.to}: dead-lettered after ${result.attempts} attempt(s): ${result.reason}`);
       return { ...result, deadLettered: true, deadLetterId: entry.id };
-    });
+    };
+    // Pipeline mode queues each broadcast inside the job instead of the job as a whole.
+    return pipeline ? job() : enqueue(job);
   }
 
   /**
@@ -268,7 +308,7 @@ export function createTxSender({
     const entries = deadLetter.list().filter(filter);
     const results = await Promise.all(
       entries.map((entry) =>
-        enqueue(async () => {
+        (pipeline ? (fn) => fn() : enqueue)(async () => {
           const req = {
             ...entry.request,
             value: toBigIntOrUndefined(entry.request?.value),

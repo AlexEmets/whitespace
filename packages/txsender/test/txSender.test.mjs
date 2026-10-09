@@ -396,3 +396,134 @@ test('invalid requests and options are refused up front', async () => {
   assert.throws(() => makeSender(chain, { bumpNumerator: 10n }), /bump/);
   assert.throws(() => createTxSender({ publicClient: chain.publicClient }), /required/);
 });
+
+// ---------------------------------------------------------------------------------------
+// Deadlines: work that expires (a keeper report is only good for maxAge seconds)
+// ---------------------------------------------------------------------------------------
+
+test('a request whose deadline has already passed is never broadcast and is not dead-lettered', async () => {
+  const chain = fakeChain();
+  const sender = makeSender(chain);
+  const result = await sender.send({ ...req('late'), deadlineMs: 0 });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.expired, true);
+  assert.equal(result.deadLettered, undefined);
+  assert.equal(chain.sent.length, 0);
+  assert.equal(sender.deadLetter.size(), 0);
+  assert.equal(sender.counters.expired.value(), 1);
+});
+
+test('a failing request stops retrying once its deadline passes, and is reported expired', async () => {
+  // Every broadcast is refused; each refusal costs nothing on the virtual clock, so the
+  // deadline is crossed by the receipt waits of the reverted attempts instead.
+  const chain = fakeChain({ policy: () => 'pending' });
+  const sender = makeSender(chain, { maxBumps: 0, maxRetries: 5 });
+  const result = await sender.send({ ...req('slow'), deadlineMs: 1_500 });
+
+  assert.equal(result.expired, true);
+  assert.equal(chain.sent.length, 2, 'an attempt at t=0 and one at t=1000; none after t=1500');
+  assert.equal(sender.deadLetter.size(), 0);
+});
+
+test('a request with a deadline that is met behaves exactly like one without', async () => {
+  const chain = fakeChain();
+  const result = await makeSender(chain).send({ ...req(), deadlineMs: 10_000 });
+  assert.equal(result.ok, true);
+  assert.equal(result.expired, undefined);
+});
+
+test('without a deadline a failing request is still dead-lettered as before', async () => {
+  const chain = fakeChain({ policy: () => 'reverted' });
+  const result = await makeSender(chain, { maxRetries: 1 }).send(req());
+  assert.equal(result.deadLettered, true);
+  assert.equal(result.expired, undefined);
+});
+
+// ---------------------------------------------------------------------------------------
+// Pipeline mode
+// ---------------------------------------------------------------------------------------
+
+test('pipeline: a second send is broadcast while the first is still waiting for its receipt', async () => {
+  const chain = fakeChain({ policy: () => 'pending' });
+  const sender = makeSender(chain, { pipeline: true, receiptTimeoutMs: 10_000 });
+
+  const a = sender.send(req('a'));
+  const b = sender.send(req('b'));
+  // Let both broadcasts happen; neither tx has mined yet.
+  for (let i = 0; i < 20 && chain.sent.length < 2; i++) await Promise.resolve();
+  assert.equal(chain.sent.length, 2, 'b must not wait for a to mine');
+  assert.deepEqual(chain.sent.map((t) => t.nonce), [5, 6]);
+
+  chain.mine(chain.sent[1].hash);
+  chain.mine(chain.sent[0].hash);
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.equal(ra.ok, true);
+  assert.equal(rb.ok, true);
+  assert.equal(ra.nonce, 5);
+  assert.equal(rb.nonce, 6);
+  assert.equal(sender.nonce, 7);
+});
+
+test('serial (default): a second send is not broadcast until the first has mined', async () => {
+  const chain = fakeChain({ policy: () => 'pending' });
+  const sender = makeSender(chain, { receiptTimeoutMs: 10_000 });
+
+  const a = sender.send(req('a'));
+  const b = sender.send(req('b'));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(chain.sent.length, 1);
+
+  chain.mine(chain.sent[0].hash);
+  for (let i = 0; i < 50 && chain.sent.length < 2; i++) await chain.sleep(100);
+  chain.mine(chain.sent[1].hash);
+  const [ra, rb] = await Promise.all([a, b]);
+  assert.deepEqual([ra.nonce, rb.nonce], [5, 6]);
+});
+
+test('pipeline: a broadcast refused before reaching the pool does not consume its nonce', async () => {
+  let calls = 0;
+  const chain = fakeChain({ policy: () => (calls++ === 0 ? new Error('execution reverted') : 'success') });
+  const sender = makeSender(chain, { pipeline: true, maxRetries: 0 });
+
+  const a = await sender.send(req('a'));
+  assert.equal(a.ok, false);
+  const b = await sender.send(req('b'));
+  assert.equal(b.ok, true);
+  assert.equal(b.nonce, 5, 'the refused broadcast never took nonce 5');
+});
+
+test('pipeline: a mined revert keeps the nonce it consumed and later sends move on', async () => {
+  const chain = fakeChain({ policy: (_tx, i) => (i === 0 ? 'reverted' : 'success') });
+  const sender = makeSender(chain, { pipeline: true, maxRetries: 0, retryOnRevert: false });
+  const [a, b] = await Promise.all([sender.send(req('a')), sender.send(req('b'))]);
+  assert.equal(a.reverted, true);
+  assert.equal(b.ok, true);
+  assert.equal(b.nonce, 6);
+  assert.equal(sender.nonce, 7);
+});
+
+test('pipeline: nonce too low on broadcast re-reads the nonce and the retry uses it', async () => {
+  let calls = 0;
+  const chain = fakeChain({
+    policy: () => (calls++ === 0 ? Object.assign(new Error('nonce too low'), { details: 'nonce too low' }) : 'success'),
+  });
+  chain.pendingNonce = 5;
+  const sender = makeSender(chain, { pipeline: true });
+  const first = sender.send(req());
+  chain.pendingNonce = 9;
+  const result = await first;
+  assert.equal(result.ok, true);
+  assert.equal(result.nonce, 9);
+});
+
+test('pipeline: retryDeadLetters does not deadlock and delivers', async () => {
+  let fail = true;
+  const chain = fakeChain({ policy: () => (fail ? new Error('rpc down') : 'success') });
+  const sender = makeSender(chain, { pipeline: true, maxRetries: 0 });
+  const r = await sender.send(req('x'));
+  assert.equal(r.deadLettered, true);
+  fail = false;
+  const out = await sender.retryDeadLetters();
+  assert.equal(out.delivered, 1);
+});

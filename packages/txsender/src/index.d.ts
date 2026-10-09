@@ -9,6 +9,8 @@ export interface TxRequest {
   key?: string;
   /** Anything JSON-able the caller wants back on the dead letter. */
   meta?: Record<string, unknown>;
+  /** Epoch ms after which nothing is broadcast or retried; the send then resolves `expired`. */
+  deadlineMs?: number;
 }
 
 export interface SendSuccess {
@@ -28,6 +30,8 @@ export interface SendFailure {
   hash?: Hex;
   deadLettered?: boolean;
   deadLetterId?: string;
+  /** The request's deadline passed; it was not dead-lettered. */
+  expired?: boolean;
 }
 
 export type SendResult = SendSuccess | SendFailure;
@@ -99,6 +103,7 @@ export interface TxSender {
     reverted: Counter;
     nonceResyncs: Counter;
     deadLettered: Counter;
+    expired: Counter;
   };
   readonly gauges: { deadLetterDepth: Gauge; queueDepth: Gauge };
   readonly nonce: number | null;
@@ -124,6 +129,8 @@ export function createTxSender(opts: {
   bumpNumerator?: bigint;
   bumpDenominator?: bigint;
   retryOnRevert?: boolean;
+  /** Wait for receipts outside the queue, so sends overlap. See txSender.mjs. */
+  pipeline?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (level: 'warn' | 'error', message: string) => void;
