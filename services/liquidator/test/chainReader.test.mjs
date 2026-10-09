@@ -240,6 +240,26 @@ test('readPriceSnapshot: a non-200 publisher and a feed without a mark both thro
   await assert.rejects(snap.quoteFor(0), /no mark price/);
 });
 
+test('readPriceSnapshot gives up on a publisher that does not answer within statusTimeoutMs', { timeout: 5_000 }, async () => {
+  let signal;
+  // Like fetch: never settles on its own, rejects when its signal aborts.
+  const fetchImpl = (url, init = {}) =>
+    new Promise((_, reject) => {
+      signal = init.signal;
+      signal?.addEventListener('abort', () => reject(signal.reason));
+    });
+  const reader = createChainReader({ publicClient: fakeClient({}), ...ADDR, publisherBaseUrl: 'http://p', fetchImpl, statusTimeoutMs: 30 });
+  const started = Date.now();
+  await assert.rejects(reader.readPriceSnapshot(), (err) => err.name === 'TimeoutError');
+  assert.ok(Date.now() - started < 2_000);
+  assert.equal(signal.aborted, true);
+});
+
+test('the /status timeout defaults to 3 s', async () => {
+  const { DEFAULT_STATUS_TIMEOUT_MS } = await import('../src/chainReader.mjs');
+  assert.equal(DEFAULT_STATUS_TIMEOUT_MS, 3_000);
+});
+
 test('an unknown feed id is an error, not a silent skip', async () => {
   const client = fakeClient({ pairFeed: () => '0x' + 'ab'.repeat(32) });
   const reader = createChainReader({ publicClient: client, ...ADDR, publisherBaseUrl: 'http://p', fetchImpl: async () => ({ ok: true, json: async () => ({ feeds: {} }) }) });

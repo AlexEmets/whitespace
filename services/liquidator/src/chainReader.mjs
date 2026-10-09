@@ -13,6 +13,10 @@ import { TRADING_STORAGE_ABI, PAIR_INFOS_ABI, PAIRS_STORAGE_ABI, TRADING_ABI, Op
 import { getMarketByFeedId } from '@whitespace/shared/markets';
 import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
 
+/** A publisher that has not answered /status in this long is treated as down for the
+ * sweep. fetch on its own waits minutes for headers, and the sweep holds every trigger. */
+export const DEFAULT_STATUS_TIMEOUT_MS = 3_000;
+
 const OPEN_ORDER_TYPE_NAME = { [OpenOrderType.LIMIT]: 'LIMIT', [OpenOrderType.STOP]: 'STOP' };
 
 /**
@@ -64,6 +68,7 @@ export function isTriggerPending(triggerBlock, headBlock, triggerTimeout) {
  * @param {`0x${string}`} opts.tradingAddress
  * @param {string} opts.publisherBaseUrl
  * @param {typeof fetch} [opts.fetchImpl]
+ * @param {number} [opts.statusTimeoutMs]
  */
 export function createChainReader({
   publicClient,
@@ -73,6 +78,7 @@ export function createChainReader({
   tradingAddress,
   publisherBaseUrl,
   fetchImpl = fetch,
+  statusTimeoutMs = DEFAULT_STATUS_TIMEOUT_MS,
 }) {
   const feedCache = new Map(); // pairIndex -> feed name
   const read = (address, abi, functionName, args = []) => publicClient.readContract({ address, abi, functionName, args });
@@ -91,7 +97,8 @@ export function createChainReader({
 
   /** One /status fetch per sweep; quotes for any pair resolve against it. */
   async function readPriceSnapshot() {
-    const res = await fetchImpl(new URL('/status', publisherBaseUrl));
+    // The signal also bounds reading the body, not just the headers.
+    const res = await fetchImpl(new URL('/status', publisherBaseUrl), { signal: AbortSignal.timeout(statusTimeoutMs) });
     if (!res.ok) throw new Error(`publisher /status returned ${res.status}`);
     const { feeds } = await res.json();
     return {
