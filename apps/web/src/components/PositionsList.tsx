@@ -6,6 +6,7 @@ import { useAccount, useReadContract } from 'wagmi';
 import { useCloseTrade } from '@/hooks/useCloseTrade';
 import { useErc20 } from '@/hooks/useErc20';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
+import { useMarketFees } from '@/hooks/useMarketFees';
 import { useMarkets } from '@/hooks/useMarkets';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
@@ -19,7 +20,7 @@ import { marketLabel } from '@/lib/markets';
 import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import { updateSlError, updateTpError } from '@/lib/orderRules';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
-import { marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
+import { leverageAfterRemoval, marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
 import { openPositionShareCard } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
@@ -73,6 +74,23 @@ function PositionManager({ position }: { position: PositionSummary }) {
       : maxSl.data === undefined
         ? null
         : updateSlError({ buy: position.buy, openPrice, leverage, maxSlP: BigInt(maxSl.data), newSl: slRaw });
+
+  // Removing margin raises leverage, and the keeper report that applies it deletes a stop loss
+  // the new leverage puts beyond maxSl_P (OstiumTradingCallbacks.handleRemoveCollateral ->
+  // correctToNullSl). It used to say "Removal requested" and then leave the position with no
+  // stop. It also takes the oracle fee from the WALLET, which nothing mentioned.
+  const fees = useMarketFees(position.pairIndex);
+  const oracleFee = fees.oracleFeeRaw;
+  const collateralRaw = collateralToRaw(position.collateral);
+  const removing = marginRaw !== null && marginRaw > 0n && marginRaw < collateralRaw;
+  const newLeverage = removing ? leverageAfterRemoval(collateralRaw, leverage, marginRaw!) : null;
+  const currentSl = priceToRaw(position.sl);
+  const removalDropsSl =
+    newLeverage !== null &&
+    currentSl > 0n &&
+    maxSl.data !== undefined &&
+    updateSlError({ buy: position.buy, openPrice, leverage: newLeverage, maxSlP: BigInt(maxSl.data), newSl: currentSl }) !== null;
+  const cannotPayFee = oracleFee !== null && erc20.balance < oracleFee;
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setMessage(null);
@@ -147,16 +165,34 @@ function PositionManager({ position }: { position: PositionSummary }) {
         <button
           type="button"
           data-testid="manage-margin-remove"
-          disabled={busy || marginRaw === null || marginRaw <= 0n || marginRaw >= collateralToRaw(position.collateral)}
+          disabled={busy || !removing || removalDropsSl || cannotPayFee}
           onClick={() =>
-            run('Removal requested — the keeper report applies it, or rejects it if it would leave the position under-margined.', () =>
-              actions.removeCollateral(position.pairIndex, position.index, marginRaw!),
-            )
+            run('Removal requested — the keeper report applies it, or rejects it if it would leave the position under-margined.', async () => {
+              if (oracleFee !== null && erc20.allowance < oracleFee) {
+                await erc20.approve(maxUint256);
+                await erc20.refetchAllowance();
+              }
+              await actions.removeCollateral(position.pairIndex, position.index, marginRaw!);
+            })
           }
         >
           Remove
         </button>
       </div>
+      {removing && oracleFee !== null ? (
+        <p className="dash" data-testid="manage-remove-fee">
+          Removing margin costs a {formatMoney(oracleFee, COLLATERAL_DECIMALS)} USDW oracle fee, paid from your wallet.
+        </p>
+      ) : null}
+      {removing && cannotPayFee ? (
+        <p className="error-text" data-testid="manage-remove-no-fee">Your wallet cannot cover the oracle fee for this request.</p>
+      ) : null}
+      {removalDropsSl ? (
+        <p className="error-text" data-testid="manage-remove-drops-sl">
+          This raises leverage to {formatLeverage(newLeverage!)} and your stop loss would be deleted when it applies. Move the
+          stop closer first, or remove less.
+        </p>
+      ) : null}
       {message ? (
         <p className={message.ok ? 'ok-text' : 'error-text'} role={message.ok ? 'status' : 'alert'} data-testid="manage-message">
           {message.text}

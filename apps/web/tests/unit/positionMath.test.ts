@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fundingRatePerHourP, marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
+import { fundingRatePerHourP, leverageAfterRemoval, marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
 
 const E18 = 10n ** 18n;
 
@@ -43,5 +43,19 @@ describe('fundingRatePerHourP', () => {
     // 100%/year cap: 31,709,791,983 per block → 0.0114155% per hour
     expect(fundingRatePerHourP(31_709_791_983n)).toBe(11_415_525_113_880_000n);
     expect(fundingRatePerHourP(-1n)).toBe(-360_000n);
+  });
+});
+
+describe('leverageAfterRemoval', () => {
+  it('matches the contract: fixed notional over the collateral left', () => {
+    // 1,000 USDW at 10x, remove 500 -> 20x.
+    expect(leverageAfterRemoval(1_000_000000n, 1000n, 500_000000n)).toBe(2000n);
+    // remove 10 -> 10,000 / 990 = 10.10x (floored at PRECISION_2)
+    expect(leverageAfterRemoval(1_000_000000n, 1000n, 10_000000n)).toBe(1010n);
+  });
+
+  it('is null when nothing would be left', () => {
+    expect(leverageAfterRemoval(1_000_000000n, 1000n, 1_000_000000n)).toBeNull();
+    expect(leverageAfterRemoval(1_000_000000n, 1000n, 2_000_000000n)).toBeNull();
   });
 });

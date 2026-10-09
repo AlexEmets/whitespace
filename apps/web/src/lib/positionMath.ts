@@ -38,3 +38,15 @@ export function netFundingForDisplay(fundingOwed: bigint, rolloverOwed: bigint):
 export function fundingRatePerHourP(ratePerBlock: bigint, blocksPerHour = 3600n): bigint {
   return ratePerBlock * blocksPerHour * 100n;
 }
+
+/**
+ * Leverage (PRECISION_2) a position has once `removeRaw` of its collateral is taken out, the way
+ * OstiumTrading.removeCollateral computes it: the notional is held fixed (rounded up) and divided
+ * by the collateral that is left. Null when the removal would take everything.
+ */
+export function leverageAfterRemoval(collateralRaw: bigint, leverageRaw: bigint, removeRaw: bigint): bigint | null {
+  const left = collateralRaw - removeRaw;
+  if (left <= 0n) return null;
+  const tradeSize = (collateralRaw * leverageRaw + 99n) / 100n;
+  return (tradeSize * 1_000_000n) / left / 10_000n;
+}

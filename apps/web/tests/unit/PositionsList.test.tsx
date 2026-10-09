@@ -70,6 +70,9 @@ vi.mock('@/hooks/useErc20', () => ({
   }),
 }));
 
+let oracleFeeRaw: bigint | null = 1_000_000n;
+vi.mock('@/hooks/useMarketFees', () => ({ useMarketFees: () => ({ oracleFeeRaw, takerFeeRaw: 0n }) }));
+
 vi.mock('@/hooks/usePositions', () => ({
   usePositions: () => ({ positions: [openPosition], error: null, loading: false, refetch: vi.fn() }),
 }));
@@ -108,6 +111,8 @@ beforeEach(() => {
   approveMock.mockClear();
   allowance = 10_000_000_000n;
   quoteInputsState = null;
+  oracleFeeRaw = 1_000_000n;
+  openPosition.sl = '0';
 });
 
 describe('<PositionsList>', () => {
@@ -227,6 +232,50 @@ describe('<PositionsList>', () => {
     fireEvent.click(screen.getByTestId('manage-margin-remove'));
     await waitFor(() => expect(actions.removeCollateral).toHaveBeenCalledWith(0, 0, 100_000_000n));
     expect(await screen.findByTestId('manage-message')).toHaveTextContent(/keeper report/);
+  });
+
+  // 10x long at 100.00 with maxSl_P 75: the stop may sit no lower than 92.50. A stop at 93.00 is
+  // fine now, but removing 500 of the 1,000 margin takes the position to 20x, where the floor
+  // is 96.25 — the keeper report would delete the stop. Refuse, and say why.
+  it('refuses a margin removal that would delete the stop loss, and says so', () => {
+    openPosition.sl = '93.000000000000000000';
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('manage-toggle'));
+    fireEvent.change(screen.getByTestId('manage-margin-input'), { target: { value: '500' } });
+    expect(screen.getByTestId('manage-margin-remove')).toBeDisabled();
+    expect(screen.getByTestId('manage-remove-drops-sl')).toHaveTextContent('20.00x');
+  });
+
+  it('allows a smaller removal that keeps the stop loss inside the limit', () => {
+    openPosition.sl = '93.000000000000000000';
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('manage-toggle'));
+    fireEvent.change(screen.getByTestId('manage-margin-input'), { target: { value: '10' } });
+    expect(screen.getByTestId('manage-margin-remove')).toBeEnabled();
+    expect(screen.queryByTestId('manage-remove-drops-sl')).toBeNull();
+  });
+
+  it('shows the oracle fee a removal costs, and refuses when the wallet cannot pay it', () => {
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('manage-toggle'));
+    fireEvent.change(screen.getByTestId('manage-margin-input'), { target: { value: '100' } });
+    expect(screen.getByTestId('manage-remove-fee')).toHaveTextContent('1.00 USDW');
+    expect(screen.getByTestId('manage-margin-remove')).toBeEnabled();
+
+    oracleFeeRaw = 6_000_000_000n; // more than the 5,000 USDW balance
+    fireEvent.change(screen.getByTestId('manage-margin-input'), { target: { value: '101' } });
+    expect(screen.getByTestId('manage-remove-no-fee')).toBeInTheDocument();
+    expect(screen.getByTestId('manage-margin-remove')).toBeDisabled();
+  });
+
+  it('approves the fee first when the allowance does not cover it', async () => {
+    allowance = 0n;
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('manage-toggle'));
+    fireEvent.change(screen.getByTestId('manage-margin-input'), { target: { value: '100' } });
+    fireEvent.click(screen.getByTestId('manage-margin-remove'));
+    await waitFor(() => expect(actions.removeCollateral).toHaveBeenCalled());
+    expect(approveMock).toHaveBeenCalledTimes(1);
   });
 
   /**
