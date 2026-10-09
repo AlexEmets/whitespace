@@ -527,3 +527,23 @@ test('pipeline: retryDeadLetters does not deadlock and delivers', async () => {
   const out = await sender.retryDeadLetters();
   assert.equal(out.delivered, 1);
 });
+
+test('no gas bump is broadcast for a request whose deadline has passed while it waited', async () => {
+  // Never mined. The first receipt wait (1 s) ends past the 500 ms deadline.
+  const chain = fakeChain({ policy: () => 'pending' });
+  const sender = makeSender(chain, { maxBumps: 3, maxRetries: 3 });
+  const result = await sender.send({ ...req('stuck'), deadlineMs: 500 });
+
+  assert.equal(result.expired, true);
+  assert.equal(chain.sent.length, 1, 'the original broadcast only — no replacements, no retries');
+  assert.equal(sender.counters.replaced.value(), 0);
+  assert.equal(sender.deadLetter.size(), 0);
+});
+
+test('bumps still happen while the deadline is ahead', async () => {
+  const chain = fakeChain({ policy: () => 'pending' });
+  const sender = makeSender(chain, { maxBumps: 1, maxRetries: 0 });
+  const result = await sender.send({ ...req('slow'), deadlineMs: 10_000 });
+  assert.equal(chain.sent.length, 2, 'one replacement inside the deadline');
+  assert.equal(result.ok, false);
+});

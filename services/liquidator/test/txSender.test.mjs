@@ -118,7 +118,7 @@ test('a send whose deadline already passed is never broadcast, and comes back ex
   assert.equal(deadLetter.size(), 0);
 });
 
-test('a stuck transaction is replaced after ~4 s, and not retried once its deadline has passed', async (t) => {
+test('a stuck transaction is replaced after ~4 s, and neither bumped nor retried past its deadline', async (t) => {
   const c = clients(t, ['success']);
   c.publicClient.getTransactionReceipt = t.mock.fn(async () => null); // never mines
   const clock = fakeClock();
@@ -133,7 +133,9 @@ test('a stuck transaction is replaced after ~4 s, and not retried once its deadl
 
   const result = await senderWith(t, c, clock, deadLetter).sendPerformUpkeep({ trades: TRADES, timestamp: 1, deadlineMs: start + 6_000 });
 
-  assert.deepEqual(broadcastAt, [0, 4_000, 8_000], 'one tx + 2 same-nonce replacements, 4 s apart');
+  // One replacement inside the 6 s deadline; the one that would have gone out at 8 s could only
+  // land a stale trigger, so it is not sent.
+  assert.deepEqual(broadcastAt, [0, 4_000], 'one tx + 1 same-nonce replacement, then the deadline');
   assert.ok(c.walletClient.sendTransaction.mock.calls.every((x) => x.arguments[0].nonce === 5));
   assert.equal(result.ok, false);
   assert.equal(result.expired, true, 'no fresh attempt after the deadline');

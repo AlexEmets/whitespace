@@ -197,6 +197,13 @@ export function createTxSender({
         await sleep(receiptPollMs);
         continue;
       }
+      // Past the request's own deadline a replacement buys nothing: whatever it carries
+      // would only revert once mined. Stop paying for bumps and give the nonce back.
+      if (pastDeadline(req)) {
+        if (pipeline) await enqueue(resyncQuietly);
+        else await resyncQuietly();
+        return { ok: false, expired: true, reason: `deadline_passed waiting for nonce ${txNonce} after ${bumps} replacement(s)` };
+      }
       if (bumps >= maxBumps) {
         // Still pending after every replacement. It stays in the pool; move the local nonce
         // to wherever the node now says it is (past it, if the node still holds it).
@@ -247,6 +254,7 @@ export function createTxSender({
         last = { ok: false, reason: reasonOf(err) };
       }
       if (last.ok) return { ...last, attempts: attempt };
+      if (last.expired) return { ...last, attempts: attempt };
       if (last.reverted && !retryOnRevert) return { ...last, attempts: attempt };
       log('warn', `${req.key ?? req.to}: attempt ${attempt}/${maxRetries + 1} failed: ${last.reason}`);
     }
