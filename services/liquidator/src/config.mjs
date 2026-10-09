@@ -91,7 +91,10 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     evaluationConcurrency: positiveInt(env, 'LIQUIDATOR_EVALUATION_CONCURRENCY', DEFAULT_EVALUATION_CONCURRENCY),
     sequencerStallThresholdMs: positiveInt(env, 'LIQUIDATOR_SEQUENCER_STALL_THRESHOLD_MS', SEQUENCER_STALL_THRESHOLD_MS),
     sequencerRecoveryWindowMs: positiveInt(env, 'LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS', SEQUENCER_RECOVERY_WINDOW_MS),
-    liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', true),
+    // Off unless an operator opts in: degradedMode.mjs's documented decision is never to
+    // liquidate on a price fewer than minHealthyVenues venues confirm. The engine already
+    // defaulted to false; this env default silently overrode it.
+    liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', false),
     deadLetterFilePath: env.LIQUIDATOR_DEAD_LETTER_PATH || null,
     metricsPort: positiveInt(env, 'LIQUIDATOR_METRICS_PORT', 9464),
     metricsHost: env.LIQUIDATOR_METRICS_HOST || '127.0.0.1',

@@ -25,7 +25,7 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [10, 4, 16]);
   assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [30_000, 300_000], 'a recovery window of minutes, not an hour');
   assert.equal(c.receiptTimeoutMs, 4_000, 'seconds, not the shared 30 s: a trigger expires 10 s after its timestamp');
-  assert.equal(c.liquidateWhenDegraded, true);
+  assert.equal(c.liquidateWhenDegraded, false, 'never liquidate on an under-confirmed price unless opted in (degradedMode.mjs)');
   assert.equal(c.metricsHost, '127.0.0.1');
   assert.deepEqual(c.rpcUrls, ['https://rpc.testnet.whitechain.io']);
 });
