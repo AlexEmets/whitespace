@@ -14,6 +14,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending — waiting for keeper',
   executed: 'Executed',
   cancelled: 'Cancelled',
+  timeout: 'Reclaimed — no keeper report',
 };
 
 /**
@@ -38,6 +39,17 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
     return (
       <span data-testid={`order-reclaimed-${order.orderId}`}>
         {order.kind === 'close' ? 'Position released — you can close it again.' : 'Collateral returned.'}
+      </span>
+    );
+  }
+
+  // A remove-margin request has no reclaim: nothing left the position when it was made, so
+  // once it lapses there is nothing to get back. Saying "waiting" next to "Expired" was a
+  // contradiction with no way out of it.
+  if (order.kind === 'remove_collateral' && order.expired) {
+    return (
+      <span className="dash" data-testid={`order-lapsed-${order.orderId}`}>
+        Lapsed — no keeper report. Your margin is unchanged; request the removal again.
       </span>
     );
   }
@@ -136,6 +148,7 @@ export function OrdersList() {
                 </span>
               ) : null}
               {o.status === 'executed' ? 'Position opened.' : null}
+              {o.status === 'timeout' ? (o.kind === 'close' ? 'Position released, still open.' : 'Collateral returned in full.') : null}
               {o.status === 'pending' ? <ReclaimCell order={o} /> : null}
             </td>
           </tr>

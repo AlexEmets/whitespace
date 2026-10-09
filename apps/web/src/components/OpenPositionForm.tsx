@@ -606,9 +606,16 @@ export function OpenPositionForm({
             <p className={styles.status}>
               Order requested (id {state.orderId || '—'}). Nothing has happened yet — the position opens, or the order
               is cancelled, once a keeper delivers the signed price report.
+              {submittedOrder?.expired
+                ? ' No report arrived in time: reclaim the collateral in full from Orders.'
+                : null}
             </p>
           ) : submittedOrder.status === 'executed' ? (
             <p className={`${styles.status} ${styles.long}`} data-testid="order-filled">Filled — your position is now open.</p>
+          ) : submittedOrder.status === 'timeout' ? (
+            <p className={styles.status} data-testid="order-reclaimed">
+              No keeper report arrived, and the collateral was reclaimed in full.
+            </p>
           ) : (
             <p data-testid="order-cancelled" className="error-text">
               Cancelled ({submittedOrder.cancelReason ?? 'unknown reason'}): {explainCancelReason(submittedOrder.cancelReason ?? '')}

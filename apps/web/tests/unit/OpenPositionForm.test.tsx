@@ -137,8 +137,9 @@ vi.mock('@/hooks/usePositions', () => ({
   usePositions: () => ({ positions: positionsState, error: null, loading: false, refetch: vi.fn() }),
 }));
 
+let ordersMockState: Record<string, unknown>[] = [];
 vi.mock('@/hooks/useOrders', () => ({
-  useOrders: () => ({ orders: [], error: null, loading: false, refetch: vi.fn() }),
+  useOrders: () => ({ orders: ordersMockState, error: null, loading: false, refetch: vi.fn() }),
 }));
 
 beforeEach(() => {
@@ -157,6 +158,7 @@ beforeEach(() => {
   allowanceState = 10_000_000_000n;
   balanceState = 10_000_000_000n;
   positionsState = [];
+  ordersMockState = [];
   // A zero-width quote at the mark with no size impact: fills land exactly on 65,001.00, so the
   // collateral arithmetic below is the plain size x price / leverage.
   quoteInputs = {
@@ -275,6 +277,35 @@ describe('<OpenPositionForm>', () => {
     // Any change to what would be submitted invalidates the banner.
     fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.02' } });
     expect(screen.queryByTestId('order-pending-banner')).not.toBeInTheDocument();
+  });
+
+  const order42 = (over: Record<string, unknown>) => ({
+    orderId: '42', pairIndex: 0, kind: 'open', buy: null, collateral: null, leverage: null, requestedAt: 0,
+    requestedAtBlock: '1', status: 'pending', expired: false, resolvedAt: null, cancelReason: null, tradeId: null,
+    ...over,
+  });
+
+  it('says a reclaimed order got its collateral back in full, not "cancelled, minus the oracle fee"', async () => {
+    const { rerender } = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+
+    ordersMockState = [order42({ status: 'timeout' })];
+    rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('order-reclaimed')).toHaveTextContent(/reclaimed in full/);
+    expect(screen.queryByTestId('order-cancelled')).toBeNull();
+  });
+
+  it('points an expired pending order at the reclaim', async () => {
+    const { rerender } = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+    fireEvent.click(screen.getByTestId('submit-open-button'));
+    await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+
+    ordersMockState = [order42({ expired: true })];
+    rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
+    expect(screen.getByTestId('order-pending-banner')).toHaveTextContent(/reclaim the collateral in full from Orders/);
   });
 
   it('clears the outcome when the side is flipped, not just when the size changes', async () => {

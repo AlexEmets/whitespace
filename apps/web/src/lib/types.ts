@@ -74,7 +74,9 @@ export interface ClosedPositionSummary extends PositionSummary {
   realisedPnl: string;
 }
 
-export type OrderStatus = 'pending' | 'executed' | 'cancelled';
+/** `timeout`: the trader reclaimed it (openTradeMarketTimeout / closeTradeMarketTimeout) after
+ * no keeper report arrived. Written by the indexer; the full collateral came back. */
+export type OrderStatus = 'pending' | 'executed' | 'cancelled' | 'timeout';
 
 export interface OrderSummary {
   orderId: string;

@@ -280,6 +280,49 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(screen.queryByTestId('order-reclaim-11')).not.toBeInTheDocument();
   });
 
+  const base: OrderSummary = {
+    orderId: '50',
+    pairIndex: 0,
+    kind: 'open',
+    buy: true,
+    collateral: '100.000000',
+    leverage: '10.00',
+    requestedAt: 0,
+    requestedAtBlock: '7437171',
+    status: 'pending',
+    expired: false,
+    resolvedAt: null,
+    cancelReason: null,
+    tradeId: null,
+  };
+
+  it('labels a reclaimed (timeout) open order and says the collateral came back in full', () => {
+    ordersState = [{ ...base, status: 'timeout', expired: false }];
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Reclaimed — no keeper report');
+    expect(screen.getByTestId('order-row-50')).toHaveTextContent('Collateral returned in full.');
+  });
+
+  it('says a reclaimed close released the position, still open', () => {
+    ordersState = [{ ...base, kind: 'close', status: 'timeout' }];
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-row-50')).toHaveTextContent('Position released, still open.');
+  });
+
+  it('says an expired remove-margin request lapsed instead of waiting forever', () => {
+    ordersState = [{ ...base, kind: 'remove_collateral', expired: true }];
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-lapsed-50')).toHaveTextContent(/Lapsed/);
+    expect(screen.getByTestId('order-row-50')).not.toHaveTextContent(/Waiting for a keeper report/);
+  });
+
+  it('still says waiting for a remove-margin request inside its window', () => {
+    ordersState = [{ ...base, kind: 'remove_collateral', expired: false }];
+    render(<OrdersList />);
+    expect(screen.queryByTestId('order-lapsed-50')).toBeNull();
+    expect(screen.getByTestId('order-row-50')).toHaveTextContent(/Waiting for a keeper report/);
+  });
+
   it('renders a no-orders message when there are none', () => {
     ordersState = [];
     render(<OrdersList />);
