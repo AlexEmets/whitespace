@@ -59,7 +59,8 @@ export function loadConfig(env = process.env) {
 
   const forwarderKeyPath = env.KEEPER_FORWARDER_KEY_PATH ?? `${env.HOME}/.whitespace-keys/keeper.json`;
 
-  const pollingIntervalMs = Number(env.KEEPER_POLLING_INTERVAL_MS ?? 2_000);
+  // Every millisecond spent waiting to notice an order comes out of its 10 s delivery window.
+  const pollingIntervalMs = Number(env.KEEPER_POLLING_INTERVAL_MS ?? 1_000);
   const maxRetries = Number(env.KEEPER_MAX_RETRIES ?? 3);
   const deadLetterFilePath = env.KEEPER_DEAD_LETTER_PATH ?? null;
   const cursorPath = env.KEEPER_CURSOR_PATH ?? null;

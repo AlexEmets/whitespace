@@ -18,7 +18,7 @@ test('KEEPER_CURSOR_PATH and KEEPER_MAX_LOOKBACK_BLOCKS are read', () => {
 
 test('polling interval, concurrency, receipt timeout, bumps and metrics endpoint have defaults', () => {
   const config = loadConfig({ ...BASE });
-  assert.equal(config.pollingIntervalMs, 2_000);
+  assert.equal(config.pollingIntervalMs, 1_000);
   assert.equal(config.concurrency, 4);
   assert.equal(config.receiptTimeoutMs, 30_000);
   assert.equal(config.maxGasBumps, 3);

@@ -16,11 +16,16 @@
 import { buildReportDataV2, signAndEncodeReportV2 } from '@whitespace/reporter/report-v2';
 import { getMarket } from '@whitespace/shared/markets';
 
+/** A report request that has not answered in this long is abandoned and retried. An order
+ * only has maxAge (10 s) to be delivered, and fetch on its own waits minutes for headers. */
+export const DEFAULT_REPORT_TIMEOUT_MS = 2_000;
+
 /**
  * @param {string} baseUrl e.g. 'http://127.0.0.1:8787'
  * @param {typeof fetch} [fetchImpl]
+ * @param {{ timeoutMs?: number }} [opts]
  */
-export function createHttpReportSource(baseUrl, fetchImpl = fetch) {
+export function createHttpReportSource(baseUrl, fetchImpl = fetch, { timeoutMs = DEFAULT_REPORT_TIMEOUT_MS } = {}) {
   return {
     /**
      * @param {{ feed: string, timestamp: number, orderTypeName: string }} req
@@ -32,16 +37,16 @@ export function createHttpReportSource(baseUrl, fetchImpl = fetch) {
       url.searchParams.set('orderType', orderTypeName);
       let res;
       try {
-        res = await fetchImpl(url);
+        res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          return { ok: false, reason: body.error ?? `http_${res.status}`, status: res.status };
+        }
+        const body = await res.json();
+        return { ok: true, signedReport: body.signedReport };
       } catch (err) {
         return { ok: false, reason: `fetch_failed:${err.message}` };
       }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        return { ok: false, reason: body.error ?? `http_${res.status}`, status: res.status };
-      }
-      const body = await res.json();
-      return { ok: true, signedReport: body.signedReport };
     },
   };
 }

@@ -61,6 +61,14 @@ export function createKeeper({
     deadLetter,
     registry,
     maxRetries: config.maxRetries,
+    // A performUpkeep that reverted was refused by the upkeep's rails (stale, wrong
+    // timestamp, deviation, halt); the same report can only revert again. Retrying it used to
+    // hold the queue for every order behind it until they went stale too.
+    retryOnRevert: false,
+    // Orders expire maxAge seconds after their request, so sends must overlap: see
+    // @whitespace/txsender's pipeline mode.
+    pipeline: true,
+    now,
     ...(config.receiptTimeoutMs ? { receiptTimeoutMs: config.receiptTimeoutMs } : {}),
     ...(config.maxGasBumps !== undefined ? { maxBumps: config.maxGasBumps } : {}),
     log: (level, message) => logger[level === 'error' ? 'error' : 'warn'](`[keeper] ${message}`),

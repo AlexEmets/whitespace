@@ -149,3 +149,49 @@ test('maxAge is configurable', async () => {
   assert.equal((await engine.handlePriceRequested(makeEvent())).ok, false);
   assert.equal(source.calls.length, 0);
 });
+
+test('timestamp_in_future (publisher clock behind the chain) is retried, not given up on', async () => {
+  const AHEAD = { ok: false, reason: 'timestamp_in_future', status: 400 };
+  const c = clock(0);
+  const source = scripted([AHEAD, AHEAD, OK]);
+  const { engine, sent, gaveUp } = engineWith(source, c);
+  const result = await engine.handlePriceRequested(makeEvent());
+  assert.equal(result.ok, true);
+  assert.equal(source.calls.length, 3);
+  assert.equal(sent.length, 1);
+  assert.equal(gaveUp.length, 0);
+});
+
+test('timestamp_too_old is still permanent: no retry, no send', async () => {
+  const c = clock(0);
+  const source = scripted([{ ok: false, reason: 'timestamp_too_old', status: 400 }]);
+  const { engine, sent, gaveUp } = engineWith(source, c);
+  const result = await engine.handlePriceRequested(makeEvent());
+  assert.equal(result.gaveUp, true);
+  assert.equal(source.calls.length, 1);
+  assert.equal(sent.length, 0);
+  assert.equal(gaveUp.length, 1);
+});
+
+test('the send carries the order deadline: timestamp + maxAge, in ms', async () => {
+  const c = clock(0);
+  const { engine, sent } = engineWith(scripted([OK]), c, { maxAgeS: 10 });
+  await engine.handlePriceRequested(makeEvent());
+  assert.equal(sent[0].deadlineMs, (TS + 10) * 1000);
+});
+
+test('a send that expires before it could be delivered counts as given up, not failed', async () => {
+  const c = clock(0);
+  const gaveUp = [];
+  const engine = createKeeperEngine({
+    reportSource: scripted([OK]),
+    txSender: { send: async () => ({ ok: false, expired: true, reason: 'deadline_passed before attempt 1' }) },
+    onGiveUp: (e) => gaveUp.push(e),
+    now: c.now,
+    sleep: c.sleep,
+  });
+  const result = await engine.handlePriceRequested(makeEvent());
+  assert.equal(result.gaveUp, true);
+  assert.match(result.reason, /delivery_deadline_passed/);
+  assert.equal(gaveUp.length, 1);
+});

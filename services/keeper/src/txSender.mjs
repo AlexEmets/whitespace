@@ -21,10 +21,16 @@ export function createTxSender({ priceUpKeepAddress, metricsPrefix = 'keeper', .
   if (!priceUpKeepAddress) throw new Error('createTxSender: priceUpKeepAddress is required');
   const sender = createSharedTxSender({ metricsPrefix, ...senderOpts });
 
-  /** @param {{ orderId: bigint, performData: `0x${string}` }} args */
-  function send({ orderId, performData }) {
+  /** @param {{ orderId: bigint, performData: `0x${string}`, deadlineMs?: number }} args */
+  function send({ orderId, performData, deadlineMs }) {
     const data = encodeFunctionData({ abi: PRICE_UPKEEP_ABI, functionName: 'performUpkeep', args: [performData] });
-    return sender.send({ to: priceUpKeepAddress, data, key: `order-${orderId}`, meta: { orderId: String(orderId) } });
+    return sender.send({
+      to: priceUpKeepAddress,
+      data,
+      key: `order-${orderId}`,
+      meta: { orderId: String(orderId) },
+      ...(deadlineMs !== undefined ? { deadlineMs } : {}),
+    });
   }
 
   return {

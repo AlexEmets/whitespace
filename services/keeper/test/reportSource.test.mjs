@@ -105,3 +105,33 @@ test('LocalReportSource returns ok:false when no price is available', async () =
   const result = await source.getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_CLOSE' });
   assert.deepEqual(result, { ok: false, reason: 'no_price' });
 });
+
+test('HttpReportSource abandons a publisher that does not answer within its timeout', async () => {
+  await withFixtureServer(
+    () => {
+      // never answers
+    },
+    async (base) => {
+      const source = createHttpReportSource(base, fetch, { timeoutMs: 100 });
+      const started = Date.now();
+      const result = await source.getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_OPEN' });
+      assert.equal(result.ok, false);
+      assert.match(result.reason, /^fetch_failed:/);
+      assert.equal(result.status, undefined, 'a timeout must stay retryable (no status)');
+      assert.ok(Date.now() - started < 2_000);
+    },
+  );
+});
+
+test('HttpReportSource surfaces a malformed 200 body as ok:false rather than throwing', async () => {
+  await withFixtureServer(
+    (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('not json');
+    },
+    async (base) => {
+      const result = await createHttpReportSource(base).getSignedReport({ feed: 'BTC/USD', timestamp: 1, orderTypeName: 'MARKET_OPEN' });
+      assert.equal(result.ok, false);
+    },
+  );
+});

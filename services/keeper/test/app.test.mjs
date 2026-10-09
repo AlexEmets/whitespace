@@ -141,6 +141,48 @@ test('an order with no report before its deadline counts as given up, not failed
   assert.ok(keeper.metrics.reportRetries.value() >= 1);
 });
 
+test('the tx sender pipelines sends and does not retry a mined revert', async (t) => {
+  let sends = 0;
+  const w = fakeWatch();
+  const keeper = createKeeper({
+    config: config({ maxRetries: 3 }),
+    ...clients('reverted'),
+    walletClient: { sendTransaction: async () => (sends++, `0x${'ab'.repeat(32)}`) },
+    reportSource: { getSignedReport: async () => ({ ok: true, signedReport: '0xdeadbeef' }) },
+    watch: w.watch,
+    logger: quiet,
+    now: () => TS * 1000,
+  });
+  t.after(() => keeper.stop());
+  keeper.start();
+  await w.calls[0][2](event());
+  assert.equal(sends, 1, 'a reverted performUpkeep must not be re-sent');
+  assert.equal(keeper.metrics.failed.value(), 1);
+});
+
+test('an order whose delivery deadline has passed by send time counts as given up, and nothing is sent', async (t) => {
+  let sends = 0;
+  let clock = TS * 1000;
+  const w = fakeWatch();
+  const keeper = createKeeper({
+    config: config(),
+    ...clients(),
+    walletClient: { sendTransaction: async () => (sends++, `0x${'ab'.repeat(32)}`) },
+    // The report arrives, but only after the order's 10 s window has closed.
+    reportSource: { getSignedReport: async () => ((clock = (TS + 11) * 1000), { ok: true, signedReport: '0xdeadbeef' }) },
+    watch: w.watch,
+    logger: quiet,
+    now: () => clock,
+  });
+  t.after(() => keeper.stop());
+  keeper.start();
+  await w.calls[0][2](event());
+  assert.equal(sends, 0);
+  assert.equal(keeper.metrics.gaveUp.value(), 1);
+  assert.equal(keeper.metrics.failed.value(), 0);
+  assert.equal(keeper.deadLetter.size(), 0);
+});
+
 test('watcher errors are counted', (t) => {
   const { keeper, w } = keeperWith(t);
   keeper.start();

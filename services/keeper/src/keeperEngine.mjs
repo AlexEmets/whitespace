@@ -29,6 +29,9 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export function isRetryableReportFailure(result) {
   const { status } = result;
+  // `timestamp_in_future`: the publisher's clock is behind the block that stamped the order.
+  // That clears by itself within the skew, and giving up on it left the order unfilled.
+  if (status === 400 && result.reason === 'timestamp_in_future') return true;
   return status === undefined || status === 409 || status === 429 || status >= 500;
 }
 
@@ -83,7 +86,10 @@ export function createKeeperEngine({
 
       if (reportResult.ok) {
         const performData = encodePerformData(reportResult.signedReport, event.orderId);
-        return txSender.send({ orderId: event.orderId, performData });
+        // Past the deadline the upkeep reverts StaleReport, so nothing is sent after it.
+        const result = await txSender.send({ orderId: event.orderId, performData, deadlineMs });
+        if (result.expired) return giveUp(event.orderId, `delivery_deadline_passed: ${result.reason}`);
+        return result;
       }
 
       if (!isRetryableReportFailure(reportResult)) {
