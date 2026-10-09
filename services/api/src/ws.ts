@@ -20,6 +20,11 @@ const ADDRESS_KINDS: ChannelKind[] = ['positions', 'orders', 'limitOrders', 'fee
  * make the server do per tick. A trading UI needs a handful. */
 export const MAX_SUBSCRIPTIONS_PER_SOCKET = 64;
 
+/** Largest inbound frame accepted. Clients only ever send `{type, channel}` (well under
+ * 200 bytes); the `ws` default of 100 MiB let one socket make the server buffer and
+ * JSON.parse an arbitrarily large message. Anything bigger closes the socket with 1009. */
+export const MAX_PAYLOAD_BYTES = 4096;
+
 type ParsedChannel = { kind: ChannelKind; args: string[] };
 
 /** Parses "price:<pairIndex>" | "positions:<address>" | "orders:<address>"
@@ -195,8 +200,22 @@ export function createWsManager(opts: { pollIntervalMs?: number; pingIntervalMs?
   }
 
   function attach(server: Server): WebSocketServer {
-    const wss = new WebSocketServer({ server, path: '/ws' });
+    const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_PAYLOAD_BYTES });
+    // `ws` re-emits the HTTP server's errors here; an EventEmitter 'error' with no listener
+    // throws, so without this one a server-level error would take the whole process down.
+    wss.on('error', (err) => {
+      console.error('[api] websocket server error:', err.message);
+    });
     wss.on('connection', (ws) => {
+      // A protocol violation from the peer (RSV bits set, a bad opcode, an oversized frame,
+      // invalid UTF-8) is reported as an 'error' on that one socket, after which `ws` closes
+      // it. With no listener the emit throws out of the socket's data handler as an uncaught
+      // exception, so six hostile bytes after an upgrade killed the API for every user. The
+      // socket is already being torn down; logging is all that is left to do.
+      ws.on('error', (err) => {
+        console.error('[api] websocket client error:', err.message);
+      });
+
       // Cloudflare closes a proxied WebSocket once no data has crossed it in EITHER
       // direction for ~100 s, and pollOnce deliberately sends nothing while a channel's
       // payload is unchanged (see the dedup at `lastPayload.get(channel) === payload`

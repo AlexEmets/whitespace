@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import WebSocket from 'ws';
+import net from 'node:net';
 import { startTestServer, type TestServer } from './testServer.js';
 import { truncateAll, seedMarket, seedPriceReport, TRADER, seedOpenPosition, seedLimitOrder, seedFee } from './seed.js';
-import { parseChannel, MAX_SUBSCRIPTIONS_PER_SOCKET } from '../src/ws.js';
+import { parseChannel, MAX_SUBSCRIPTIONS_PER_SOCKET, MAX_PAYLOAD_BYTES } from '../src/ws.js';
 import { MAX_POSITIONS } from '../src/routes/positions.js';
 import { getPool } from '../src/db.js';
 
@@ -241,6 +242,85 @@ describe('WS polling is bounded', () => {
     const ws = await connect(server.wsUrl);
     ws.send(JSON.stringify({ type: 'subscribe', channel }));
     expect((await onceMessage(ws)).type).toBe('error');
+    ws.close();
+  });
+});
+
+describe('WS survives hostile peers', () => {
+  let server: TestServer;
+  // An 'error' emitted with no listener is thrown as an uncaught exception — in production
+  // that is the process dying. Capture them here so the test fails on the crash itself.
+  const uncaught: unknown[] = [];
+  const onUncaught = (err: unknown) => uncaught.push(err);
+  beforeAll(async () => {
+    server = await startTestServer({ wsPollIntervalMs: 30 });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+  beforeEach(() => {
+    uncaught.length = 0;
+    process.on('uncaughtException', onUncaught);
+  });
+  afterEach(() => {
+    process.off('uncaughtException', onUncaught);
+  });
+
+  /** Upgrades a raw TCP socket, then writes `frame` and resolves when the server hangs up. */
+  function rawUpgradeThenSend(frame: Buffer): Promise<void> {
+    const { port } = new URL(server.baseUrl);
+    return new Promise((resolve, reject) => {
+      const s = net.connect(Number(port), '127.0.0.1', () => {
+        s.write(
+          'GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+            'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n',
+        );
+      });
+      let upgraded = false;
+      s.on('data', (chunk) => {
+        if (!upgraded && chunk.toString().startsWith('HTTP/1.1 101')) {
+          upgraded = true;
+          s.write(frame);
+        }
+      });
+      s.on('error', () => undefined);
+      s.on('close', () => (upgraded ? resolve() : reject(new Error('upgrade never completed'))));
+    });
+  }
+
+  async function stillServing(): Promise<void> {
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:0' }));
+    expect(await onceMessage(ws)).toEqual({ type: 'subscribed', channel: 'price:0' });
+    ws.close();
+  }
+
+  it('a frame with reserved RSV bits set closes that socket without crashing the process', async () => {
+    // FIN + RSV1-3 + text opcode, masked, zero-length: a protocol violation `ws` reports
+    // as an 'error' on the socket.
+    await rawUpgradeThenSend(Buffer.from([0xf1, 0x80, 0, 0, 0, 0]));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(uncaught).toEqual([]);
+    await stillServing();
+  });
+
+  it('closes a socket that sends more than MAX_PAYLOAD_BYTES with 1009, and keeps serving', async () => {
+    const ws = await connect(server.wsUrl);
+    ws.on('error', () => undefined);
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+    ws.send('x'.repeat(MAX_PAYLOAD_BYTES + 1));
+    expect(await closed).toBe(1009);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(uncaught).toEqual([]);
+    await stillServing();
+  });
+
+  it('accepts a message of exactly MAX_PAYLOAD_BYTES (boundary) and answers it', async () => {
+    const ws = await connect(server.wsUrl);
+    // Valid JSON padded to the limit with whitespace, so the reply proves it was processed.
+    const body = JSON.stringify({ type: 'subscribe', channel: 'price:0' });
+    ws.send(body + ' '.repeat(MAX_PAYLOAD_BYTES - body.length));
+    expect(await onceMessage(ws)).toEqual({ type: 'subscribed', channel: 'price:0' });
     ws.close();
   });
 });

@@ -127,6 +127,13 @@ if (isMain) {
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
+  // The WS server now listens for (and only logs) errors the HTTP server emits, so a bind
+  // failure such as EADDRINUSE would no longer crash on its own and the process would sit
+  // there serving nothing. Exit so systemd restarts it and the failure is visible.
+  server.on('error', (err) => {
+    console.error('[api] http server error:', err.message);
+    process.exit(1);
+  });
   server.listen(port, host, () => {
     // eslint-disable-next-line no-console
     console.log(`services/api listening on ${host}:${port} (index recorder sampling ${process.env.PUBLISHER_URL ?? 'http://127.0.0.1:8787'})`);
