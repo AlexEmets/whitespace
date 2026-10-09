@@ -12,7 +12,7 @@ import { handlePnl } from './routes/pnl.js';
 import { handleVaultSettlements } from './routes/vault.js';
 import { handleFaucetWbt } from './routes/faucet.js';
 import { handlePoints, handleLeaderboard } from './routes/points.js';
-import { createWsManager, type WsManager } from './ws.js';
+import { createWsManager, type WsManager, type WsManagerOptions } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 import { ensureFaucetSchema } from './faucet.js';
 import { retryWithBackoff } from './db.js';
@@ -74,7 +74,7 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
   };
 }
 
-export function createApp(opts: { wsPollIntervalMs?: number } = {}): App {
+export function createApp(opts: { wsPollIntervalMs?: number; ws?: WsManagerOptions } = {}): App {
   const server = createServer((req, res) => {
     void (async () => {
       const cors = corsHeaders(req.headers.origin);
@@ -101,7 +101,7 @@ export function createApp(opts: { wsPollIntervalMs?: number } = {}): App {
     })();
   });
 
-  const wsManager = createWsManager({ pollIntervalMs: opts.wsPollIntervalMs });
+  const wsManager = createWsManager({ ...opts.ws, pollIntervalMs: opts.wsPollIntervalMs ?? opts.ws?.pollIntervalMs });
   wsManager.attach(server);
 
   return { server, wsManager };
