@@ -57,7 +57,8 @@ async function main() {
   });
   const candidates = createCandidateSource({ query: pgQuery(pool), schema: config.databaseSchema });
 
-  // The only way this service sends a transaction: the shared serial-nonce sender.
+  // The only way this service sends a transaction: the shared per-key nonce sender, pipelined
+  // and deadline-aware (see txSender.mjs).
   const txSender = createTxSender({
     publicClient,
     walletClient,
@@ -65,6 +66,7 @@ async function main() {
     tradesUpKeepAddress: config.tradesUpKeepAddress,
     deadLetter,
     maxRetries: config.maxRetries,
+    receiptTimeoutMs: config.receiptTimeoutMs,
     registry: metrics.registry,
   });
   const sendPerformUpkeep = (payload) => txSender.sendPerformUpkeep(payload);

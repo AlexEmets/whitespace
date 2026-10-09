@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadKeyFile } from '@whitespace/shared/keys';
 import { DEFAULT_MAX_BATCH_SIZE, DEFAULT_COOLDOWN_MS } from './automationEngine.mjs';
+import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
 
@@ -74,6 +75,7 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     forwarderKeyPath: env.LIQUIDATOR_FORWARDER_KEY_PATH,
     pollingIntervalMs: positiveInt(env, 'LIQUIDATOR_POLLING_INTERVAL_MS', 2_000),
     maxRetries: positiveInt(env, 'LIQUIDATOR_MAX_RETRIES', 3),
+    receiptTimeoutMs: positiveInt(env, 'LIQUIDATOR_RECEIPT_TIMEOUT_MS', DEFAULT_RECEIPT_TIMEOUT_MS),
     maxBatchSize: positiveInt(env, 'LIQUIDATOR_MAX_BATCH_SIZE', DEFAULT_MAX_BATCH_SIZE),
     triggerCooldownMs: positiveInt(env, 'LIQUIDATOR_TRIGGER_COOLDOWN_MS', DEFAULT_COOLDOWN_MS),
     liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', true),
