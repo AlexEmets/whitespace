@@ -34,6 +34,8 @@ export function createLiquidatorMetrics() {
     rpcHealthy: registry.gauge('liquidator_rpc_healthy', 'RPC endpoint health (1=last probe succeeded, 0=failed)'),
     forwarderBalance: registry.gauge('liquidator_forwarder_balance', "The forwarder's native balance (WBT) at the last sweep"),
     gasLow: registry.gauge('liquidator_gas_low', '1 while the forwarder balance is below the minimum and this instance sends nothing'),
+    indexerLagBlocks: registry.gauge('liquidator_indexer_lag_blocks', 'Chain head minus the block the indexer has synced to'),
+    indexerLagSeconds: registry.gauge('liquidator_indexer_lag_seconds', "Seconds between the chain head and the indexer's last synced block"),
     deadLetterDepth: registry.gauge('liquidator_dead_letter_depth', 'Entries currently in the dead-letter queue'),
   };
 

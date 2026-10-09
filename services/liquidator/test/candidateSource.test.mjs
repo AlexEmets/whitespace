@@ -156,3 +156,25 @@ test('a database that accepts the connection but never answers fails the query i
     await new Promise((r) => server.close(r));
   }
 });
+
+// ---------------------------------------------------------------- indexer sync status
+
+test('readSyncStatus reads Ponder\'s sync_status row for the chain, null without a row or a table', async () => {
+  const local = new PGlite();
+  try {
+    const q = async (text, params) => (await local.query(text, params)).rows;
+    const source = createCandidateSource({ query: q });
+    assert.equal(await source.readSyncStatus(1874), null, 'no table yet');
+    await local.exec(`CREATE TABLE sync_status (chain_id integer PRIMARY KEY, block_number numeric(78,0) NOT NULL, block_timestamp integer NOT NULL)`);
+    assert.equal(await source.readSyncStatus(1874), null, 'no row yet');
+    await local.query(`INSERT INTO sync_status VALUES (1874, 9007199254740993, 1800000000), (1, 5, 6)`);
+    assert.deepEqual(await source.readSyncStatus(1874), { blockNumber: 9007199254740993n, blockTimestamp: 1_800_000_000 });
+  } finally {
+    await local.close();
+  }
+});
+
+test('readSyncStatus rethrows anything but a missing table', async () => {
+  const source = createCandidateSource({ query: async () => Promise.reject(Object.assign(new Error('boom'), { code: '57014' })) });
+  await assert.rejects(source.readSyncStatus(1874), /boom/);
+});

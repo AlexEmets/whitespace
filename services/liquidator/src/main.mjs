@@ -25,6 +25,7 @@ import { createTxSender } from './txSender.mjs';
 import { watchLiveness } from './watcher.mjs';
 import { createSweepLoop } from './sweepLoop.mjs';
 import { createShutdown } from './lifecycle.mjs';
+import { createIndexerLagCheck } from './indexerLag.mjs';
 
 async function main() {
   const config = loadConfig();
@@ -108,11 +109,24 @@ async function main() {
   });
   healthServer.listen(config.metricsPort, config.metricsHost, () => log(`health/metrics on ${config.metricsHost}:${config.metricsPort}`));
 
+  let latestHead = null;
+  const indexerLag = createIndexerLagCheck({
+    readSyncStatus: () => candidates.readSyncStatus(config.chainId),
+    latestHead: () => latestHead,
+    metrics,
+    warn: (m) => logError(m),
+    info: (m) => log(m),
+    maxLagSec: config.maxIndexerLagSec,
+  });
+
   const stopLiveness = watchLiveness({
     endpoints: createEndpointProbes(config.rpcUrls),
     sequencerMonitor,
     intervalMs: config.pollingIntervalMs,
     onEndpointResult: (url, ok) => metrics.setRpcHealth(endpointLabel(url), ok),
+    onHead: (head) => {
+      latestHead = head;
+    },
   });
 
   let warnedNoLimitTable = false;
@@ -121,6 +135,8 @@ async function main() {
     sweep: async () => {
       metrics.setSequencerState(sequencerMonitor.state);
       metrics.deadLetterDepth.set(deadLetter.size());
+      // Observability only: a failed lag read must not cost the sweep.
+      await indexerLag.check().catch((err) => logError('indexer lag check:', err?.message ?? err));
       const { results, sent, error, warning } = await engine.sweep();
       lastSweepCompletedAt = Date.now();
       if (error?.startsWith('gas_low')) logError(`!!! FORWARDER ${account.address} OUT OF GAS — top it up !!!`, error);

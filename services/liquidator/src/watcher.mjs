@@ -18,9 +18,10 @@
  * @param {number} [opts.intervalMs]
  * @param {(url: string, ok: boolean) => void} [opts.onEndpointResult]
  * @param {(blockNumber: bigint) => void} [opts.onReorg] head moved backward to `blockNumber`
+ * @param {(head: { number: bigint, timestamp: bigint }) => void} [opts.onHead] every head used for liveness
  * @returns {() => void} stop
  */
-export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000, onEndpointResult = () => {}, onReorg = () => {} }) {
+export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000, onEndpointResult = () => {}, onReorg = () => {}, onHead = () => {} }) {
   if (!endpoints?.length) throw new Error('watchLiveness: at least one endpoint is required');
   let highestSeen = null;
   let stopped = false;
@@ -41,6 +42,7 @@ export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000,
       if (highestSeen !== null && head.number < highestSeen) onReorg(head.number);
       if (highestSeen === null || head.number > highestSeen) highestSeen = head.number;
       sequencerMonitor.observe({ nowMs: Date.now(), blockNumber: head.number, blockTimestamp: head.timestamp });
+      onHead(head);
     }
     if (!stopped) setTimeout(tick, intervalMs);
   }

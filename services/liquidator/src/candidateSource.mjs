@@ -82,12 +82,30 @@ export function createCandidateSource({ query, schema = 'public' }) {
     }
   }
 
+  /**
+   * The indexer's sync heartbeat: Ponder's `sync_status` (services/indexer/ponder.schema.ts
+   * `syncStatus`, one row per chain, updated on every block). Null when the indexer has not
+   * written it yet (no row, or no table).
+   * @param {number} chainId
+   * @returns {Promise<{ blockNumber: bigint, blockTimestamp: number } | null>}
+   */
+  async function readSyncStatus(chainId) {
+    try {
+      const rows = await query(`SELECT block_number, block_timestamp FROM ${q('sync_status')} WHERE chain_id = $1`, [chainId]);
+      if (rows.length === 0) return null;
+      return { blockNumber: big(rows[0].block_number), blockTimestamp: Number(rows[0].block_timestamp) };
+    } catch (err) {
+      if (err?.code === UNDEFINED_TABLE) return null;
+      throw err;
+    }
+  }
+
   async function list() {
     const [positions, limit] = await Promise.all([listPositions(), listLimitOrders()]);
     return { positions, limitOrders: limit.orders, limitOrdersAvailable: limit.available };
   }
 
-  return { list, listPositions, listLimitOrders };
+  return { list, listPositions, listLimitOrders, readSyncStatus };
 }
 
 /** A connection the database has not accepted in this long fails the sweep instead of

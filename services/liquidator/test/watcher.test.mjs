@@ -127,7 +127,8 @@ test('watchLiveness uses the highest head across endpoints and flags a head that
   const observed = [];
   const spy = { observe: (s) => observed.push([s.blockNumber, s.blockTimestamp]), observeFailure: () => {} };
 
-  const stop = watchLiveness({ endpoints, sequencerMonitor: spy, intervalMs: 1_000, onReorg: (b) => reorgs.push(b) });
+  const seen = [];
+  const stop = watchLiveness({ endpoints, sequencerMonitor: spy, intervalMs: 1_000, onReorg: (b) => reorgs.push(b), onHead: (h) => seen.push(h.number) });
   await flush();
   tickNo = 1;
   t.mock.timers.tick(1_000);
@@ -139,6 +140,7 @@ test('watchLiveness uses the highest head across endpoints and flags a head that
     [9n, 90n],
   ], "the highest head, with that same block's timestamp");
   assert.deepEqual(reorgs, [9n]);
+  assert.deepEqual(seen, [12n, 9n], 'onHead sees the head used for liveness (the indexer lag check reads it)');
 });
 
 test('watchLiveness refuses an empty endpoint list', () => {
