@@ -20,7 +20,7 @@
 import { strict as assert } from 'node:assert';
 import { after, before, describe, it } from 'node:test';
 import { WebSocketServer } from 'ws';
-import { VENUE_MODULES, connectVenue } from '../src/venues/index.mjs';
+import { VENUE_MODULES, connectVenue, LIVE_WINDOW_MS } from '../src/venues/index.mjs';
 
 /** Parses the trivial `{bid, ask}` frames the chatty server below sends. */
 const testVenue = {
@@ -49,7 +49,7 @@ async function startServer(mode) {
   // "dead" peer keeps ponging, the client's watchdog correctly sees liveness, and the
   // test proves nothing. (It failed exactly that way first: a quiet-but-answering peer is
   // not the failure being reproduced.) A truly half-open socket answers with nothing.
-  const wss = new WebSocketServer({ port: 0, host: '127.0.0.1', autoPong: mode !== 'silent' });
+  const wss = new WebSocketServer({ port: 0, host: '127.0.0.1', autoPong: mode !== 'silent' && mode !== 'once-then-dead' });
   // `address()` is null until the underlying server is actually listening; reading the
   // port synchronously after construction yields a TypeError, not a port.
   await new Promise((resolve) => wss.once('listening', resolve));
@@ -62,6 +62,12 @@ async function startServer(mode) {
     // close. This is the half-open shape: a connection the OS still calls ESTABLISHED
     // with a peer that will never speak again.
     if (mode === 'silent') return;
+    // 'once' — one book, then nothing but answers to our pings: a quiet market on a live
+    // socket. 'once-then-dead' — one book, then a black hole.
+    if (mode === 'once' || mode === 'once-then-dead') {
+      socket.send(JSON.stringify({ bid: '1', ask: '2' }));
+      return;
+    }
     const timer = setInterval(() => {
       if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ bid: '1', ask: '2' }));
     }, 50);
@@ -138,5 +144,52 @@ describe('venue socket liveness', () => {
     assert.equal(server.connections, atStop, 'a stopped venue must not reconnect');
 
     await server.close();
+  });
+});
+
+describe('a live socket keeps its last book current', () => {
+  before(() => {
+    VENUE_MODULES.__test = testVenue;
+  });
+  after(() => {
+    delete VENUE_MODULES.__test;
+  });
+
+  it('re-issues the last book with a fresh receipt time while the socket answers pings', async () => {
+    const server = await startServer('once');
+    const ticks = [];
+    const stop = connectVenue('__test', server.url, (tick) => ticks.push(tick), () => {});
+    try {
+      // Well past the 2 s staleness bound, and past one 8 s ping round so the only thing
+      // keeping the socket "heard" is its pongs.
+      await sleep(9_500);
+      assert.ok(ticks.length > 1, `expected the book to be re-issued, saw ${ticks.length} tick(s). Before the fix: 1.`);
+      const latest = ticks[ticks.length - 1];
+      assert.ok(Date.now() - latest.ts < 1_000, `latest tick is ${Date.now() - latest.ts} ms old; it must stay inside the staleness bound`);
+      assert.equal(latest.bid, 1n);
+      assert.equal(latest.ask, 2n);
+      assert.equal(latest.venue, '__test');
+      assert.equal(server.connections, 1);
+    } finally {
+      stop();
+      await server.close();
+    }
+  });
+
+  it('stops vouching for the book once nothing has been heard for LIVE_WINDOW_MS', async () => {
+    const server = await startServer('once-then-dead');
+    const ticks = [];
+    const stop = connectVenue('__test', server.url, (tick) => ticks.push(tick), () => {});
+    try {
+      await sleep(LIVE_WINDOW_MS + 1_500);
+      const latest = ticks[ticks.length - 1];
+      assert.ok(latest, 'the one real frame must have produced a tick');
+      const age = Date.now() - latest.ts;
+      assert.ok(age >= 1_000, `the book was still being re-issued ${age} ms ago from a silent socket`);
+      assert.ok(latest.ts - ticks[0].ts <= LIVE_WINDOW_MS + 600, 'refreshes ran past the live window');
+    } finally {
+      stop();
+      await server.close();
+    }
   });
 });
