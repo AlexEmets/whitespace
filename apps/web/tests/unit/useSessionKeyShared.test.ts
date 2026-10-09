@@ -13,6 +13,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 
 const state = vi.hoisted(() => ({
   delegate: '0x0000000000000000000000000000000000000000' as string,
+  lastReadQuery: undefined as { refetchInterval?: number } | undefined,
   refetch: vi.fn(async () => undefined),
   writeContract: vi.fn(async (_args: { functionName: string; args?: readonly unknown[] }) => '0xhash'),
 }));
@@ -24,11 +25,14 @@ vi.mock('wagmi', () => ({
     getBalance: async () => 10n ** 18n,
   }),
   useWalletClient: () => ({ data: { writeContract: state.writeContract, sendTransaction: vi.fn() } }),
-  useReadContract: () => ({ data: state.delegate, refetch: state.refetch }),
+  useReadContract: (args: { query?: { refetchInterval?: number } }) => {
+    state.lastReadQuery = args.query;
+    return { data: state.delegate, refetch: state.refetch };
+  },
   useBalance: () => ({ data: { value: 10n ** 18n }, refetch: vi.fn() }),
 }));
 
-import { useSessionKey } from '@/hooks/useSessionKey';
+import { DELEGATION_REFRESH_MS, useSessionKey } from '@/hooks/useSessionKey';
 import { clearSessionKey } from '@/lib/sessionKey';
 
 beforeEach(() => {
@@ -86,4 +90,8 @@ describe('useSessionKey shares one key across every instance', () => {
     expect(ticket.result.current.sessionAddress).not.toBeNull();
   });
 
+  it('re-reads the on-chain delegate on a timer, so a revoke elsewhere turns the badge off', () => {
+    renderHook(() => useSessionKey());
+    expect(state.lastReadQuery?.refetchInterval).toBe(DELEGATION_REFRESH_MS);
+  });
 });

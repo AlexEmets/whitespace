@@ -26,7 +26,9 @@ import { CHAIN_ID, RPC_URL } from './config';
  * open and close positions but cannot move funds to itself, re-point the delegation, or
  * renew it. The blast radius is bounded by the USDW allowance the trader has granted and by
  * adverse trading — not by outright theft. It is still a hot key: it is testnet-only for now,
- * revocable on-chain at any time (removeDelegate), and wiped from storage on revoke/disconnect.
+ * revocable on-chain at any time (removeDelegate), and wiped from storage on revoke. It is kept
+ * across a wallet disconnect on purpose: the delegate stays registered on chain, and a wiped
+ * key would leave that delegation pointing at a key nobody holds.
  *
  * The private key is stored in localStorage, namespaced by chain id and trader address, so a
  * wallet's key never leaks across accounts or chains. Storage is best-effort: a private window

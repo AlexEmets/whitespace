@@ -19,6 +19,9 @@ import {
 } from '@/lib/sessionKey';
 import { confirmTx, describeTxError } from '@/lib/tx';
 
+/** How often the on-chain delegate is re-read. */
+export const DELEGATION_REFRESH_MS = 10_000;
+
 export interface ManagedSendResult {
   hash: `0x${string}`;
   receipt: Awaited<ReturnType<typeof confirmTx>>;
@@ -95,7 +98,9 @@ export function useSessionKey(): SessionKeyState {
     abi: TRADING_ABI,
     functionName: 'delegations',
     args: address ? [address] : undefined,
-    query: { enabled: Boolean(address) },
+    // Re-read on a timer: a delegate revoked or replaced from another device or tab would
+    // otherwise keep the badge on "On" while every trade reverts NotDelegate.
+    query: { enabled: Boolean(address), refetchInterval: DELEGATION_REFRESH_MS },
   });
   const registeredDelegate = (delegation.data as Address | undefined) ?? null;
 
