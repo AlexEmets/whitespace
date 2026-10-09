@@ -9,22 +9,31 @@
  * exist here (design spec §6.5 says so explicitly), so this module is our own
  * approximation of the same idea, built from the one signal we do have: L2 block
  * production. If the sequencer stalls, no new L2 blocks are produced (1874 has no
- * fallback block producer), so "no new block for longer than a stall threshold" is a
- * reasonable, self-contained proxy for "the sequencer is down" — see
+ * fallback block producer), so a gap in BLOCK TIMESTAMPS longer than a stall threshold
+ * is a reasonable, self-contained proxy for "the sequencer is down" — see
  * docs/decisions/phase-6-liquidator.md for the honest caveats on this proxy.
  *
- * Pure state machine: callers feed it `{ nowMs, blockNumber }` samples (from polling
- * `eth_blockNumber`, or from the block number on each newly observed log) and read back
- * whether liquidation is currently allowed. No timers, no RPC calls in this file.
+ * Only the chain's own clock is evidence. A stall is either
+ *   - a head that an endpoint DID return, whose timestamp is >= stallThresholdMs old, or
+ *   - two heads whose timestamps are further apart than the blocks between them account
+ *     for by >= stallThresholdMs (a stall we could not watch live, e.g. while our own RPC
+ *     was unreachable).
+ * Our own failure to reach an RPC endpoint is not evidence of anything about the
+ * sequencer. It used to count as "no new block", so a few seconds of RPC trouble on our
+ * side became a STALLED -> RECOVERING cycle that suppressed every liquidation on the
+ * chain for an hour while the sequencer never missed a block.
+ *
+ * Pure state machine: callers feed it `{ nowMs, blockNumber, blockTimestamp }` samples and
+ * read back whether liquidation is currently allowed. No timers, no RPC calls in this file.
  *
  * States:
  *   LIVE        — blocks are arriving within the stall threshold; liquidations allowed.
- *   STALLED     — no new block for >= stallThresholdMs; liquidations blocked.
- *   RECOVERING  — a new block just arrived after a stall, but the recovery window has
- *                 not yet elapsed; liquidations still blocked. A renewed stall during
- *                 this window sends the state back to STALLED and restarts the window
- *                 from scratch on the next recovery — a flapping sequencer never
- *                 accumulates partial credit toward the window.
+ *   STALLED     — the head is >= stallThresholdMs old; liquidations blocked.
+ *   RECOVERING  — blocks resumed after a stall, but the recovery window has not yet
+ *                 elapsed; liquidations still blocked. A renewed stall during this window
+ *                 sends the state back to STALLED and restarts the window from scratch on
+ *                 the next recovery — a flapping sequencer never accumulates partial
+ *                 credit toward the window.
  */
 
 export const SequencerState = Object.freeze({
@@ -40,76 +49,90 @@ export const SequencerState = Object.freeze({
  * never a magic number at its use site. */
 export const SEQUENCER_STALL_THRESHOLD_MS = 30_000; // 30x the normal block time
 
-/** How long after blocks resume before liquidations resume. 1 hour mirrors the grace
- * period convention seen in Aave's Arbitrum sequencer-uptime integration
- * (`GRACE_PERIOD_TIME = 3600` seconds) — a reasonable, documented starting point for a
- * chain with no dedicated uptime oracle of its own, not a value measured against this
- * chain's actual outage behavior (none has been observed). Tune in phase 7 against
- * real incident data if any occurs. */
-export const SEQUENCER_RECOVERY_WINDOW_MS = 60 * 60 * 1000;
+/** 1874's block time (design spec §2.1). */
+export const BLOCK_TIME_MS = 1_000;
+
+/** How long after blocks resume before liquidations resume. The window exists so a
+ * trader can react (add margin, close) to a move that happened while they could not
+ * transact; a few minutes is enough for that. It used to be 1 h, after Aave's Arbitrum
+ * `GRACE_PERIOD_TIME = 3600` — but there that hour protects against a stall of the whole
+ * L2, while every liquidation it holds back here is bad debt growing for the pool.
+ * Configurable (LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS). */
+export const SEQUENCER_RECOVERY_WINDOW_MS = 5 * 60 * 1000;
 
 /**
  * @param {object} [opts]
  * @param {number} [opts.stallThresholdMs]
  * @param {number} [opts.recoveryWindowMs]
+ * @param {number} [opts.blockTimeMs] the chain's block time, the least two blocks are apart
  */
 export function createSequencerMonitor({
   stallThresholdMs = SEQUENCER_STALL_THRESHOLD_MS,
   recoveryWindowMs = SEQUENCER_RECOVERY_WINDOW_MS,
+  blockTimeMs = BLOCK_TIME_MS,
 } = {}) {
   let state = SequencerState.LIVE;
   let lastBlockNumber = null;
-  let lastBlockSeenAtMs = null;
+  /** The last head's own timestamp in ms (or, without one, when we first saw it). */
+  let lastBlockAtMs = null;
+  let lastHadTimestamp = false;
   let recoveryStartedAtMs = null;
 
+  function enterRecovery(nowMs) {
+    state = SequencerState.RECOVERING;
+    recoveryStartedAtMs = nowMs;
+  }
+
   /**
-   * Feed one liveness sample. Call this on every poll tick (whether or not the block
-   * number actually changed) so stalls are detected even between ticks that see no new
-   * block, and call it on every newly observed contract log too, so a burst of
-   * liquidation-relevant events also counts as liveness evidence.
+   * Feed one liveness sample: the head an RPC endpoint returned. Call this on every poll
+   * tick, whether or not the head moved, so a stall is detected while it lasts.
    *
    * @param {object} sample
    * @param {number} sample.nowMs wall-clock time of this observation
    * @param {bigint|number} sample.blockNumber the latest L2 block number observed
+   * @param {bigint|number} [sample.blockTimestamp] that block's timestamp, in seconds.
+   *        Without it the time the block was first seen stands in for it.
    * @returns {typeof SequencerState[keyof typeof SequencerState]}
    */
-  function observe({ nowMs, blockNumber }) {
+  function observe({ nowMs, blockNumber, blockTimestamp }) {
+    const hasTimestamp = blockTimestamp !== undefined && blockTimestamp !== null;
+    const blockAtMs = hasTimestamp ? Number(blockTimestamp) * 1000 : nowMs;
     if (lastBlockNumber === null) {
-      // First block ever. If failures before it already stalled us (a startup outage),
-      // this is a resumption like any other and must go through the recovery window.
-      if (state === SequencerState.STALLED) {
-        state = SequencerState.RECOVERING;
-        recoveryStartedAtMs = nowMs;
-      }
       lastBlockNumber = blockNumber;
-      lastBlockSeenAtMs = nowMs;
+      lastBlockAtMs = blockAtMs;
+      lastHadTimestamp = hasTimestamp;
+      // The first head we ever see can already be old: a stall that began before we started.
+      checkHeadAge(nowMs);
     } else if (blockNumber > lastBlockNumber) {
-      if (state === SequencerState.STALLED) {
-        state = SequencerState.RECOVERING;
-        recoveryStartedAtMs = nowMs;
-      }
+      // Blocks are being produced. Resuming from a stall we watched, or a gap between two
+      // heads that is itself a stall we did not get to watch, both start the window.
+      // The heads we see need not be consecutive blocks (a slow poll, our RPC down for a
+      // while), so the gap is the time the blocks in between cannot account for: each one
+      // takes at least blockTimeMs. Without timestamps on both heads the gap would be one
+      // between OUR observations, which an outage on our side stretches just as well, so
+      // it is not used at all.
+      const blocksBetween = Number(BigInt(blockNumber) - BigInt(lastBlockNumber)) - 1;
+      const chainGapMs = hasTimestamp && lastHadTimestamp ? blockAtMs - lastBlockAtMs - blocksBetween * blockTimeMs : 0;
+      if (state === SequencerState.STALLED || chainGapMs >= stallThresholdMs) enterRecovery(nowMs);
       lastBlockNumber = blockNumber;
-      lastBlockSeenAtMs = nowMs;
+      lastBlockAtMs = blockAtMs;
+      lastHadTimestamp = hasTimestamp;
     } else if (blockNumber < lastBlockNumber) {
       // A block number that went backward is a reorg signal, not a liveness signal on
       // its own; the per-candidate live re-read before any trigger (automationEngine.mjs) is
       // responsible for not acting on orphaned state. This module only tracks whether
       // *some* block is arriving, so it neither advances nor stalls on this sample.
     } else {
-      noNewBlock(nowMs);
+      checkHeadAge(nowMs);
     }
 
     return finishRecovery(nowMs);
   }
 
-  function noNewBlock(nowMs) {
-    const gapMs = nowMs - lastBlockSeenAtMs;
-    if (gapMs >= stallThresholdMs && state === SequencerState.LIVE) {
-      state = SequencerState.STALLED;
-      recoveryStartedAtMs = null;
-    } else if (gapMs >= stallThresholdMs && state === SequencerState.RECOVERING) {
-      // Stalled again mid-recovery: back to STALLED, window restarts from scratch
-      // once blocks resume again.
+  function checkHeadAge(nowMs) {
+    if (nowMs - lastBlockAtMs >= stallThresholdMs && state !== SequencerState.STALLED) {
+      // From LIVE, or stalled again mid-recovery: the window restarts from scratch once
+      // blocks resume again.
       state = SequencerState.STALLED;
       recoveryStartedAtMs = null;
     }
@@ -124,18 +147,15 @@ export function createSequencerMonitor({
   }
 
   /**
-   * Feed one FAILED liveness sample (every RPC endpoint errored). We cannot tell a dead
-   * sequencer from a dead RPC, and for this service they mean the same thing — nothing
-   * we submit can land — so a failure is treated exactly as "no new block": the gap
-   * clock keeps running and a long enough outage reaches STALLED. With no block ever
-   * seen, the clock starts at the first failure.
+   * A poll on which every RPC endpoint failed. That says nothing about the sequencer — only
+   * about our own connectivity — so it changes nothing: not the state, not the gap clock,
+   * not the recovery window. If the sequencer did stall meanwhile, the next head we do get
+   * shows it (its timestamp is old, or far after the previous head's).
    *
-   * @param {{ nowMs: number }} sample
+   * @param {{ nowMs: number }} _sample
    */
-  function observeFailure({ nowMs }) {
-    if (lastBlockSeenAtMs === null) lastBlockSeenAtMs = nowMs;
-    noNewBlock(nowMs);
-    return finishRecovery(nowMs);
+  function observeFailure(_sample) {
+    return state;
   }
 
   return {

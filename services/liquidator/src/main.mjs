@@ -42,7 +42,10 @@ async function main() {
   log(`forwarder=${account.address}`);
 
   const metrics = createLiquidatorMetrics();
-  const sequencerMonitor = createSequencerMonitor();
+  const sequencerMonitor = createSequencerMonitor({
+    stallThresholdMs: config.sequencerStallThresholdMs,
+    recoveryWindowMs: config.sequencerRecoveryWindowMs,
+  });
   const deadLetter = createDeadLetterStore({ filePath: config.deadLetterFilePath ?? undefined });
   const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 2 });
   pool.on('error', (err) => logError('postgres pool error:', err.message));
