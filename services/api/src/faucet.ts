@@ -33,6 +33,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { getPool } from './db.js';
+import { rateLimitKey } from './validate.js';
 
 /** Owned by this service alone, like `api_series` — never `public`, which belongs to
  * Ponder and is rebuilt on every indexer redeploy. */
@@ -219,7 +220,11 @@ export async function claimWbt(input: { address: string; ip: string }): Promise<
     return { ok: false, code: 503, error: 'The WBT faucet is not configured yet.' };
   }
 
-  const reservation = await reserveSlot(input, config);
+  // The cooldown is keyed on the client's /64 for IPv6, not the full address: one
+  // connection owns 2^64 of them and could otherwise claim once per address it rotates to.
+  // See rateLimitKey. (Rows written before this change hold full addresses and simply
+  // age out of the 24 h window.)
+  const reservation = await reserveSlot({ address: input.address, ip: rateLimitKey(input.ip) }, config);
   if ('blockedRetryAfter' in reservation) {
     return {
       ok: false,
