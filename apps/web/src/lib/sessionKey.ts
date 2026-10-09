@@ -50,6 +50,37 @@ export function isValidPrivateKey(value: unknown): value is Hex {
 
 type MaybeStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined;
 
+/**
+ * Every component that trades reads the session key: the one-click toggle, the order ticket,
+ * the close dialog, the position editors. Each used to keep its own copy, loaded once when
+ * the wallet connected, so turning one-click on updated the toggle and nothing else — the
+ * order ticket still held no key, saw `active === false`, and kept opening wallet pop-ups
+ * until the page was reloaded. Writes now notify every subscriber, and a write in another
+ * tab arrives through the `storage` event.
+ */
+const listeners = new Set<() => void>();
+
+/** Keys this tab created while storage was unavailable; they last for the tab's lifetime. */
+const memoryKeys = new Map<string, Hex>();
+
+function notify(): void {
+  for (const listener of [...listeners]) listener();
+}
+
+function onStorage(event: StorageEvent): void {
+  if (event.key === null || event.key.startsWith(SESSION_KEY_STORAGE_PREFIX)) notify();
+}
+
+/** Subscribes to session-key changes in this tab and others. Returns the unsubscribe. */
+export function subscribeSessionKeys(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1 && typeof window !== 'undefined') window.addEventListener('storage', onStorage);
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0 && typeof window !== 'undefined') window.removeEventListener('storage', onStorage);
+  };
+}
+
 function defaultStorage(): MaybeStorage {
   try {
     return globalThis.localStorage;
@@ -60,29 +91,39 @@ function defaultStorage(): MaybeStorage {
 
 /** The stored session private key for this trader, or null when there is none or storage is blocked. */
 export function loadSessionPrivateKey(trader: Address, storage: MaybeStorage = defaultStorage()): Hex | null {
+  const name = sessionKeyStorageKey(trader);
   try {
-    const stored = storage?.getItem(sessionKeyStorageKey(trader));
-    return isValidPrivateKey(stored) ? stored : null;
+    const stored = storage?.getItem(name);
+    if (isValidPrivateKey(stored)) return stored;
   } catch {
-    return null;
+    // fall through to a key this tab holds in memory
   }
+  return memoryKeys.get(name) ?? null;
 }
 
 function saveSessionPrivateKey(trader: Address, privateKey: Hex, storage: MaybeStorage = defaultStorage()): void {
+  const name = sessionKeyStorageKey(trader);
   try {
-    storage?.setItem(sessionKeyStorageKey(trader), privateKey);
+    if (!storage) throw new Error('no storage');
+    storage.setItem(name, privateKey);
+    memoryKeys.delete(name);
   } catch {
     // No persistence available; the in-memory key still works for this tab's lifetime.
+    memoryKeys.set(name, privateKey);
   }
+  notify();
 }
 
 /** Wipes the trader's session key from storage. Called on revoke and on wallet disconnect. */
 export function clearSessionKey(trader: Address, storage: MaybeStorage = defaultStorage()): void {
+  const name = sessionKeyStorageKey(trader);
+  memoryKeys.delete(name);
   try {
-    storage?.removeItem(sessionKeyStorageKey(trader));
+    storage?.removeItem(name);
   } catch {
     // Nothing to do — a storage that cannot delete also could not have persisted.
   }
+  notify();
 }
 
 export interface SessionKey {

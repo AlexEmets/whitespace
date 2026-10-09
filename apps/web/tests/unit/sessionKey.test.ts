@@ -99,10 +99,13 @@ describe('create / get / clear', () => {
     expect(getSessionKey(TRADER, storage)).toBeNull();
   });
 
-  it('degrades to no session when storage is blocked, never throwing', () => {
-    expect(() => createSessionKey(TRADER, blockedStorage)).not.toThrow();
-    expect(loadSessionPrivateKey(TRADER, blockedStorage)).toBeNull();
+  it('keeps the key in memory for this tab when storage is blocked, never throwing', () => {
+    let key: ReturnType<typeof createSessionKey> | undefined;
+    expect(() => (key = createSessionKey(TRADER, blockedStorage))).not.toThrow();
+    expect(loadSessionPrivateKey(TRADER, blockedStorage)).toBe(key!.privateKey);
+    expect(loadSessionPrivateKey(OTHER, blockedStorage)).toBeNull();
     expect(() => clearSessionKey(TRADER, blockedStorage)).not.toThrow();
+    expect(loadSessionPrivateKey(TRADER, blockedStorage)).toBeNull();
   });
 });
 

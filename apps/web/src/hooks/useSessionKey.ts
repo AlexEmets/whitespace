@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { parseEther, type Address } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { useAccount, useBalance, usePublicClient, useReadContract, useWalletClient } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
@@ -11,10 +12,10 @@ import {
   clearSessionKey,
   createSessionKey,
   delegatedActionArgs,
-  getSessionKey,
+  loadSessionPrivateKey,
   SESSION_KEY_GAS_TOPUP_WBT,
   SESSION_KEY_LOW_GAS_WEI,
-  type SessionKey,
+  subscribeSessionKeys,
 } from '@/lib/sessionKey';
 import { confirmTx, describeTxError } from '@/lib/tx';
 
@@ -65,16 +66,27 @@ export function useSessionKey(): SessionKeyState {
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
 
-  const [sessionKey, setSessionKey] = useState<SessionKey | null>(null);
+  // One store for every instance of this hook (see subscribeSessionKeys): the key enabled from
+  // the toggle must be the key the order ticket signs with. The snapshot is the hex string,
+  // which compares by value, so the store never reports a change that did not happen.
+  const privateKey = useSyncExternalStore(
+    subscribeSessionKeys,
+    () => (address ? loadSessionPrivateKey(address) : null),
+    () => null,
+  );
+  const sessionKey = useMemo(() => {
+    if (!privateKey) return null;
+    const account = privateKeyToAccount(privateKey);
+    return { privateKey, account, address: account.address };
+  }, [privateKey]);
   const [enabling, setEnabling] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [funding, setFunding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load (or forget) the persisted session key whenever the connected wallet changes. A key is
-  // scoped to its trader, so switching accounts must never surface the previous account's key.
+  // A key is scoped to its trader (the store above reads the connected address's key), so a
+  // switch of accounts never surfaces the previous account's key; only the error is reset here.
   useEffect(() => {
-    setSessionKey(address ? getSessionKey(address) : null);
     setError(null);
   }, [address]);
 
@@ -115,7 +127,6 @@ export function useSessionKey(): SessionKeyState {
     setEnabling(true);
     try {
       const key = sessionKey ?? createSessionKey(address);
-      setSessionKey(key);
       const hash = await walletClient.writeContract({
         address: TRADING_ADDRESS,
         abi: TRADING_ABI,
@@ -151,7 +162,6 @@ export function useSessionKey(): SessionKeyState {
       });
       await confirmTx(publicClient, hash, 'turn off one-click trading');
       clearSessionKey(address);
-      setSessionKey(null);
       await delegation.refetch();
     } catch (err) {
       setError(describeTxError(err));
