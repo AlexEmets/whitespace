@@ -46,7 +46,7 @@ export function createTxSender({ tradesUpKeepAddress, metricsPrefix = 'liquidato
   });
 
   /**
-   * Resolves {ok, hash} or {ok:false, reason, reverted, expired}; never throws for a send failure.
+   * Resolves {ok, hash} or {ok:false, reason, reverted, expired, attempts}; never throws for a send failure.
    * @param {{ trades: { trader: `0x${string}`, pairIndex: number, index: number, limitOrder: number }[], timestamp: number, deadlineMs?: number }} payload
    */
   async function sendPerformUpkeep({ trades, timestamp, deadlineMs }) {
@@ -73,6 +73,9 @@ export function createTxSender({ tradesUpKeepAddress, metricsPrefix = 'liquidato
       hash: result.hash,
       reverted: result.reverted === true,
       expired: result.expired === true,
+      // 0 with `expired`: the deadline passed while the send was still queued, so nothing
+      // reached the chain and the trigger can be re-decided at once.
+      attempts: result.attempts ?? 0,
     };
   }
 

@@ -85,6 +85,9 @@ async function main() {
     sendPerformUpkeep,
     maxBatchSize: config.maxBatchSize,
     cooldownMs: config.triggerCooldownMs,
+    reportMaxAgeSec: config.reportMaxAgeSec,
+    deliveryMarginSec: config.deliveryMarginSec,
+    evaluationConcurrency: config.evaluationConcurrency,
     liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });
@@ -115,7 +118,7 @@ async function main() {
         if (r.action === 'error') logError(`candidate ${r.candidate.trader}/${r.candidate.pairIndex}/${r.candidate.index}:`, r.reason);
       }
       for (const s of sent) {
-        log(`performUpkeep ${s.ok ? 'ok' : 'FAILED'} [${s.keys.join(', ')}]${s.hash ? ` ${s.hash}` : ''}${s.reason ? ` ${s.reason}` : ''}`);
+        log(`performUpkeep ${s.ok ? 'ok' : s.expired ? 'EXPIRED' : 'FAILED'} ts=${s.timestamp} [${s.keys.join(', ')}]${s.hash ? ` ${s.hash}` : ''}${s.reason ? ` ${s.reason}` : ''}`);
       }
     },
     onError: (err) => logError('sweep failed:', err?.message ?? err),

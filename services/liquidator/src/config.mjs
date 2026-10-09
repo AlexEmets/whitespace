@@ -11,7 +11,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { loadKeyFile } from '@whitespace/shared/keys';
-import { DEFAULT_MAX_BATCH_SIZE, DEFAULT_COOLDOWN_MS } from './automationEngine.mjs';
+import {
+  DEFAULT_MAX_BATCH_SIZE,
+  DEFAULT_COOLDOWN_MS,
+  DEFAULT_REPORT_MAX_AGE_SEC,
+  DEFAULT_DELIVERY_MARGIN_SEC,
+  DEFAULT_EVALUATION_CONCURRENCY,
+} from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
@@ -78,6 +84,10 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     receiptTimeoutMs: positiveInt(env, 'LIQUIDATOR_RECEIPT_TIMEOUT_MS', DEFAULT_RECEIPT_TIMEOUT_MS),
     maxBatchSize: positiveInt(env, 'LIQUIDATOR_MAX_BATCH_SIZE', DEFAULT_MAX_BATCH_SIZE),
     triggerCooldownMs: positiveInt(env, 'LIQUIDATOR_TRIGGER_COOLDOWN_MS', DEFAULT_COOLDOWN_MS),
+    // Must match WhitespacePriceUpKeep.maxAge on chain.
+    reportMaxAgeSec: positiveInt(env, 'LIQUIDATOR_REPORT_MAX_AGE_SEC', DEFAULT_REPORT_MAX_AGE_SEC),
+    deliveryMarginSec: positiveInt(env, 'LIQUIDATOR_DELIVERY_MARGIN_SEC', DEFAULT_DELIVERY_MARGIN_SEC),
+    evaluationConcurrency: positiveInt(env, 'LIQUIDATOR_EVALUATION_CONCURRENCY', DEFAULT_EVALUATION_CONCURRENCY),
     liquidateWhenDegraded: bool(env, 'LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED', true),
     deadLetterFilePath: env.LIQUIDATOR_DEAD_LETTER_PATH || null,
     metricsPort: positiveInt(env, 'LIQUIDATOR_METRICS_PORT', 9464),

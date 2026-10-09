@@ -113,6 +113,7 @@ test('a send whose deadline already passed is never broadcast, and comes back ex
   const result = await sender.sendPerformUpkeep({ trades: TRADES, timestamp: 1, deadlineMs: clock.t });
   assert.equal(result.ok, false);
   assert.equal(result.expired, true);
+  assert.equal(result.attempts, 0, 'the engine reads this as "never reached the chain"');
   assert.equal(c.walletClient.sendTransaction.mock.callCount(), 0);
   assert.equal(deadLetter.size(), 0);
 });

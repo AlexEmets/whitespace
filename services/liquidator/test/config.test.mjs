@@ -22,6 +22,7 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.equal(c.instanceName, 'automation-bot');
   assert.equal(c.maxBatchSize, 20);
   assert.equal(c.triggerCooldownMs, 30_000);
+  assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [10, 4, 16]);
   assert.equal(c.receiptTimeoutMs, 4_000, 'seconds, not the shared 30 s: a trigger expires 10 s after its timestamp');
   assert.equal(c.liquidateWhenDegraded, true);
   assert.equal(c.metricsHost, '127.0.0.1');
@@ -55,6 +56,9 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
       LIQUIDATOR_MAX_BATCH_SIZE: '5',
       LIQUIDATOR_TRIGGER_COOLDOWN_MS: '45000',
       LIQUIDATOR_RECEIPT_TIMEOUT_MS: '2500',
+      LIQUIDATOR_REPORT_MAX_AGE_SEC: '20',
+      LIQUIDATOR_DELIVERY_MARGIN_SEC: '5',
+      LIQUIDATOR_EVALUATION_CONCURRENCY: '8',
       LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: 'true',
     },
     { deployment: DEPLOYMENT },
@@ -65,6 +69,7 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
   assert.equal(c.maxBatchSize, 5);
   assert.equal(c.triggerCooldownMs, 45_000);
   assert.equal(c.receiptTimeoutMs, 2_500);
+  assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [20, 5, 8]);
   assert.equal(c.liquidateWhenDegraded, true);
 });
 
