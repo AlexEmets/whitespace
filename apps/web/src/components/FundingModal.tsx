@@ -9,6 +9,7 @@ import type { VaultRequestStatus } from '@/lib/abi';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
 import { VAULT_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal } from '@/lib/money';
+import { clearVaultRequest, loadVaultRequest, saveVaultRequest, type VaultRequest } from '@/lib/vaultRequests';
 import { Modal } from './Modal';
 import styles from './FundingModal.module.css';
 import { describeTxError } from '@/lib/tx';
@@ -17,10 +18,7 @@ export type FundingMode = 'deposit' | 'withdraw';
 
 /** A request that has been submitted and is now somewhere in the settlement lifecycle.
  * The amount is kept alongside the id because `cancelRequest*` takes both. */
-interface PendingRequest {
-  id: number;
-  amountRaw: bigint;
-}
+type PendingRequest = VaultRequest;
 
 /**
  * Deposit and withdraw, in the Aster/Hyperliquid button-pair shape the owner asked for —
@@ -54,14 +52,29 @@ export function FundingModal({
   onClose: () => void;
   onModeChange: (mode: FundingMode) => void;
 }) {
-  const { isConnected } = useAccount();
+  const { address, isConnected } = useAccount();
   const erc20 = useErc20(VAULT_ADDRESS);
   const vault = useVault();
   const { shares, refetch: refetchShares } = useVaultShares();
 
   const [amountInput, setAmountInput] = useState('');
-  const [deposit, setDeposit] = useState<PendingRequest | null>(null);
-  const [withdraw, setWithdraw] = useState<PendingRequest | null>(null);
+  const [deposit, setDepositState] = useState<PendingRequest | null>(null);
+  const [withdraw, setWithdrawState] = useState<PendingRequest | null>(null);
+
+  // Requests outlive this dialog; see lib/vaultRequests.ts. Restore the wallet's open ones on
+  // mount and on an account switch, and write every change back.
+  useEffect(() => {
+    setDepositState(address ? loadVaultRequest(address, 'deposit') : null);
+    setWithdrawState(address ? loadVaultRequest(address, 'withdraw') : null);
+  }, [address]);
+  const remember = (kind: 'deposit' | 'withdraw', next: PendingRequest | null) => {
+    (kind === 'deposit' ? setDepositState : setWithdrawState)(next);
+    if (!address) return;
+    if (next) saveVaultRequest(address, kind, next);
+    else clearVaultRequest(address, kind);
+  };
+  const setDeposit = (next: PendingRequest | null) => remember('deposit', next);
+  const setWithdraw = (next: PendingRequest | null) => remember('withdraw', next);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -69,6 +82,19 @@ export function FundingModal({
 
   const depositStatus = vault.useDepositStatus(deposit?.id ?? null);
   const withdrawStatus = vault.useWithdrawStatus(withdraw?.id ?? null);
+  const depositLeft = vault.usePendingAmount('deposit', deposit?.id ?? null);
+  const withdrawLeft = vault.usePendingAmount('withdraw', withdraw?.id ?? null);
+
+  // Nothing left in a remembered settlement means it was claimed, reclaimed or cancelled —
+  // here, in another tab, or on another device. Forget it rather than offer dead buttons.
+  useEffect(() => {
+    if (deposit && depositLeft === 0n) setDeposit(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deposit?.id, depositLeft]);
+  useEffect(() => {
+    if (withdraw && withdrawLeft === 0n) setWithdraw(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withdraw?.id, withdrawLeft]);
 
   const isDeposit = mode === 'deposit';
 
@@ -171,10 +197,10 @@ export function FundingModal({
     run('cancel', async () => {
       if (!request) return;
       if (isDeposit) {
-        await vault.cancelRequestDeposit(request.id, request.amountRaw);
+        await vault.cancelRequestDeposit(request.id, depositLeft ?? request.amountRaw);
         await erc20.refetchBalance();
       } else {
-        await vault.cancelRequestWithdraw(request.id, request.amountRaw);
+        await vault.cancelRequestWithdraw(request.id, withdrawLeft ?? request.amountRaw);
         await refetchShares();
       }
       setMessage('Request cancelled and returned to your wallet.');

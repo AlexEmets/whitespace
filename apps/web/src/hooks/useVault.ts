@@ -1,5 +1,6 @@
 'use client';
 
+import { parseEventLogs, type TransactionReceipt } from 'viem';
 import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
 import { ERC20_ABI, VAULT_ABI, VAULT_REQUEST_STATUS, type VaultRequestStatus } from '@/lib/abi';
 import { VAULT_ADDRESS } from '@/lib/deployment';
@@ -54,6 +55,23 @@ export function useVaultShares() {
  * lifecycle: NONE -> PENDING -> CLAIMABLE|RECLAIMABLE). The UI must not claim to have
  * deposited until the claim step actually succeeds.
  */
+/**
+ * The settlement a request actually went into, from its own event. Reading
+ * `targetSettlementId` before sending is only a guess: a settlement that lands in between
+ * moves the target, and the UI then polled an id the request was never in — status NONE, no
+ * buttons. The pre-read stays as the fallback for a receipt without the event.
+ */
+function requestedSettlementId(
+  receipt: TransactionReceipt,
+  eventName: 'DepositRequestedV2' | 'WithdrawRequestedV2',
+  owner: `0x${string}` | undefined,
+  fallback: number,
+): number {
+  const events = parseEventLogs({ abi: VAULT_ABI, eventName, logs: receipt.logs });
+  const mine = events.find((e) => !owner || e.args.owner.toLowerCase() === owner.toLowerCase());
+  return mine ? Number(mine.args.settlementId) : fallback;
+}
+
 export function useVault() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
@@ -75,8 +93,8 @@ export function useVault() {
       functionName: 'requestDeposit',
       args: [assetsRaw],
     });
-    await confirmTx(publicClient, hash, 'complete the vault operation');
-    return { hash, settlementId: Number(settlementId) };
+    const receipt = await confirmTx(publicClient, hash, 'complete the vault operation');
+    return { hash, settlementId: requestedSettlementId(receipt, 'DepositRequestedV2', address, Number(settlementId)) };
   }
 
   async function claimDeposit(settlementId: number): Promise<`0x${string}`> {
@@ -104,8 +122,8 @@ export function useVault() {
       functionName: 'requestWithdraw',
       args: [sharesRaw],
     });
-    await confirmTx(publicClient, hash, 'complete the vault operation');
-    return { hash, settlementId: Number(settlementId) };
+    const receipt = await confirmTx(publicClient, hash, 'complete the vault operation');
+    return { hash, settlementId: requestedSettlementId(receipt, 'WithdrawRequestedV2', address, Number(settlementId)) };
   }
 
   async function claimWithdraw(settlementId: number): Promise<`0x${string}`> {
@@ -203,7 +221,24 @@ export function useVault() {
     return { status, refetch: result.refetch };
   }
 
+  /**
+   * What is still requested in `settlementId`, from the vault itself. Two requests into the
+   * same settlement add up on chain, so cancelling the last amount typed cancelled only part
+   * of it; this is the figure to cancel. Null until read.
+   */
+  function usePendingAmount(kind: 'deposit' | 'withdraw', settlementId: number | null): bigint | null {
+    const result = useReadContract({
+      address: VAULT_ADDRESS,
+      abi: VAULT_ABI,
+      functionName: kind === 'deposit' ? 'pendingDepositRequest' : 'pendingWithdrawRequest',
+      args: address && settlementId !== null ? [address, settlementId] : undefined,
+      query: { enabled: Boolean(address) && settlementId !== null, refetchInterval: 5000 },
+    });
+    return result.data ?? null;
+  }
+
   return {
+    usePendingAmount,
     requestDeposit,
     claimDeposit,
     requestWithdraw,

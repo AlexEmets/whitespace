@@ -30,6 +30,8 @@ let allowanceState = 10_000_000_000n;
 let sharesState = 0n;
 let depositStatusState = 'NONE';
 let withdrawStatusState = 'NONE';
+/** pendingDepositRequest / pendingWithdrawRequest as the vault reports them; null = not read yet. */
+let pendingAmountState: bigint | null = null;
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0x43Ac53c54EaE7E31b6c717FE17a8cE31ba2cB06B', isConnected: true }),
@@ -60,6 +62,7 @@ vi.mock('@/hooks/useVault', () => ({
     reclaimWithdraw: reclaimWithdrawMock,
     useDepositStatus: () => ({ status: depositStatusState }),
     useWithdrawStatus: () => ({ status: withdrawStatusState }),
+    usePendingAmount: () => pendingAmountState,
     isPending: false,
   }),
   useVaultShares: () => ({ shares: sharesState, refetch: vi.fn(async () => {}) }),
@@ -83,6 +86,8 @@ beforeEach(() => {
   sharesState = 0n;
   depositStatusState = 'NONE';
   withdrawStatusState = 'NONE';
+  pendingAmountState = null;
+  localStorage.clear();
 });
 
 describe('<FundingModal> deposit', () => {
@@ -269,5 +274,64 @@ describe('<FundingModal> settlement lifecycle', () => {
 
     fireEvent.click(screen.getByTestId('funding-reclaim'));
     await waitFor(() => expect(reclaimWithdrawMock).toHaveBeenCalledWith(9));
+  });
+});
+
+describe('<FundingModal> requests outlive the dialog', () => {
+  it('brings back an open deposit request when the dialog is opened again', async () => {
+    balanceState = 1_000_000_000n;
+    depositStatusState = 'PENDING';
+    const first = renderModal();
+    fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByTestId('funding-request'));
+    await screen.findByTestId('funding-cancel');
+    first.unmount();
+
+    // A reload, or the same dialog opened from another page.
+    renderModal();
+    expect(await screen.findByTestId('funding-cancel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('funding-cancel'));
+    await waitFor(() => expect(cancelDepositMock).toHaveBeenCalledWith(7, 1_000_000_000n));
+  });
+
+  it('brings back an open withdrawal so its shares can be claimed', async () => {
+    sharesState = 500_000_000n;
+    withdrawStatusState = 'CLAIMABLE';
+    const first = renderModal('withdraw');
+    fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '500' } });
+    fireEvent.click(screen.getByTestId('funding-request'));
+    await screen.findByTestId('funding-claim');
+    first.unmount();
+
+    renderModal('withdraw');
+    fireEvent.click(await screen.findByTestId('funding-claim'));
+    await waitFor(() => expect(claimWithdrawMock).toHaveBeenCalledWith(9));
+  });
+
+  // Two deposits into the same settlement add up on chain; cancelling the last typed amount
+  // left the rest stranded in the request.
+  it('cancels what the vault says is still requested, not the last amount typed', async () => {
+    balanceState = 1_000_000_000n;
+    depositStatusState = 'PENDING';
+    pendingAmountState = 1_500_000_000n;
+    renderModal();
+    fireEvent.change(screen.getByTestId('funding-amount-input'), { target: { value: '1000' } });
+    fireEvent.click(screen.getByTestId('funding-request'));
+    fireEvent.click(await screen.findByTestId('funding-cancel'));
+    await waitFor(() => expect(cancelDepositMock).toHaveBeenCalledWith(7, 1_500_000_000n));
+  });
+
+  it('forgets a remembered request the vault no longer holds', async () => {
+    localStorage.setItem(
+      'whitespace:vault:1874:0x43ac53c54eae7e31b6c717fe17a8ce31ba2cb06b:deposit',
+      JSON.stringify({ id: 3, amountRaw: '1000000' }),
+    );
+    depositStatusState = 'PENDING';
+    pendingAmountState = 0n;
+    renderModal();
+    await waitFor(() =>
+      expect(localStorage.getItem('whitespace:vault:1874:0x43ac53c54eae7e31b6c717fe17a8ce31ba2cb06b:deposit')).toBeNull(),
+    );
+    expect(screen.queryByTestId('funding-cancel')).toBeNull();
   });
 });

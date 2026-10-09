@@ -43,6 +43,7 @@ vi.mock('@/hooks/useVault', () => ({
     reclaimWithdraw: vi.fn(),
     useDepositStatus: () => ({ status: 'NONE' }),
     useWithdrawStatus: () => ({ status: 'NONE' }),
+    usePendingAmount: () => null,
     isPending: false,
   }),
   useVaultShares: () => ({ shares: sharesState, refetch: vi.fn(async () => {}) }),

@@ -61,6 +61,8 @@ export const VAULT_ABI = parseAbi([
   'function getWithdrawStatus(address owner, uint32 settlementId) view returns (uint8)',
   'function currentBalance() view returns (uint256)',
   'function tvl() view returns (uint256)',
+  'function pendingDepositRequest(address owner, uint32 settlementId) view returns (uint256)',
+  'function pendingWithdrawRequest(address owner, uint32 settlementId) view returns (uint256)',
   'event DepositRequestedV2(address indexed owner, uint32 indexed settlementId, uint256 assets)',
   'event WithdrawRequestedV2(address indexed owner, uint32 indexed settlementId, uint256 shares)',
 ]);
