@@ -1,7 +1,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
-import { createCandidateSource, pgQuery } from '../src/candidateSource.mjs';
+import { createServer } from 'node:net';
+import pg from 'pg';
+import { createCandidateSource, pgQuery, pgPoolOptions } from '../src/candidateSource.mjs';
 
 // The real SQL runs against a real Postgres engine (PGlite, in-process): tables shaped
 // like Ponder's output for services/indexer/ponder.schema.ts `position` (bigint columns
@@ -121,4 +123,36 @@ test('pgQuery unwraps node-postgres results and passes params through', async ()
   assert.deepEqual(await q('SELECT 1', [2]), [{ a: 1 }]);
   assert.deepEqual(await q('SELECT 2'), [{ a: 1 }]);
   assert.deepEqual(calls, [['SELECT 1', [2]], ['SELECT 2', []]]);
+});
+
+// ---------------------------------------------------------------- pool timeouts
+
+test('pgPoolOptions bounds connecting and every statement', () => {
+  assert.deepEqual(pgPoolOptions({ databaseUrl: 'postgres://x/db' }), {
+    connectionString: 'postgres://x/db',
+    max: 2,
+    connectionTimeoutMillis: 3_000,
+    statement_timeout: 5_000,
+    query_timeout: 6_000,
+  });
+  const o = pgPoolOptions({ databaseUrl: 'postgres://x/db', dbConnectTimeoutMs: 100, dbStatementTimeoutMs: 200 });
+  assert.deepEqual([o.connectionTimeoutMillis, o.statement_timeout, o.query_timeout], [100, 200, 1_200]);
+});
+
+test('a database that accepts the connection but never answers fails the query instead of hanging', { timeout: 10_000 }, async () => {
+  const sockets = [];
+  const server = createServer((s) => sockets.push(s)); // accepts, never speaks
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const { port } = server.address();
+  const pool = new pg.Pool(pgPoolOptions({ databaseUrl: `postgres://u:p@127.0.0.1:${port}/db`, dbConnectTimeoutMs: 100 }));
+  pool.on('error', () => {});
+  try {
+    const started = Date.now();
+    await assert.rejects(pool.query('SELECT 1'), /timeout/i);
+    assert.ok(Date.now() - started < 3_000);
+  } finally {
+    for (const s of sockets) s.destroy();
+    await pool.end().catch(() => {});
+    await new Promise((r) => server.close(r));
+  }
 });

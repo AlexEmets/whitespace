@@ -23,6 +23,7 @@ import {
   DEFAULT_TAKEOVER_MS,
 } from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
+import { DEFAULT_DB_CONNECT_TIMEOUT_MS, DEFAULT_DB_STATEMENT_TIMEOUT_MS } from './candidateSource.mjs';
 import { SEQUENCER_STALL_THRESHOLD_MS, SEQUENCER_RECOVERY_WINDOW_MS } from './sequencerLiveness.mjs';
 
 const DEPLOYMENTS_PATH = fileURLToPath(new URL('../../../deployments/1874.json', import.meta.url));
@@ -100,6 +101,8 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     tradesUpKeepAddress: requireAddress('LIQUIDATOR_TRADES_UPKEEP_ADDRESS', 'tradesUpKeep'),
     databaseUrl,
     databaseSchema: env.DATABASE_SCHEMA || 'public',
+    dbConnectTimeoutMs: positiveInt(env, 'LIQUIDATOR_DB_CONNECT_TIMEOUT_MS', DEFAULT_DB_CONNECT_TIMEOUT_MS),
+    dbStatementTimeoutMs: positiveInt(env, 'LIQUIDATOR_DB_STATEMENT_TIMEOUT_MS', DEFAULT_DB_STATEMENT_TIMEOUT_MS),
     rpcUrls: env.LIQUIDATOR_RPC_URLS ? env.LIQUIDATOR_RPC_URLS.split(',').map((s) => s.trim()).filter(Boolean) : ['https://rpc.testnet.whitechain.io'],
     publisherBaseUrl: env.LIQUIDATOR_PUBLISHER_URL || 'http://127.0.0.1:8787',
     forwarderKeyPath: env.LIQUIDATOR_FORWARDER_KEY_PATH,

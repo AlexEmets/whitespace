@@ -15,7 +15,7 @@ import pg from 'pg';
 import { loadConfig, describeConfig, loadForwarderKey } from './config.mjs';
 import { createClients, createEndpointProbes, endpointLabel } from './rpc.mjs';
 import { createChainReader } from './chainReader.mjs';
-import { createCandidateSource, pgQuery } from './candidateSource.mjs';
+import { createCandidateSource, pgQuery, pgPoolOptions } from './candidateSource.mjs';
 import { createSequencerMonitor } from './sequencerLiveness.mjs';
 import { createAutomationEngine } from './automationEngine.mjs';
 import { createLiquidatorMetrics } from './metrics.mjs';
@@ -47,7 +47,7 @@ async function main() {
     recoveryWindowMs: config.sequencerRecoveryWindowMs,
   });
   const deadLetter = createDeadLetterStore({ filePath: config.deadLetterFilePath ?? undefined });
-  const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 2 });
+  const pool = new pg.Pool(pgPoolOptions(config));
   pool.on('error', (err) => logError('postgres pool error:', err.message));
 
   const chainReader = createChainReader({

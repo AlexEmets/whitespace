@@ -24,6 +24,7 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.equal(c.triggerCooldownMs, 30_000);
   assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [10, 4, 16]);
   assert.equal(c.maxOpenBackoffMs, 900_000);
+  assert.deepEqual([c.dbConnectTimeoutMs, c.dbStatementTimeoutMs], [3_000, 5_000]);
   assert.deepEqual([c.instanceIndex, c.instanceCount, c.takeoverMs], [0, 1, 10_000], 'one instance owns every trigger');
   assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [30_000, 300_000], 'a recovery window of minutes, not an hour');
   assert.equal(c.receiptTimeoutMs, 4_000, 'seconds, not the shared 30 s: a trigger expires 10 s after its timestamp');
@@ -63,6 +64,8 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
       LIQUIDATOR_DELIVERY_MARGIN_SEC: '5',
       LIQUIDATOR_EVALUATION_CONCURRENCY: '8',
       LIQUIDATOR_OPEN_BACKOFF_MAX_MS: '60000',
+      LIQUIDATOR_DB_CONNECT_TIMEOUT_MS: '1000',
+      LIQUIDATOR_DB_STATEMENT_TIMEOUT_MS: '2000',
       LIQUIDATOR_SEQUENCER_STALL_THRESHOLD_MS: '20000',
       LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS: '120000',
       LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: 'true',
@@ -77,6 +80,7 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
   assert.equal(c.receiptTimeoutMs, 2_500);
   assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [20, 5, 8]);
   assert.equal(c.maxOpenBackoffMs, 60_000);
+  assert.deepEqual([c.dbConnectTimeoutMs, c.dbStatementTimeoutMs], [1_000, 2_000]);
   assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [20_000, 120_000]);
   assert.equal(c.liquidateWhenDegraded, true);
 });

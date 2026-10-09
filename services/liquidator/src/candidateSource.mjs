@@ -90,6 +90,28 @@ export function createCandidateSource({ query, schema = 'public' }) {
   return { list, listPositions, listLimitOrders };
 }
 
+/** A connection the database has not accepted in this long fails the sweep instead of
+ * waiting on it (node-postgres waits forever by default). */
+export const DEFAULT_DB_CONNECT_TIMEOUT_MS = 3_000;
+/** Server-side cap per statement; the candidate queries take milliseconds. */
+export const DEFAULT_DB_STATEMENT_TIMEOUT_MS = 5_000;
+
+/**
+ * node-postgres Pool options. Without timeouts a database that hangs (lock, failover, a
+ * half-open socket) hangs the sweep, and every trigger with it, indefinitely.
+ * @param {{ databaseUrl: string, dbConnectTimeoutMs?: number, dbStatementTimeoutMs?: number }} config
+ */
+export function pgPoolOptions({ databaseUrl, dbConnectTimeoutMs = DEFAULT_DB_CONNECT_TIMEOUT_MS, dbStatementTimeoutMs = DEFAULT_DB_STATEMENT_TIMEOUT_MS }) {
+  return {
+    connectionString: databaseUrl,
+    max: 2,
+    connectionTimeoutMillis: dbConnectTimeoutMs,
+    statement_timeout: dbStatementTimeoutMs,
+    // Client-side too: statement_timeout cannot fire on a connection the server lost.
+    query_timeout: dbStatementTimeoutMs + 1_000,
+  };
+}
+
 /**
  * node-postgres adapter. The pool is created lazily by the caller (main.mjs) so tests
  * never need a database driver.
