@@ -185,6 +185,19 @@ export function createPublisherEngine({
     }
 
     const market = getMarket(feed);
+    // `price` is the EMA mark while `bid`/`ask` are the live index quotes. Mixed on
+    // purpose, and checked against how the contracts consume them
+    // (contracts/src/vendor/ostium/lib/TradingCallbacksLib.sol):
+    //   - every deployed market has a non-zero priceImpactK (DeployTestnet.s.sol: 2e18 for
+    //     BTC/ETH/SOL, 1e19 for WBT), so fills take the DYNAMIC path: the fill price is
+    //     `price * (1 ± impact)`, i.e. anchored on the mark, and bid/ask only enter through
+    //     spreadComponent = (ask - bid) / (2 * price). Mark and index differ by the EMA lag
+    //     (fractions of a percent), which scales a ~1 bp half-spread by that same fraction —
+    //     negligible, and never negative: each venue has ask >= bid, so the medians do too.
+    //   - the STATIC path (priceImpactK == 0) fills at the raw `ask`/`bid` and measures the
+    //     impact against the mark, which would mix the two series. No configured market
+    //     uses it; a market listed with priceImpactK = 0 must revisit this.
+    // The mark-only fallback below applies when the aggregate has no two-sided quote.
     const reportData = buildReportDataV2({
       chainId,
       verifier: verifierAddress,
