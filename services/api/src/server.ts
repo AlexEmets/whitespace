@@ -15,6 +15,7 @@ import { handlePoints, handleLeaderboard } from './routes/points.js';
 import { createWsManager, type WsManager } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 import { ensureFaucetSchema } from './faucet.js';
+import { retryWithBackoff } from './db.js';
 
 const router = new Router();
 router.get('/health', handleHealth);
@@ -117,11 +118,26 @@ if (isMain) {
   // Only the long-running process records the index series — never `createApp()`, which
   // the test suite calls many times per run and which must not start background timers
   // or reach for a publisher that is not there.
-  await ensureIndexSeriesSchema();
-  await ensureFaucetSchema();
-  const recorder = startIndexRecorder();
+  //
+  // The schema setup retries rather than being awaited before listen: if Postgres is down or
+  // still in crash recovery at boot, throwing here exited the process, and systemd's restart
+  // loop gives up after StartLimitBurst and leaves the API dead after Postgres comes back.
+  // Meanwhile the API listens and answers what it can; the recorder starts once the schema
+  // exists.
+  let recorder: { stop: () => void } | undefined;
+  let stopping = false;
+  void retryWithBackoff(
+    async () => {
+      await ensureIndexSeriesSchema();
+      await ensureFaucetSchema();
+    },
+    { label: 'schema setup' },
+  ).then(() => {
+    if (!stopping) recorder = startIndexRecorder();
+  });
   const stop = () => {
-    recorder.stop();
+    stopping = true;
+    recorder?.stop();
     server.close(() => process.exit(0));
   };
   process.on('SIGINT', stop);
