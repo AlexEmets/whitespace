@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createChainReader, quoteFromStatus, isTriggerPending } from '../src/chainReader.mjs';
 import { MARKETS as MARKET_MAP } from '@whitespace/shared/markets';
+import { isTradeableQuote } from '../src/triggerRules.mjs';
 
 const MARKETS = Object.values(MARKET_MAP);
 
@@ -202,6 +203,17 @@ test('quoteFromStatus: price = mark, bid/ask = index quote with the mark as fall
   assert.equal(partial.minHealthyVenues, 3, 'falls back to the global minimum when the publisher omits it');
 });
 
+test('quoteFromStatus: a stale mark or a feed with no venues is flagged untradeable (the publisher will not sign it)', () => {
+  const base = { mark: '100', indexBid: '99', indexAsk: '101', healthyCount: 4, minHealthyVenues: 3 };
+  assert.equal(quoteFromStatus({ ...base, markStale: true }).untradeable, 'mark_stale');
+  assert.equal(quoteFromStatus({ ...base, noData: true, healthyCount: 0 }).untradeable, 'no_data');
+  assert.equal(quoteFromStatus({ ...base, markStale: true, noData: true }).untradeable, 'no_data');
+  assert.equal('untradeable' in quoteFromStatus({ ...base, markStale: false, noData: false }), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, markStale: true })), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, noData: true })), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, markStale: false, noData: false })), true);
+});
+
 test('readPriceSnapshot fetches /status once and resolves any pair against it', async () => {
   const market = MARKETS[0];
   let fetches = 0;
@@ -226,6 +238,33 @@ test('readPriceSnapshot: a non-200 publisher and a feed without a mark both thro
   const noMark = createChainReader({ publicClient: client, ...ADDR, publisherBaseUrl: 'http://p', fetchImpl: async () => ({ ok: true, json: async () => ({ feeds: {} }) }) });
   const snap = await noMark.readPriceSnapshot();
   await assert.rejects(snap.quoteFor(0), /no mark price/);
+});
+
+test('readPriceSnapshot gives up on a publisher that does not answer within statusTimeoutMs', { timeout: 5_000 }, async () => {
+  let signal;
+  // Like fetch: never settles on its own, rejects when its signal aborts.
+  const fetchImpl = (url, init = {}) =>
+    new Promise((_, reject) => {
+      signal = init.signal;
+      signal?.addEventListener('abort', () => reject(signal.reason));
+    });
+  const reader = createChainReader({ publicClient: fakeClient({}), ...ADDR, publisherBaseUrl: 'http://p', fetchImpl, statusTimeoutMs: 30 });
+  // AbortSignal.timeout's timer is unref'd; with nothing else pending the runner would see
+  // an idle loop and cancel the test. In the bot, the sweep loop keeps the process alive.
+  const keepAlive = setInterval(() => {}, 1_000);
+  try {
+    const started = Date.now();
+    await assert.rejects(reader.readPriceSnapshot(), (err) => err.name === 'TimeoutError');
+    assert.ok(Date.now() - started < 2_000);
+    assert.equal(signal.aborted, true);
+  } finally {
+    clearInterval(keepAlive);
+  }
+});
+
+test('the /status timeout defaults to 3 s', async () => {
+  const { DEFAULT_STATUS_TIMEOUT_MS } = await import('../src/chainReader.mjs');
+  assert.equal(DEFAULT_STATUS_TIMEOUT_MS, 3_000);
 });
 
 test('an unknown feed id is an error, not a silent skip', async () => {

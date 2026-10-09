@@ -82,12 +82,52 @@ export function createCandidateSource({ query, schema = 'public' }) {
     }
   }
 
+  /**
+   * The indexer's sync heartbeat: Ponder's `sync_status` (services/indexer/ponder.schema.ts
+   * `syncStatus`, one row per chain, updated on every block). Null when the indexer has not
+   * written it yet (no row, or no table).
+   * @param {number} chainId
+   * @returns {Promise<{ blockNumber: bigint, blockTimestamp: number } | null>}
+   */
+  async function readSyncStatus(chainId) {
+    try {
+      const rows = await query(`SELECT block_number, block_timestamp FROM ${q('sync_status')} WHERE chain_id = $1`, [chainId]);
+      if (rows.length === 0) return null;
+      return { blockNumber: big(rows[0].block_number), blockTimestamp: Number(rows[0].block_timestamp) };
+    } catch (err) {
+      if (err?.code === UNDEFINED_TABLE) return null;
+      throw err;
+    }
+  }
+
   async function list() {
     const [positions, limit] = await Promise.all([listPositions(), listLimitOrders()]);
     return { positions, limitOrders: limit.orders, limitOrdersAvailable: limit.available };
   }
 
-  return { list, listPositions, listLimitOrders };
+  return { list, listPositions, listLimitOrders, readSyncStatus };
+}
+
+/** A connection the database has not accepted in this long fails the sweep instead of
+ * waiting on it (node-postgres waits forever by default). */
+export const DEFAULT_DB_CONNECT_TIMEOUT_MS = 3_000;
+/** Server-side cap per statement; the candidate queries take milliseconds. */
+export const DEFAULT_DB_STATEMENT_TIMEOUT_MS = 5_000;
+
+/**
+ * node-postgres Pool options. Without timeouts a database that hangs (lock, failover, a
+ * half-open socket) hangs the sweep, and every trigger with it, indefinitely.
+ * @param {{ databaseUrl: string, dbConnectTimeoutMs?: number, dbStatementTimeoutMs?: number }} config
+ */
+export function pgPoolOptions({ databaseUrl, dbConnectTimeoutMs = DEFAULT_DB_CONNECT_TIMEOUT_MS, dbStatementTimeoutMs = DEFAULT_DB_STATEMENT_TIMEOUT_MS }) {
+  return {
+    connectionString: databaseUrl,
+    max: 2,
+    connectionTimeoutMillis: dbConnectTimeoutMs,
+    statement_timeout: dbStatementTimeoutMs,
+    // Client-side too: statement_timeout cannot fire on a connection the server lost.
+    query_timeout: dbStatementTimeoutMs + 1_000,
+  };
 }
 
 /**

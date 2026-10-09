@@ -88,3 +88,77 @@ test('two batches sent at once never share a nonce', async (t) => {
 test('refuses to start without a trades upkeep address', () => {
   assert.throws(() => createTxSender({ tradesUpKeepAddress: undefined }), /tradesUpKeepAddress is required/);
 });
+
+// ---------------------------------------------------------------- deadlines, pipeline
+
+/** A clock that only moves when the sender sleeps, so receipt timeouts run instantly. */
+function fakeClock(start = 1_000_000) {
+  const c = { t: start };
+  c.now = () => c.t;
+  c.sleep = async (ms) => {
+    c.t += ms;
+  };
+  return c;
+}
+
+const senderWith = (t, { publicClient, walletClient }, clock, deadLetter = createDeadLetterStore()) =>
+  createTxSender({ publicClient, walletClient, account: ACCOUNT, tradesUpKeepAddress: TRADES_UPKEEP, deadLetter, registry: createRegistry(), now: clock.now, sleep: clock.sleep });
+
+test('a send whose deadline already passed is never broadcast, and comes back expired, not dead-lettered', async (t) => {
+  const c = clients(t, ['success']);
+  const clock = fakeClock();
+  const deadLetter = createDeadLetterStore();
+  const sender = senderWith(t, c, clock, deadLetter);
+
+  const result = await sender.sendPerformUpkeep({ trades: TRADES, timestamp: 1, deadlineMs: clock.t });
+  assert.equal(result.ok, false);
+  assert.equal(result.expired, true);
+  assert.equal(result.attempts, 0, 'the engine reads this as "never reached the chain"');
+  assert.equal(c.walletClient.sendTransaction.mock.callCount(), 0);
+  assert.equal(deadLetter.size(), 0);
+});
+
+test('a stuck transaction is replaced after ~4 s, and not retried once its deadline has passed', async (t) => {
+  const c = clients(t, ['success']);
+  c.publicClient.getTransactionReceipt = t.mock.fn(async () => null); // never mines
+  const clock = fakeClock();
+  const start = clock.t;
+  const broadcastAt = [];
+  const send = c.walletClient.sendTransaction;
+  c.walletClient.sendTransaction = t.mock.fn(async (tx) => {
+    broadcastAt.push(clock.t - start);
+    return send(tx);
+  });
+  const deadLetter = createDeadLetterStore();
+
+  const result = await senderWith(t, c, clock, deadLetter).sendPerformUpkeep({ trades: TRADES, timestamp: 1, deadlineMs: start + 6_000 });
+
+  assert.deepEqual(broadcastAt, [0, 4_000, 8_000], 'one tx + 2 same-nonce replacements, 4 s apart');
+  assert.ok(c.walletClient.sendTransaction.mock.calls.every((x) => x.arguments[0].nonce === 5));
+  assert.equal(result.ok, false);
+  assert.equal(result.expired, true, 'no fresh attempt after the deadline');
+  assert.equal(deadLetter.size(), 0);
+});
+
+test('batches are pipelined: the second goes out before the first has a receipt', async (t) => {
+  const c = clients(t, ['success']);
+  // The first receipt only exists once a second transaction has been broadcast. A serial
+  // sender waits on it, times out and re-broadcasts nonce 5 before ever sending nonce 6.
+  c.publicClient.getTransactionReceipt = t.mock.fn(async () => (c.walletClient.sendTransaction.mock.callCount() >= 2 ? { status: 'success' } : null));
+  const sender = senderWith(t, c, fakeClock());
+  const results = await Promise.all([
+    sender.sendPerformUpkeep({ trades: [TRADES[0]], timestamp: 1 }),
+    sender.sendPerformUpkeep({ trades: [TRADES[1]], timestamp: 1 }),
+  ]);
+  assert.ok(results.every((r) => r.ok));
+  assert.deepEqual(c.walletClient.sendTransaction.mock.calls.map((x) => x.arguments[0].nonce), [5, 6]);
+});
+
+test('a mined revert is reported as reverted, not expired', async (t) => {
+  const c = clients(t, ['reverted']);
+  const clock = fakeClock();
+  const result = await senderWith(t, c, clock).sendPerformUpkeep({ trades: TRADES, timestamp: 1, deadlineMs: clock.t + 60_000 });
+  assert.equal(result.reverted, true);
+  assert.equal(result.expired, false);
+  assert.equal(result.hash, '0xhash1');
+});

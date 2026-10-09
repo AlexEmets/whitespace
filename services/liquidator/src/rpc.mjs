@@ -55,11 +55,18 @@ export function endpointLabel(url) {
  * (the fallback transport above hides which endpoint answered).
  * @param {string[]} rpcUrls
  * @param {import('viem').Chain} [chain]
- * @returns {{ url: string, getBlockNumber: () => Promise<bigint> }[]}
+ * @returns {{ url: string, getHead: () => Promise<{ number: bigint, timestamp: bigint }> }[]}
  */
 export function createEndpointProbes(rpcUrls, chain = whitechainTestnet1874) {
   return rpcUrls.map((url) => {
     const client = createPublicClient({ chain, transport: http(url, { retryCount: 0 }) });
-    return { url, getBlockNumber: () => client.getBlockNumber({ cacheTime: 0 }) };
+    return {
+      url,
+      // The timestamp is what the sequencer monitor judges a stall by.
+      getHead: async () => {
+        const { number, timestamp } = await client.getBlock({ blockTag: 'latest' });
+        return { number, timestamp };
+      },
+    };
   });
 }

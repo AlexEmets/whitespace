@@ -17,5 +17,5 @@ test('createEndpointProbes returns one probe per url, in order', () => {
     probes.map((p) => p.url),
     ['http://127.0.0.1:1', 'http://127.0.0.1:2'],
   );
-  assert.equal(typeof probes[0].getBlockNumber, 'function');
+  assert.equal(typeof probes[0].getHead, 'function');
 });

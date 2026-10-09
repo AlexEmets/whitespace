@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAutomationEngine, triggerKey } from '../src/automationEngine.mjs';
+import { createAutomationEngine, triggerKey, ownerIndex } from '../src/automationEngine.mjs';
 import { createLiquidatorMetrics } from '../src/metrics.mjs';
 import { LimitOrder } from '../src/abi.mjs';
 
@@ -74,7 +74,14 @@ function world(overrides = {}) {
       w.calls.snapshot++;
       if (w.snapshotError) throw new Error(w.snapshotError);
       return {
-        quoteFor: async () => ({ price: w.price, bid: w.bid ?? w.price, ask: w.ask ?? w.price, healthyVenueCount: w.healthy, minHealthyVenues: w.minHealthy }),
+        quoteFor: async () => ({
+          price: w.price,
+          bid: w.bid ?? w.price,
+          ask: w.ask ?? w.price,
+          healthyVenueCount: w.healthy,
+          minHealthyVenues: w.minHealthy,
+          ...(w.untradeable ? { untradeable: w.untradeable } : {}),
+        }),
       };
     },
     readTrade: async (trader, pairIndex, index) => {
@@ -118,7 +125,7 @@ const sentKinds = (w) => sentTrades(w).map((t) => [t.trader, t.index, t.limitOrd
 
 // ---------------------------------------------------------------- liquidation
 
-test('a liquidatable position is sent as LIQ, with the sweep timestamp in seconds', async () => {
+test('a liquidatable position is sent as LIQ, with the timestamp in seconds and a delivery deadline', async () => {
   const { w, engine, metrics } = world({ price: LIQ_PRICE });
   w.positions = [pos(A, 0)];
   w.trades[`${A}-0-0`] = { ...TRADE };
@@ -126,7 +133,12 @@ test('a liquidatable position is sent as LIQ, with the sweep timestamp in second
   const { sent } = await engine.sweep();
 
   assert.equal(w.sends.length, 1);
-  assert.deepEqual(w.sends[0], { trades: [{ trader: A, pairIndex: 0, index: 0, limitOrder: LimitOrder.LIQ }], timestamp: NOW_MS / 1000 });
+  assert.deepEqual(w.sends[0], {
+    trades: [{ trader: A, pairIndex: 0, index: 0, limitOrder: LimitOrder.LIQ }],
+    timestamp: NOW_MS / 1000,
+    // maxAge 10 s minus the keeper's 4 s margin
+    deadlineMs: NOW_MS + 6_000,
+  });
   assert.equal(sent[0].ok, true);
   assert.equal(metrics.positionsBelowMaintenance.value(), 1);
   assert.equal(metrics.triggersSent.value({ kind: 'LIQ' }), 1);
@@ -276,6 +288,24 @@ test('a quote with a zero side is MARKET_CLOSED on chain: nothing is sent', asyn
   assert.equal(w.calls.readLimitOrder, 0);
 });
 
+test('a stale mark or no venue data: nothing is triggered, with the publisher\'s reason', async () => {
+  for (const [flag, reason] of [
+    ['mark_stale', 'mark_stale'],
+    ['no_data', 'no_data'],
+  ]) {
+    const { w, engine } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.limitOrders = [pos(A, 1)];
+    w.orders[`${A}-0-1`] = { ...ORDER };
+    w.untradeable = flag;
+    const { results } = await engine.sweep();
+    assert.equal(w.sends.length, 0);
+    assert.deepEqual(results.map((r) => r.reason), [reason, reason]);
+    assert.equal(w.calls.readLimitOrder, 0);
+  }
+});
+
 // ---------------------------------------------------------------- limit / stop entries
 
 test('a LIMIT buy whose ask reached the target is sent as OPEN', async () => {
@@ -313,6 +343,55 @@ test('a limit entry updated after the sweep timestamp is skipped (BACKDATED_EXEC
   const { results } = await engine.sweep();
   assert.equal(w.sends.length, 0);
   assert.equal(results[0].reason, 'backdated');
+});
+
+/** Sweeps every second for `seconds` and returns the offsets (s) at which something was sent. */
+async function sendTimes(w, engine, seconds, each = () => {}) {
+  const times = [];
+  const start = w.now;
+  for (let s = 0; s <= seconds; s++) {
+    w.now = start + s * 1_000;
+    each(s);
+    const before = w.sends.length;
+    await engine.sweep();
+    if (w.sends.length > before) times.push(s);
+  }
+  return times;
+}
+
+test('an entry the callback keeps cancelling (still resting, still hit) backs off exponentially; closes do not', async () => {
+  const { w, engine } = world({ price: 90n * E18, deps: { cooldownMs: 30_000, maxOpenBackoffMs: 240_000 } });
+  w.limitOrders = [pos(A, 3)];
+  w.orders[`${A}-0-3`] = { ...ORDER };
+  // Gaps 30, 60, 120, then capped at 240.
+  assert.deepEqual(await sendTimes(w, engine, 700), [0, 30, 90, 210, 450, 690]);
+
+  // A liquidatable position next to it is re-sent every cooldown, never backed off.
+  const liq = world({ price: LIQ_PRICE, deps: { cooldownMs: 30_000 } });
+  liq.w.positions = [pos(A, 0)];
+  liq.w.trades[`${A}-0-0`] = { ...TRADE };
+  assert.deepEqual(await sendTimes(liq.w, liq.engine, 120), [0, 30, 60, 90, 120]);
+});
+
+test('the entry backoff resets once the entry is not hit, and once it leaves the indexer', async () => {
+  const { w, engine } = world({ price: 90n * E18, deps: { cooldownMs: 30_000 } });
+  w.limitOrders = [pos(A, 3)];
+  w.orders[`${A}-0-3`] = { ...ORDER };
+  // Sent at 0, 30, 90 (next would be 210). At 100 the market moves away for one sweep.
+  const times = await sendTimes(w, engine, 260, (s) => {
+    w.price = s >= 210 && s < 215 ? 100n * E18 : 90n * E18;
+  });
+  // Not hit at 210 -> streak reset; hit again at 215 -> sent, then 30 s later, not 120.
+  assert.deepEqual(times, [0, 30, 90, 215, 245]);
+
+  // Leaves the indexer (filled / cancelled), a new order in the same slot starts afresh.
+  const b = world({ price: 90n * E18, deps: { cooldownMs: 30_000 } });
+  b.w.orders[`${A}-0-3`] = { ...ORDER };
+  const t2 = await sendTimes(b.w, b.engine, 250, (s) => {
+    b.w.limitOrders = s === 100 ? [] : [pos(A, 3)];
+  });
+  // The cooldown already running (until 210) still holds; after it, gaps start at 30 s again.
+  assert.deepEqual(t2, [0, 30, 90, 210, 240]);
 });
 
 test('a limit entry already filled/cancelled on chain is a lost race, not a send', async () => {
@@ -497,8 +576,319 @@ test('a failed multi-trigger batch is retried one trigger per transaction; succe
   assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), false, 'success clears isolation');
 });
 
+test('a reverted shared batch costs the innocent keys no cooldown: each goes alone on the next sweep', async () => {
+  for (const failure of [
+    { ok: false, reverted: true, hash: '0xr', reason: 'reverted: 0xr' }, // mined revert
+    { ok: false, reason: 'execution reverted: PairNotListed' }, // refused by estimateGas
+  ]) {
+    const { w, engine, metrics } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0), pos(B, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.trades[`${B}-0-0`] = { ...TRADE };
+    w.sendResults = [failure];
+    await engine.sweep();
+    for (const t of [A, B]) {
+      assert.equal(engine.isCoolingDown(triggerKey(t, 0, 0, 'LIQ')), false);
+      assert.equal(engine.isIsolated(triggerKey(t, 0, 0, 'LIQ')), true);
+    }
+    assert.equal(metrics.triggersFailed.value({ kind: 'LIQ' }), 2);
+
+    // A poisoned, B fine: B lands at once, only A is cooled down.
+    w.now += 1_000;
+    w.sendResults = [{ ok: false, reverted: true, reason: 'reverted: 0xa' }, { ok: true, hash: '0xb' }];
+    await engine.sweep();
+    assert.deepEqual(w.sends.map((s) => s.trades.map((x) => x.trader)), [[A, B], [A], [B]]);
+    assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), true, 'the poisoned key, alone, is cooled down');
+    assert.equal(engine.isCoolingDown(triggerKey(B, 0, 0, 'LIQ')), true, 'B was sent');
+    assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), false);
+  }
+});
+
+test('a shared batch that failed without a revert isolates nobody and is cooled down (it may still mine)', async () => {
+  for (const failure of [{ ok: false, reason: 'receipt_timeout: no receipt for nonce 5 after 2 replacement(s)' }, new Error('fetch failed')]) {
+    const { w, engine } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0), pos(B, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.trades[`${B}-0-0`] = { ...TRADE };
+    w.sendResults = [failure];
+    await engine.sweep();
+    for (const t of [A, B]) {
+      assert.equal(engine.isIsolated(triggerKey(t, 0, 0, 'LIQ')), false);
+      assert.equal(engine.isCoolingDown(triggerKey(t, 0, 0, 'LIQ')), true);
+    }
+  }
+});
+
+test('isolation is forgotten for a slot the indexer no longer lists', async () => {
+  const { w, engine } = world({ price: LIQ_PRICE });
+  w.positions = [pos(A, 0), pos(B, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  w.trades[`${B}-0-0`] = { ...TRADE };
+  w.sendResults = [{ ok: false, reverted: true, reason: 'reverted' }];
+  await engine.sweep();
+  assert.equal(engine.isIsolated(triggerKey(A, 0, 0, 'LIQ')), true);
+
+  // A's trade was closed; B is still listed (not hit any more, but listed).
+  w.positions = [pos(B, 0)];
+  w.price = SAFE_PRICE;
+  w.now += 1_000;
+  await engine.sweep();
+  assert.equal(engine.isIsolated(triggerKey(A, 0, 0, 'LIQ')), false);
+  assert.equal(engine.isIsolated(triggerKey(B, 0, 0, 'LIQ')), true);
+});
+
+// ---------------------------------------------------------------- ownership between instances
+
+/** A trader address whose LIQ key on pair 0 index 0 is owned by instance `owner` of 2. */
+function traderOwnedBy(owner) {
+  for (let i = 1; ; i++) {
+    const t = `0x${i.toString(16).padStart(40, '0')}`;
+    if (ownerIndex(triggerKey(t, 0, 0, 'LIQ'), 2) === owner) return t;
+  }
+}
+
+test('ownerIndex is deterministic and partitions keys between instances', () => {
+  const keys = Array.from({ length: 200 }, (_, i) => triggerKey(`0x${i.toString(16).padStart(40, '0')}`, i % 3, i % 5, 'LIQ'));
+  const owners = keys.map((k) => ownerIndex(k, 2));
+  assert.deepEqual(owners, keys.map((k) => ownerIndex(k, 2)));
+  const zero = owners.filter((o) => o === 0).length;
+  assert.ok(zero > 60 && zero < 140, `both instances own a fair share (${zero}/200)`);
+  assert.ok(keys.every((k) => ownerIndex(k, 1) === 0));
+});
+
+test("two instances: the owner sends at once, the other only takes over after takeoverMs if it is still not pending", async () => {
+  const mine = traderOwnedBy(0);
+  const theirs = traderOwnedBy(1);
+  const { w, engine, metrics } = world({ price: LIQ_PRICE, deps: { instanceIndex: 0, instanceCount: 2, takeoverMs: 10_000 } });
+  w.positions = [pos(mine, 0), pos(theirs, 0)];
+  w.trades[`${mine}-0-0`] = { ...TRADE };
+  w.trades[`${theirs}-0-0`] = { ...TRADE };
+
+  const { results } = await engine.sweep();
+  assert.deepEqual(sentKinds(w), [[mine, 0, LimitOrder.LIQ]]);
+  assert.equal(results.find((r) => r.candidate.trader === theirs).reason, 'not_owner');
+
+  w.now += 9_999;
+  await engine.sweep();
+  assert.equal(w.sends.length, 1, 'still the owner\'s turn');
+
+  w.now += 1;
+  const r = await engine.sweep();
+  assert.deepEqual(w.sends[1].trades.map((t) => t.trader), [theirs], 'the owner never sent it: take over');
+  assert.equal(r.results.find((x) => x.candidate.trader === theirs).takeover, true);
+  assert.equal(metrics.takeovers.value({ kind: 'LIQ' }), 1);
+});
+
+test('two instances: a trigger the owner did send (pending on chain) is never taken over, and the wait restarts', async () => {
+  const theirs = traderOwnedBy(1);
+  const { w, engine } = world({ price: LIQ_PRICE, deps: { instanceIndex: 0, instanceCount: 2, takeoverMs: 10_000 } });
+  w.positions = [pos(theirs, 0)];
+  w.trades[`${theirs}-0-0`] = { ...TRADE };
+  await engine.sweep(); // first seen at 0
+  w.now += 5_000;
+  w.pending.add(`${theirs}-0-0-${LimitOrder.LIQ}`); // the owner's trigger landed
+  await engine.sweep();
+  w.now += 30_000;
+  w.pending.clear(); // ... and came back NOT_HIT: hit again, a fresh wait
+  await engine.sweep();
+  assert.equal(w.sends.length, 0, 'the 10 s wait counts from now, not from the first sighting');
+  w.now += 10_000;
+  await engine.sweep();
+  assert.equal(w.sends.length, 1);
+});
+
+test('rejects an instance index outside [0, instanceCount)', () => {
+  assert.throws(() => world({ deps: { instanceIndex: 2, instanceCount: 2 } }), /instanceIndex/);
+  assert.throws(() => world({ deps: { instanceIndex: -1, instanceCount: 2 } }), /instanceIndex/);
+  assert.throws(() => world({ deps: { instanceIndex: 0, instanceCount: 0 } }), /instanceIndex/);
+});
+
+// ---------------------------------------------------------------- gas self-check
+
+test('below the minimum gas balance nothing is sent, loudly, and the triggers stay free for the other instance', async () => {
+  const gas = { balance: 10n ** 16n - 1n };
+  // (one wei short of the minimum)
+  const { w, engine, metrics } = world({ price: LIQ_PRICE, deps: { readGasBalance: async () => gas.balance, minGasBalanceWei: 10n ** 16n } });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+
+  const r = await engine.sweep();
+  assert.equal(w.sends.length, 0);
+  assert.deepEqual(r.sent, []);
+  assert.match(r.error, /^gas_low: forwarder balance 9999999999999999 wei is below 10000000000000000; 1 trigger/);
+  assert.equal(metrics.gasLow.value(), 1);
+  assert.ok(Math.abs(metrics.forwarderBalance.value() - 0.01) < 1e-12, 'published in WBT');
+  assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), false, 'not cooled down: nothing went out');
+
+  // Topped up to exactly the minimum: sends again at once.
+  gas.balance = 10n ** 16n;
+  w.now += 1_000;
+  const r2 = await engine.sweep();
+  assert.equal(r2.error, undefined);
+  assert.equal(w.sends.length, 1);
+  assert.equal(metrics.gasLow.value(), 0);
+});
+
+test('a failed balance read does not stop sending', async () => {
+  const { w, engine } = world({ price: LIQ_PRICE, deps: { readGasBalance: async () => Promise.reject(new Error('rpc down')) } });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  const r = await engine.sweep();
+  assert.equal(w.sends.length, 1);
+  assert.equal(r.warning, 'gas balance unknown: rpc down');
+});
+
 test('rejects a batch size below 1', () => {
   assert.throws(() => world({ deps: { maxBatchSize: 0 } }), /maxBatchSize/);
+});
+
+// ---------------------------------------------------------------- trigger freshness
+
+/** A world whose trade reads take `readMs` of (fake) time each and whose sends log the clock. */
+function slowWorld(readMs, deps = {}) {
+  const ref = {};
+  const built = world({
+    price: LIQ_PRICE,
+    deps: {
+      readTrade: async (trader, pairIndex, index) => {
+        ref.w.now += readMs;
+        return ref.w.trades[`${trader}-${pairIndex}-${index}`] ?? null;
+      },
+      sendPerformUpkeep: async (payload) => {
+        ref.w.sends.push({ ...payload, at: ref.w.now });
+        return ref.w.sendResults.shift() ?? { ok: true, hash: '0xh' };
+      },
+      ...deps,
+    },
+  });
+  ref.w = built.w;
+  return built;
+}
+
+test('the timestamp is taken when the batch is sent, not when the sweep started', async () => {
+  // Three 5 s reads one after another: a 15 s sweep, so a sweep-start timestamp would be
+  // past the 10 s maxAge before it was even sent.
+  const { w, engine } = slowWorld(5_000, { evaluationConcurrency: 1 });
+  for (let i = 0; i < 3; i++) {
+    w.positions.push(pos(A, i));
+    w.trades[`${A}-0-${i}`] = { ...TRADE };
+  }
+  const { sent } = await engine.sweep();
+  assert.equal(w.sends.length, 1);
+  assert.equal(w.sends[0].at, NOW_MS + 15_000);
+  assert.equal(w.sends[0].timestamp, (NOW_MS + 15_000) / 1000);
+  assert.equal(w.sends[0].deadlineMs, NOW_MS + 15_000 + 6_000);
+  assert.equal(sent[0].timestamp, (NOW_MS + 15_000) / 1000);
+});
+
+test('a sub-second clock is floored to the second for both timestamp and deadline', async () => {
+  const { w, engine } = slowWorld(1_999, { evaluationConcurrency: 1 });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  await engine.sweep();
+  assert.equal(w.sends[0].timestamp, NOW_MS / 1000 + 1);
+  assert.equal(w.sends[0].deadlineMs, NOW_MS + 1_000 + 6_000);
+});
+
+test('maxAge and the keeper margin are configurable and set the deadline', async () => {
+  const { w, engine } = world({ price: LIQ_PRICE, deps: { reportMaxAgeSec: 20, deliveryMarginSec: 5 } });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  await engine.sweep();
+  assert.equal(w.sends[0].deadlineMs, NOW_MS + 15_000);
+});
+
+test('a margin that leaves less than one second to send in is rejected', () => {
+  assert.throws(() => world({ deps: { reportMaxAgeSec: 10, deliveryMarginSec: 10 } }), /deliveryMarginSec/);
+  assert.throws(() => world({ deps: { reportMaxAgeSec: 10, deliveryMarginSec: 9.5 } }), /deliveryMarginSec/);
+  assert.throws(() => world({ deps: { deliveryMarginSec: -1 } }), /deliveryMarginSec/);
+  assert.doesNotThrow(() => world({ deps: { reportMaxAgeSec: 10, deliveryMarginSec: 9 } }));
+});
+
+test('candidates are evaluated concurrently, never more than evaluationConcurrency at once, results in candidate order', async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const ref = {};
+  const { w, engine } = world({
+    price: LIQ_PRICE,
+    deps: {
+      evaluationConcurrency: 4,
+      readTrade: async (trader, pairIndex, index) => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // Earlier candidates finish later, so completion order is the reverse of input order.
+        await new Promise((r) => setTimeout(r, 20 - index));
+        inFlight--;
+        return ref.w.trades[`${trader}-${pairIndex}-${index}`] ?? null;
+      },
+    },
+  });
+  ref.w = w;
+  for (let i = 0; i < 10; i++) {
+    w.positions.push(pos(A, i));
+    w.trades[`${A}-0-${i}`] = { ...TRADE };
+  }
+  const { results } = await engine.sweep();
+  assert.equal(maxInFlight, 4);
+  assert.deepEqual(results.map((r) => r.candidate.index), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(sentTrades(w).map((t) => t.index), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+});
+
+test('rejects an evaluation concurrency below 1', () => {
+  assert.throws(() => world({ deps: { evaluationConcurrency: 0 } }), /evaluationConcurrency/);
+});
+
+test('batches are handed to the sender together, not one receipt after another', async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const { w, engine } = world({
+    price: LIQ_PRICE,
+    deps: {
+      maxBatchSize: 1,
+      sendPerformUpkeep: async (payload) => {
+        w.sends.push(payload);
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight--;
+        return { ok: true, hash: '0xh' };
+      },
+    },
+  });
+  for (let i = 0; i < 3; i++) {
+    w.positions.push(pos(A, i));
+    w.trades[`${A}-0-${i}`] = { ...TRADE };
+  }
+  const { sent } = await engine.sweep();
+  assert.equal(maxInFlight, 3);
+  assert.deepEqual(sent.map((s) => s.keys[0]), [0, 1, 2].map((i) => triggerKey(A, 0, i, 'LIQ')));
+});
+
+test('a trigger that expired before it was broadcast is not cooled down: the next sweep re-sends it', async () => {
+  const { w, engine, metrics } = world({ price: LIQ_PRICE });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  w.sendResults = [{ ok: false, expired: true, attempts: 0, reason: 'deadline_passed before attempt 1' }];
+  const { sent } = await engine.sweep();
+  assert.equal(sent[0].expired, true);
+  assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), false);
+  assert.equal(metrics.triggersExpired.value({ kind: 'LIQ' }), 1);
+  assert.equal(metrics.triggersFailed.value({ kind: 'LIQ' }), 0);
+
+  w.now += 1_000;
+  await engine.sweep();
+  assert.equal(w.sends.length, 2);
+  assert.equal(w.sends[1].timestamp, NOW_MS / 1000 + 1, 'with a fresh timestamp');
+
+  // Expired AFTER an attempt: that transaction may still mine, so this one does cool down.
+  w.sendResults = [{ ok: false, expired: true, attempts: 1, reason: 'deadline_passed before attempt 2 (last: receipt_timeout)' }];
+  w.now += 30_000;
+  await engine.sweep();
+  assert.equal(w.sends.length, 3);
+  assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), true);
+  w.now += 1_000;
+  await engine.sweep();
+  assert.equal(w.sends.length, 3);
 });
 
 test('position and limit-order counts are published', async () => {

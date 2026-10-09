@@ -4,7 +4,7 @@ import { watchLiveness } from '../src/watcher.mjs';
 import { createSequencerMonitor, SequencerState } from '../src/sequencerLiveness.mjs';
 import { createLiquidatorMetrics } from '../src/metrics.mjs';
 
-/** Lets the pending getBlockNumber promises settle and the next setTimeout get armed. */
+/** Lets the pending getHead promises settle and the next setTimeout get armed. */
 async function flush() {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 }
@@ -19,12 +19,20 @@ async function runPolls(t, n, intervalMs) {
 
 const down = (url = 'a') => ({
   url,
-  getBlockNumber: async () => {
+  getHead: async () => {
     throw new Error('ECONNREFUSED');
   },
 });
 
-test('watchLiveness: a total RPC outage from startup reaches STALLED', async (t) => {
+/** A chain producing one block a second, stamped with the (mocked) clock. */
+function chain(start = 100n) {
+  let number = start;
+  return async () => ({ number: number++, timestamp: BigInt(Math.floor(Date.now() / 1000)) });
+}
+
+// Our RPC being unreachable says nothing about the sequencer; it used to stall the
+// monitor and hold every liquidation back for the recovery window.
+test('watchLiveness: a total RPC outage from startup does not stall', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const monitor = createSequencerMonitor({ stallThresholdMs: 30_000 });
 
@@ -32,19 +40,19 @@ test('watchLiveness: a total RPC outage from startup reaches STALLED', async (t)
   await runPolls(t, 31, 1_000);
   stop();
 
-  assert.equal(monitor.state, SequencerState.STALLED);
+  assert.equal(monitor.state, SequencerState.LIVE);
 });
 
-test('watchLiveness: an outage after blocks were seen reaches STALLED', async (t) => {
+test('watchLiveness: an RPC outage after blocks were seen does not stall', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const monitor = createSequencerMonitor({ stallThresholdMs: 30_000 });
   let calls = 0;
   const endpoints = [
     {
       url: 'a',
-      getBlockNumber: async () => {
+      getHead: async () => {
         calls++;
-        if (calls <= 3) return BigInt(100 + calls);
+        if (calls <= 3) return { number: BigInt(100 + calls), timestamp: BigInt(Math.floor(Date.now() / 1000)) };
         throw new Error('ECONNREFUSED');
       },
     },
@@ -56,16 +64,27 @@ test('watchLiveness: an outage after blocks were seen reaches STALLED', async (t
   await runPolls(t, 31, 1_000);
   stop();
 
+  assert.equal(monitor.state, SequencerState.LIVE);
+});
+
+test('watchLiveness: a head that an endpoint keeps returning unchanged reaches STALLED', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+  const monitor = createSequencerMonitor({ stallThresholdMs: 30_000 });
+  const stop = watchLiveness({
+    endpoints: [{ url: 'a', getHead: async () => ({ number: 100n, timestamp: 0n }) }],
+    sequencerMonitor: monitor,
+    intervalMs: 1_000,
+  });
+  await runPolls(t, 31, 1_000);
+  stop();
   assert.equal(monitor.state, SequencerState.STALLED);
 });
 
 test('watchLiveness: steadily advancing blocks stay LIVE', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const monitor = createSequencerMonitor({ stallThresholdMs: 30_000 });
-  let block = 100n;
-
   const stop = watchLiveness({
-    endpoints: [{ url: 'a', getBlockNumber: async () => block++ }],
+    endpoints: [{ url: 'a', getHead: chain() }],
     sequencerMonitor: monitor,
     intervalMs: 1_000,
   });
@@ -79,8 +98,7 @@ test("watchLiveness reports each endpoint's health separately into liquidator_rp
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const monitor = createSequencerMonitor({ stallThresholdMs: 30_000 });
   const metrics = createLiquidatorMetrics();
-  let block = 100n;
-  const endpoints = [{ url: 'https://up.example', getBlockNumber: async () => block++ }, down('https://down.example')];
+  const endpoints = [{ url: 'https://up.example', getHead: chain() }, down('https://down.example')];
 
   const stop = watchLiveness({
     endpoints,
@@ -104,20 +122,25 @@ test('watchLiveness uses the highest head across endpoints and flags a head that
     [9n, 8n],
   ];
   let tickNo = 0;
-  const endpoints = [0, 1].map((i) => ({ url: String(i), getBlockNumber: async () => heads[tickNo][i] }));
+  const endpoints = [0, 1].map((i) => ({ url: String(i), getHead: async () => ({ number: heads[tickNo][i], timestamp: heads[tickNo][i] * 10n }) }));
   const reorgs = [];
   const observed = [];
-  const spy = { observe: (s) => observed.push(s.blockNumber), observeFailure: () => {} };
+  const spy = { observe: (s) => observed.push([s.blockNumber, s.blockTimestamp]), observeFailure: () => {} };
 
-  const stop = watchLiveness({ endpoints, sequencerMonitor: spy, intervalMs: 1_000, onReorg: (b) => reorgs.push(b) });
+  const seen = [];
+  const stop = watchLiveness({ endpoints, sequencerMonitor: spy, intervalMs: 1_000, onReorg: (b) => reorgs.push(b), onHead: (h) => seen.push(h.number) });
   await flush();
   tickNo = 1;
   t.mock.timers.tick(1_000);
   await flush();
   stop();
 
-  assert.deepEqual(observed, [12n, 9n]);
+  assert.deepEqual(observed, [
+    [12n, 120n],
+    [9n, 90n],
+  ], "the highest head, with that same block's timestamp");
   assert.deepEqual(reorgs, [9n]);
+  assert.deepEqual(seen, [12n, 9n], 'onHead sees the head used for liveness (the indexer lag check reads it)');
 });
 
 test('watchLiveness refuses an empty endpoint list', () => {

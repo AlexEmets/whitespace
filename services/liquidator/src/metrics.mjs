@@ -21,6 +21,8 @@ export function createLiquidatorMetrics() {
     triggersAttempted: registry.counter('liquidator_triggers_attempted_total', 'Triggers this instance put into a performUpkeep transaction'),
     triggersSent: registry.counter('liquidator_triggers_sent_total', 'Triggers whose performUpkeep transaction was mined successfully'),
     triggersFailed: registry.counter('liquidator_triggers_failed_total', 'Triggers whose performUpkeep transaction failed or reverted'),
+    triggersExpired: registry.counter('liquidator_triggers_expired_total', 'Triggers whose delivery deadline passed before they were broadcast'),
+    takeovers: registry.counter('liquidator_takeovers_total', "Triggers owned by the other instance that this one sent because they stayed unsent past the takeover delay"),
     batchesSent: registry.counter('liquidator_batches_total', 'performUpkeep transactions sent, by outcome'),
     lostRace: registry.counter('liquidator_lost_race_total', 'Candidates found already closed/filled on chain when re-read'),
     suppressedDegraded: registry.counter('liquidator_suppressed_degraded_total', 'Hit triggers held back because the market was degraded'),
@@ -30,6 +32,10 @@ export function createLiquidatorMetrics() {
     oracleStalenessMs: registry.gauge('liquidator_oracle_staleness_ms', 'Age of the last successful publisher price snapshot, in milliseconds'),
     sequencerState: registry.gauge('liquidator_sequencer_state', 'Sequencer liveness state (0=LIVE, 1=STALLED, 2=RECOVERING)'),
     rpcHealthy: registry.gauge('liquidator_rpc_healthy', 'RPC endpoint health (1=last probe succeeded, 0=failed)'),
+    forwarderBalance: registry.gauge('liquidator_forwarder_balance', "The forwarder's native balance (WBT) at the last sweep"),
+    gasLow: registry.gauge('liquidator_gas_low', '1 while the forwarder balance is below the minimum and this instance sends nothing'),
+    indexerLagBlocks: registry.gauge('liquidator_indexer_lag_blocks', 'Chain head minus the block the indexer has synced to'),
+    indexerLagSeconds: registry.gauge('liquidator_indexer_lag_seconds', "Seconds between the chain head and the indexer's last synced block"),
     deadLetterDepth: registry.gauge('liquidator_dead_letter_depth', 'Entries currently in the dead-letter queue'),
   };
 

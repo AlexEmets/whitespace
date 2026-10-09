@@ -13,18 +13,30 @@ import { TRADING_STORAGE_ABI, PAIR_INFOS_ABI, PAIRS_STORAGE_ABI, TRADING_ABI, Op
 import { getMarketByFeedId } from '@whitespace/shared/markets';
 import { MIN_HEALTHY_VENUES } from '@whitespace/shared/bounds';
 
+/** A publisher that has not answered /status in this long is treated as down for the
+ * sweep. fetch on its own waits minutes for headers, and the sweep holds every trigger. */
+export const DEFAULT_STATUS_TIMEOUT_MS = 3_000;
+
 const OPEN_ORDER_TYPE_NAME = { [OpenOrderType.LIMIT]: 'LIMIT', [OpenOrderType.STOP]: 'STOP' };
 
 /**
  * The prices a report for `feed` would carry right now, exactly as
  * services/price-publisher engine.signReportFor builds them: price = mark,
  * bid/ask = aggregated index quote, each side falling back to the mark when missing.
+ *
+ * A feed the publisher flags `markStale` or `noData` still carries its last mark, but the
+ * publisher refuses to sign any report for it (engine.signReportFor `mark_stale`,
+ * aggregator.canSignForOrderType `no_healthy_venues`). A trigger on it can never be
+ * delivered and only parks the trade behind TriggerPending, so the quote is marked
+ * `untradeable` with the reason; isTradeableQuote then rejects it.
  * @param {{ mark?: string|null, indexBid?: string|null, indexAsk?: string|null,
- *           healthyCount?: number, minHealthyVenues?: number } | undefined} snap
+ *           healthyCount?: number, minHealthyVenues?: number,
+ *           markStale?: boolean, noData?: boolean } | undefined} snap
  */
 export function quoteFromStatus(snap) {
   if (!snap || snap.mark === null || snap.mark === undefined) return null;
   const price = BigInt(snap.mark);
+  const untradeable = snap.noData === true ? 'no_data' : snap.markStale === true ? 'mark_stale' : null;
   return {
     price,
     bid: snap.indexBid === null || snap.indexBid === undefined ? price : BigInt(snap.indexBid),
@@ -32,6 +44,7 @@ export function quoteFromStatus(snap) {
     healthyVenueCount: snap.healthyCount ?? 0,
     // Older publishers omit it; the global minimum can only be stricter than the truth.
     minHealthyVenues: snap.minHealthyVenues ?? MIN_HEALTHY_VENUES,
+    ...(untradeable ? { untradeable } : {}),
   };
 }
 
@@ -55,6 +68,7 @@ export function isTriggerPending(triggerBlock, headBlock, triggerTimeout) {
  * @param {`0x${string}`} opts.tradingAddress
  * @param {string} opts.publisherBaseUrl
  * @param {typeof fetch} [opts.fetchImpl]
+ * @param {number} [opts.statusTimeoutMs]
  */
 export function createChainReader({
   publicClient,
@@ -64,6 +78,7 @@ export function createChainReader({
   tradingAddress,
   publisherBaseUrl,
   fetchImpl = fetch,
+  statusTimeoutMs = DEFAULT_STATUS_TIMEOUT_MS,
 }) {
   const feedCache = new Map(); // pairIndex -> feed name
   const read = (address, abi, functionName, args = []) => publicClient.readContract({ address, abi, functionName, args });
@@ -82,7 +97,8 @@ export function createChainReader({
 
   /** One /status fetch per sweep; quotes for any pair resolve against it. */
   async function readPriceSnapshot() {
-    const res = await fetchImpl(new URL('/status', publisherBaseUrl));
+    // The signal also bounds reading the body, not just the headers.
+    const res = await fetchImpl(new URL('/status', publisherBaseUrl), { signal: AbortSignal.timeout(statusTimeoutMs) });
     if (!res.ok) throw new Error(`publisher /status returned ${res.status}`);
     const { feeds } = await res.json();
     return {

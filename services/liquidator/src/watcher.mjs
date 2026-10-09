@@ -1,8 +1,9 @@
 /**
  * Chain liveness polling for the sequencer monitor.
  *
- * Polls the current block number on an interval and feeds the sequencer-liveness
- * monitor (design spec §6.5). A head that moves backward is reported through `onReorg`
+ * Polls the latest block (number and timestamp) on an interval and feeds the
+ * sequencer-liveness monitor (design spec §6.5); the monitor judges stalls by the chain's
+ * own timestamps. A head that moves backward is reported through `onReorg`
  * for logging; it needs no cleanup, because candidates are re-read from the indexer
  * every sweep and every slot is re-read from chain before a trigger.
  *
@@ -12,35 +13,36 @@
  * endpoint returned.
  *
  * @param {object} opts
- * @param {{ url: string, getBlockNumber: () => Promise<bigint> }[]} opts.endpoints
+ * @param {{ url: string, getHead: () => Promise<{ number: bigint, timestamp: bigint }> }[]} opts.endpoints
  * @param {{ observe: Function, observeFailure: Function }} opts.sequencerMonitor
  * @param {number} [opts.intervalMs]
  * @param {(url: string, ok: boolean) => void} [opts.onEndpointResult]
  * @param {(blockNumber: bigint) => void} [opts.onReorg] head moved backward to `blockNumber`
+ * @param {(head: { number: bigint, timestamp: bigint }) => void} [opts.onHead] every head used for liveness
  * @returns {() => void} stop
  */
-export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000, onEndpointResult = () => {}, onReorg = () => {} }) {
+export function watchLiveness({ endpoints, sequencerMonitor, intervalMs = 2_000, onEndpointResult = () => {}, onReorg = () => {}, onHead = () => {} }) {
   if (!endpoints?.length) throw new Error('watchLiveness: at least one endpoint is required');
   let highestSeen = null;
   let stopped = false;
 
   async function tick() {
     if (stopped) return;
-    const results = await Promise.allSettled(endpoints.map((e) => e.getBlockNumber()));
+    const results = await Promise.allSettled(endpoints.map((e) => e.getHead()));
     let head = null;
     results.forEach((r, i) => {
       onEndpointResult(endpoints[i].url, r.status === 'fulfilled');
-      if (r.status === 'fulfilled' && (head === null || r.value > head)) head = r.value;
+      if (r.status === 'fulfilled' && (head === null || r.value.number > head.number)) head = r.value;
     });
     if (head === null) {
-      // Every endpoint failed. That is "no new block observed": the monitor's gap clock
-      // keeps running, so a total RPC outage reaches STALLED instead of freezing the
-      // last known state.
+      // Every endpoint failed. That is our connectivity, not the sequencer: the monitor
+      // ignores it (see sequencerLiveness.mjs), and per-endpoint health is on /metrics.
       sequencerMonitor.observeFailure({ nowMs: Date.now() });
     } else {
-      if (highestSeen !== null && head < highestSeen) onReorg(head);
-      if (highestSeen === null || head > highestSeen) highestSeen = head;
-      sequencerMonitor.observe({ nowMs: Date.now(), blockNumber: head });
+      if (highestSeen !== null && head.number < highestSeen) onReorg(head.number);
+      if (highestSeen === null || head.number > highestSeen) highestSeen = head.number;
+      sequencerMonitor.observe({ nowMs: Date.now(), blockNumber: head.number, blockTimestamp: head.timestamp });
+      onHead(head);
     }
     if (!stopped) setTimeout(tick, intervalMs);
   }

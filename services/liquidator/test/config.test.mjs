@@ -22,7 +22,16 @@ test('defaults: addresses from the deployment, safe local bind, spec batch/coold
   assert.equal(c.instanceName, 'automation-bot');
   assert.equal(c.maxBatchSize, 20);
   assert.equal(c.triggerCooldownMs, 30_000);
-  assert.equal(c.liquidateWhenDegraded, true);
+  assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [10, 4, 16]);
+  assert.equal(c.maxOpenBackoffMs, 900_000);
+  assert.deepEqual([c.dbConnectTimeoutMs, c.dbStatementTimeoutMs], [3_000, 5_000]);
+  assert.equal(c.healthMaxSweepAgeMs, 60_000);
+  assert.equal(c.maxIndexerLagSec, 30);
+  assert.equal(c.minGasBalanceWei, 10n ** 16n);
+  assert.deepEqual([c.instanceIndex, c.instanceCount, c.takeoverMs], [0, 1, 10_000], 'one instance owns every trigger');
+  assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [30_000, 300_000], 'a recovery window of minutes, not an hour');
+  assert.equal(c.receiptTimeoutMs, 4_000, 'seconds, not the shared 30 s: a trigger expires 10 s after its timestamp');
+  assert.equal(c.liquidateWhenDegraded, false, 'never liquidate on an under-confirmed price unless opted in (degradedMode.mjs)');
   assert.equal(c.metricsHost, '127.0.0.1');
   assert.deepEqual(c.rpcUrls, ['https://rpc.testnet.whitechain.io']);
 });
@@ -53,6 +62,18 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
       LIQUIDATOR_RPC_URLS: 'http://a:1, http://b:2,',
       LIQUIDATOR_MAX_BATCH_SIZE: '5',
       LIQUIDATOR_TRIGGER_COOLDOWN_MS: '45000',
+      LIQUIDATOR_RECEIPT_TIMEOUT_MS: '2500',
+      LIQUIDATOR_REPORT_MAX_AGE_SEC: '20',
+      LIQUIDATOR_DELIVERY_MARGIN_SEC: '5',
+      LIQUIDATOR_EVALUATION_CONCURRENCY: '8',
+      LIQUIDATOR_OPEN_BACKOFF_MAX_MS: '60000',
+      LIQUIDATOR_DB_CONNECT_TIMEOUT_MS: '1000',
+      LIQUIDATOR_HEALTH_MAX_SWEEP_AGE_MS: '30000',
+      LIQUIDATOR_MAX_INDEXER_LAG_SEC: '90',
+      LIQUIDATOR_MIN_GAS_BALANCE_WEI: '123456789012345678901',
+      LIQUIDATOR_DB_STATEMENT_TIMEOUT_MS: '2000',
+      LIQUIDATOR_SEQUENCER_STALL_THRESHOLD_MS: '20000',
+      LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS: '120000',
       LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: 'true',
     },
     { deployment: DEPLOYMENT },
@@ -62,6 +83,17 @@ test('env overrides, including a comma list of RPC urls with spaces', () => {
   assert.deepEqual(c.rpcUrls, ['http://a:1', 'http://b:2']);
   assert.equal(c.maxBatchSize, 5);
   assert.equal(c.triggerCooldownMs, 45_000);
+  assert.equal(c.receiptTimeoutMs, 2_500);
+  assert.deepEqual([c.reportMaxAgeSec, c.deliveryMarginSec, c.evaluationConcurrency], [20, 5, 8]);
+  assert.equal(c.maxOpenBackoffMs, 60_000);
+  assert.deepEqual([c.dbConnectTimeoutMs, c.dbStatementTimeoutMs], [1_000, 2_000]);
+  assert.equal(c.healthMaxSweepAgeMs, 30_000);
+  assert.equal(c.maxIndexerLagSec, 90);
+  assert.equal(c.minGasBalanceWei, 123456789012345678901n);
+  assert.equal(describeConfig(c).minGasBalanceWei, '123456789012345678901', 'printable as JSON');
+  assert.doesNotThrow(() => JSON.stringify(describeConfig(c)));
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_MIN_GAS_BALANCE_WEI: '0.5' }, { deployment: DEPLOYMENT }), /integer amount of wei/);
+  assert.deepEqual([c.sequencerStallThresholdMs, c.sequencerRecoveryWindowMs], [20_000, 120_000]);
   assert.equal(c.liquidateWhenDegraded, true);
 });
 
@@ -88,6 +120,15 @@ test('invalid numbers and booleans are rejected, not coerced', () => {
   }
   assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: 'maybe' }, { deployment: DEPLOYMENT }), /must be true or false/);
   assert.equal(loadConfig({ ...ENV, LIQUIDATOR_LIQUIDATE_WHEN_DEGRADED: '0' }, { deployment: DEPLOYMENT }).liquidateWhenDegraded, false);
+});
+
+test('two instances split the triggers: index below count, both validated', () => {
+  const two = loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '1', LIQUIDATOR_INSTANCE_COUNT: '2', LIQUIDATOR_TAKEOVER_MS: '6000' }, { deployment: DEPLOYMENT });
+  assert.deepEqual([two.instanceIndex, two.instanceCount, two.takeoverMs], [1, 2, 6_000]);
+  assert.equal(loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '0', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }).instanceIndex, 0);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '2', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }), /INSTANCE_INDEX \(2\) must be below/);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_INDEX: '-1', LIQUIDATOR_INSTANCE_COUNT: '2' }, { deployment: DEPLOYMENT }), /non-negative integer/);
+  assert.throws(() => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_COUNT: '0' }, { deployment: DEPLOYMENT }), /positive integer/);
 });
 
 test('describeConfig never prints the database password', () => {

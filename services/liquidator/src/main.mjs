@@ -15,7 +15,7 @@ import pg from 'pg';
 import { loadConfig, describeConfig, loadForwarderKey } from './config.mjs';
 import { createClients, createEndpointProbes, endpointLabel } from './rpc.mjs';
 import { createChainReader } from './chainReader.mjs';
-import { createCandidateSource, pgQuery } from './candidateSource.mjs';
+import { createCandidateSource, pgQuery, pgPoolOptions } from './candidateSource.mjs';
 import { createSequencerMonitor } from './sequencerLiveness.mjs';
 import { createAutomationEngine } from './automationEngine.mjs';
 import { createLiquidatorMetrics } from './metrics.mjs';
@@ -25,6 +25,7 @@ import { createTxSender } from './txSender.mjs';
 import { watchLiveness } from './watcher.mjs';
 import { createSweepLoop } from './sweepLoop.mjs';
 import { createShutdown } from './lifecycle.mjs';
+import { createIndexerLagCheck } from './indexerLag.mjs';
 
 async function main() {
   const config = loadConfig();
@@ -42,9 +43,12 @@ async function main() {
   log(`forwarder=${account.address}`);
 
   const metrics = createLiquidatorMetrics();
-  const sequencerMonitor = createSequencerMonitor();
+  const sequencerMonitor = createSequencerMonitor({
+    stallThresholdMs: config.sequencerStallThresholdMs,
+    recoveryWindowMs: config.sequencerRecoveryWindowMs,
+  });
   const deadLetter = createDeadLetterStore({ filePath: config.deadLetterFilePath ?? undefined });
-  const pool = new pg.Pool({ connectionString: config.databaseUrl, max: 2 });
+  const pool = new pg.Pool(pgPoolOptions(config));
   pool.on('error', (err) => logError('postgres pool error:', err.message));
 
   const chainReader = createChainReader({
@@ -57,7 +61,8 @@ async function main() {
   });
   const candidates = createCandidateSource({ query: pgQuery(pool), schema: config.databaseSchema });
 
-  // The only way this service sends a transaction: the shared serial-nonce sender.
+  // The only way this service sends a transaction: the shared per-key nonce sender, pipelined
+  // and deadline-aware (see txSender.mjs).
   const txSender = createTxSender({
     publicClient,
     walletClient,
@@ -65,6 +70,7 @@ async function main() {
     tradesUpKeepAddress: config.tradesUpKeepAddress,
     deadLetter,
     maxRetries: config.maxRetries,
+    receiptTimeoutMs: config.receiptTimeoutMs,
     registry: metrics.registry,
   });
   const sendPerformUpkeep = (payload) => txSender.sendPerformUpkeep(payload);
@@ -83,18 +89,44 @@ async function main() {
     sendPerformUpkeep,
     maxBatchSize: config.maxBatchSize,
     cooldownMs: config.triggerCooldownMs,
+    reportMaxAgeSec: config.reportMaxAgeSec,
+    deliveryMarginSec: config.deliveryMarginSec,
+    evaluationConcurrency: config.evaluationConcurrency,
+    maxOpenBackoffMs: config.maxOpenBackoffMs,
+    instanceIndex: config.instanceIndex,
+    instanceCount: config.instanceCount,
+    takeoverMs: config.takeoverMs,
+    readGasBalance: () => publicClient.getBalance({ address: account.address }),
+    minGasBalanceWei: config.minGasBalanceWei,
     liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });
 
-  const healthServer = createHealthServerApp(metrics);
+  let lastSweepCompletedAt = null;
+  const healthServer = createHealthServerApp(metrics, {
+    lastSweepCompletedAt: () => lastSweepCompletedAt,
+    maxSweepAgeMs: config.healthMaxSweepAgeMs,
+  });
   healthServer.listen(config.metricsPort, config.metricsHost, () => log(`health/metrics on ${config.metricsHost}:${config.metricsPort}`));
+
+  let latestHead = null;
+  const indexerLag = createIndexerLagCheck({
+    readSyncStatus: () => candidates.readSyncStatus(config.chainId),
+    latestHead: () => latestHead,
+    metrics,
+    warn: (m) => logError(m),
+    info: (m) => log(m),
+    maxLagSec: config.maxIndexerLagSec,
+  });
 
   const stopLiveness = watchLiveness({
     endpoints: createEndpointProbes(config.rpcUrls),
     sequencerMonitor,
     intervalMs: config.pollingIntervalMs,
     onEndpointResult: (url, ok) => metrics.setRpcHealth(endpointLabel(url), ok),
+    onHead: (head) => {
+      latestHead = head;
+    },
   });
 
   let warnedNoLimitTable = false;
@@ -103,8 +135,13 @@ async function main() {
     sweep: async () => {
       metrics.setSequencerState(sequencerMonitor.state);
       metrics.deadLetterDepth.set(deadLetter.size());
-      const { results, sent, error } = await engine.sweep();
-      if (error) logError('sweep:', error);
+      // Observability only: a failed lag read must not cost the sweep.
+      await indexerLag.check().catch((err) => logError('indexer lag check:', err?.message ?? err));
+      const { results, sent, error, warning } = await engine.sweep();
+      lastSweepCompletedAt = Date.now();
+      if (error?.startsWith('gas_low')) logError(`!!! FORWARDER ${account.address} OUT OF GAS — top it up !!!`, error);
+      else if (error) logError('sweep:', error);
+      if (warning) logError('sweep:', warning);
       if (metrics.limitOrderTableAvailable.value() === 0 && !warnedNoLimitTable) {
         warnedNoLimitTable = true;
         logError('indexer has no limit_order table yet: LIMIT/STOP entries are not automated until it does');
@@ -113,7 +150,7 @@ async function main() {
         if (r.action === 'error') logError(`candidate ${r.candidate.trader}/${r.candidate.pairIndex}/${r.candidate.index}:`, r.reason);
       }
       for (const s of sent) {
-        log(`performUpkeep ${s.ok ? 'ok' : 'FAILED'} [${s.keys.join(', ')}]${s.hash ? ` ${s.hash}` : ''}${s.reason ? ` ${s.reason}` : ''}`);
+        log(`performUpkeep ${s.ok ? 'ok' : s.expired ? 'EXPIRED' : 'FAILED'} ts=${s.timestamp} [${s.keys.join(', ')}]${s.hash ? ` ${s.hash}` : ''}${s.reason ? ` ${s.reason}` : ''}`);
       }
     },
     onError: (err) => logError('sweep failed:', err?.message ?? err),
