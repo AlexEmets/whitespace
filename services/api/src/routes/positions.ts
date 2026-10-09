@@ -1,7 +1,7 @@
 import { query } from '../db.js';
 import { price, collateral, leverage as fmtLeverage, id as fmtId, percent6 } from '../format.js';
 import type { RouteResult, Handler } from '../router.js';
-import { parseAddress, badRequest } from '../validate.js';
+import { parseAddress, parseLimit, badRequest } from '../validate.js';
 
 type PositionRow = {
   pair_index: number;
@@ -76,21 +76,34 @@ type ClosedPositionRow = {
 // full), all with the same tradeId; closeOrderId is the unique key. For a partial row,
 // `collateral` is the part closed and tp/sl are null (the trade's own tp/sl live on the
 // open position).
-export const handlePositionsHistory: Handler = async (_req, params): Promise<RouteResult> => {
+//
+// `?limit=` (default POSITION_HISTORY_DEFAULT_LIMIT, at most POSITION_HISTORY_MAX_LIMIT)
+// bounds the response: it was every close the wallet ever made, read, sorted and
+// serialised on each request, so one busy (or bot) wallet made the route arbitrarily
+// expensive. Each branch of the union is limited too, so neither table is read in full.
+export const POSITION_HISTORY_DEFAULT_LIMIT = 500;
+export const POSITION_HISTORY_MAX_LIMIT = 1000;
+
+export const handlePositionsHistory: Handler = async (_req, params, searchParams): Promise<RouteResult> => {
   const trader = parseAddress(params.address);
   if (!trader) return badRequest('invalid address');
+  const limit = parseLimit(searchParams, POSITION_HISTORY_DEFAULT_LIMIT, POSITION_HISTORY_MAX_LIMIT);
+  if (limit === null) return badRequest(`limit must be an integer between 1 and ${POSITION_HISTORY_MAX_LIMIT}`);
   const rows = await query<ClosedPositionRow>(
-    `SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
-            tp::text, sl::text, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
-            usdc_sent_to_trader::text, close_order_id::text, close_tx_hash, percentage_closed, false AS is_partial
-       FROM closed_position WHERE trader = $1
+    `(SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
+             tp::text, sl::text, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
+             usdc_sent_to_trader::text, close_order_id::text, close_tx_hash, percentage_closed, false AS is_partial
+        FROM closed_position WHERE trader = $1
+        ORDER BY closed_at DESC, close_order_id DESC LIMIT $2)
      UNION ALL
-     SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
-            NULL, NULL, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
-            usdc_sent_to_trader::text, order_id::text, close_tx_hash, percentage_closed, true
-       FROM partial_close WHERE trader = $1
-     ORDER BY closed_at DESC, close_order_id DESC`,
-    [trader],
+     (SELECT pair_index, index, buy, collateral::text, leverage, open_price::text, close_price::text,
+             NULL, NULL, trade_id::text, opened_at, closed_at, close_reason, percent_profit::text,
+             usdc_sent_to_trader::text, order_id::text, close_tx_hash, percentage_closed, true
+        FROM partial_close WHERE trader = $1
+        ORDER BY closed_at DESC, order_id DESC LIMIT $2)
+     ORDER BY closed_at DESC, close_order_id DESC
+     LIMIT $2`,
+    [trader, limit],
   );
   return {
     code: 200,

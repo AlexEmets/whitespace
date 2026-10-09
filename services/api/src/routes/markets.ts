@@ -56,7 +56,11 @@ type CandleRow = {
   volume: string;
 };
 
-const DEFAULT_CANDLE_LIMIT = 500;
+/** Candles returned when the caller gives no range. */
+export const DEFAULT_CANDLE_LIMIT = 500;
+/** Hard cap on one response, whatever the range. The chart asks for two days, which is
+ * 2880 one-minute candles; anything wider gets the most recent MAX_CANDLE_LIMIT of it. */
+export const MAX_CANDLE_LIMIT = 5000;
 
 export const handleCandles: Handler = async (_req, params, searchParams) => {
   const pairIndex = Number(params.pairIndex);
@@ -84,21 +88,19 @@ export const handleCandles: Handler = async (_req, params, searchParams) => {
   // The fallback is not dead code: on a database that has never run the recorder (a fresh
   // clone, or the API started while the publisher was down) the on-chain series is all
   // there is, and a sparse chart beats an empty one.
-  let rows: CandleRow[] = await readIndexCandles(pairIndex, interval, from, to);
+  //
+  // Both sources are bounded the same way: the most recent `limit` candles in the range,
+  // oldest first. Without a range the index read was "since epoch", i.e. the whole series.
+  const ranged = fromParam !== null || toParam !== null;
+  const limit = ranged ? MAX_CANDLE_LIMIT : DEFAULT_CANDLE_LIMIT;
+  let rows: CandleRow[] = await readIndexCandles(pairIndex, interval, from, to, limit);
 
   if (rows.length === 0) {
-    if (fromParam !== null || toParam !== null) {
-      rows = await query<CandleRow>(
-        'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 AND bucket_start >= $3 AND bucket_start <= $4 ORDER BY bucket_start ASC',
-        [pairIndex, interval, from, to],
-      );
-    } else {
-      rows = await query<CandleRow>(
-        'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 ORDER BY bucket_start DESC LIMIT $3',
-        [pairIndex, interval, DEFAULT_CANDLE_LIMIT],
-      );
-      rows.reverse();
-    }
+    rows = await query<CandleRow>(
+      'SELECT bucket_start, open, high, low, close, volume FROM candle WHERE pair_index = $1 AND interval = $2 AND bucket_start >= $3 AND bucket_start <= $4 ORDER BY bucket_start DESC LIMIT $5',
+      [pairIndex, interval, from, to, limit],
+    );
+    rows.reverse();
   }
 
   return {
