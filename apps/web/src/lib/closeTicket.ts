@@ -5,6 +5,9 @@
  * grain and the dialog shows what that share actually closes.
  */
 
+import type { LadderInputs } from './priceImpact';
+import { quoteForNotional, slippageBpsToCover } from './quote';
+
 /** A full close, in the contract's PRECISION_2 percent. */
 export const FULL_SHARE = 10_000;
 
@@ -65,4 +68,27 @@ export function maxPartialShare(p: MinPositionInputs): number {
 /** That share of an unrealised PnL estimate — what closing it would realise, before fees. */
 export function pnlForShare(pnlRaw: bigint, share: number): bigint {
   return (pnlRaw * BigInt(share)) / BigInt(FULL_SHARE);
+}
+
+/**
+ * Slippage, in bps, for a market close of `share` of the position.
+ *
+ * The callback checks the fill AFTER spread and impact against `wantedPrice ± slippage`
+ * (OstiumTradingCallbacks.closeTradeMarketCallback), and a close cancelled for SLIPPAGE is not
+ * free: it charges an oracle-fee bond from the position. Closing at the mark with a flat 0.5%
+ * cancelled any close whose half-spread plus impact was wider than that. The open path already
+ * sizes its tolerance to the quote; this does the same for the closing side — a long closes by
+ * selling, so it is quoted at the sell price for the notional being closed.
+ *
+ * With no quote to go on, `baseBps` is returned unchanged.
+ */
+export function closeSlippageBps(
+  inputs: LadderInputs | null,
+  p: { buy: boolean; collateralRaw: bigint; leverageRaw: bigint; share: number },
+  baseBps: bigint,
+): bigint {
+  if (!inputs) return baseBps;
+  const notionalRaw = (p.collateralRaw * BigInt(p.share) * p.leverageRaw) / BigInt(FULL_SHARE) / 100n;
+  const cover = slippageBpsToCover(quoteForNotional(inputs, notionalRaw), !p.buy);
+  return baseBps > cover ? baseBps : cover + 1n;
 }

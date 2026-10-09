@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FULL_SHARE,
+  closeSlippageBps,
   closeSizeForShare,
   leavesTooLittle,
   maxPartialShare,
@@ -80,5 +81,42 @@ describe('pnlForShare', () => {
   it('is that share of the unrealised PnL', () => {
     expect(pnlForShare(10_000000n, 2500)).toBe(2_500000n);
     expect(pnlForShare(-4_000000n, 5000)).toBe(-2_000000n);
+  });
+});
+
+describe('closeSlippageBps', () => {
+  const M = 100n * E18;
+  const inputs = (bid: bigint, ask: bigint) => ({
+    netVolThreshold: 0n,
+    decayRate: 0n,
+    priceImpactK: 0n,
+    buyVolume: 0n,
+    sellVolume: 0n,
+    lastUpdateTimestamp: 0n,
+    blockTimestamp: 0n,
+    price: M,
+    askPrice: ask,
+    bidPrice: bid,
+  });
+  const LONG = { buy: true, collateralRaw: 1_000_000000n, leverageRaw: 1000n, share: FULL_SHARE };
+
+  it('keeps the base tolerance when there is no quote', () => {
+    expect(closeSlippageBps(null, LONG, 50n)).toBe(50n);
+  });
+
+  it('keeps the base tolerance when the closing side fills inside it', () => {
+    expect(closeSlippageBps(inputs(M - M / 1000n, M + M / 1000n), LONG, 50n)).toBe(50n); // 0.1% half-spread
+  });
+
+  // A long closes by selling: at a bid 1% under the mark, 0.5% would cancel the close for
+  // SLIPPAGE and charge the bond. The tolerance must cover the quoted fill.
+  it('widens to cover a long close at the bid', () => {
+    expect(closeSlippageBps(inputs(M - M / 100n, M), LONG, 50n)).toBe(101n);
+  });
+
+  it('quotes a short close on the ask side, not the bid', () => {
+    const short = { ...LONG, buy: false };
+    expect(closeSlippageBps(inputs(M - M / 100n, M + M / 50n), short, 50n)).toBe(201n);
+    expect(closeSlippageBps(inputs(M - M / 100n, M), short, 50n)).toBe(50n);
   });
 });

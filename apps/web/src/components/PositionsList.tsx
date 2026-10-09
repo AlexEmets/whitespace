@@ -9,10 +9,12 @@ import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarkets } from '@/hooks/useMarkets';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
+import { useQuoteInputs } from '@/hooks/useQuote';
 import { useTradingActions } from '@/hooks/useTradingActions';
 import { CALLBACKS_ABI, PAIR_INFOS_ABI, TRADING_STORAGE_ABI } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { CALLBACKS_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
+import { closeSlippageBps } from '@/lib/closeTicket';
 import { marketLabel } from '@/lib/markets';
 import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import { updateSlError, updateTpError } from '@/lib/orderRules';
@@ -230,6 +232,10 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
       ? marginUsagePercent({ buy: position.buy, entry: priceToRaw(position.openPrice), mark: markRaw, liq: liqPrice })
       : null;
 
+  const { inputs: quoteInputs } = useQuoteInputs(position.pairIndex);
+  const slippageForShare = (share: number) =>
+    closeSlippageBps(quoteInputs, { buy: position.buy, collateralRaw, leverageRaw, share }, DEFAULT_SLIPPAGE_BPS);
+
   /** `share` is the contract's PRECISION_2 percent, 10000 for all of it. Errors are shown
    * in the dialog, which stays open for them; a declined signature just leaves it open. */
   async function submitClose(share: number): Promise<CloseOutcome> {
@@ -240,7 +246,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
         index: position.index,
         closePercentage: share,
         marketPriceRaw: priceToRaw(price.mark),
-        slippageBps: DEFAULT_SLIPPAGE_BPS,
+        slippageBps: slippageForShare(share),
       });
       setCloseRequested(true);
       return { done: true };
@@ -327,6 +333,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
             pnlRaw={pnl}
             canClose={Boolean(price)}
             onConfirm={submitClose}
+            slippageBpsForShare={slippageForShare}
           />
         </td>
       </tr>

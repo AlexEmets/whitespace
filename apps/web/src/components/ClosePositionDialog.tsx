@@ -67,6 +67,7 @@ export function ClosePositionDialog({
   pnlRaw,
   canClose,
   onConfirm,
+  slippageBpsForShare,
 }: {
   open: boolean;
   onClose: () => void;
@@ -81,6 +82,8 @@ export function ClosePositionDialog({
   /** False while there is no live price to close against. */
   canClose: boolean;
   onConfirm: (share: number) => Promise<CloseOutcome>;
+  /** The tolerance the close for a share will be sent with; defaults to the flat setting. */
+  slippageBpsForShare?: (share: number) => bigint;
 }) {
   const [share, setShare] = useState<number | null>(FULL_SHARE);
   const [amountText, setAmountText] = useState('');
@@ -226,7 +229,10 @@ export function ClosePositionDialog({
           </div>
           <div>
             <dt>Order type</dt>
-            <dd>Market · ≤ {formatMoney(DEFAULT_SLIPPAGE_BPS, 2)}% slippage</dd>
+            <dd data-testid="close-slippage">
+              Market · ≤ {formatMoney(share !== null && slippageBpsForShare ? slippageBpsForShare(share) : DEFAULT_SLIPPAGE_BPS, 2)}%
+              slippage
+            </dd>
           </div>
         </dl>
         <p className={styles.note}>

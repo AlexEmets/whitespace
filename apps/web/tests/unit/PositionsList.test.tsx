@@ -94,6 +94,9 @@ vi.mock('@/hooks/usePrice', () => ({
   }),
 }));
 
+let quoteInputsState: Record<string, bigint> | null = null;
+vi.mock('@/hooks/useQuote', () => ({ useQuoteInputs: () => ({ inputs: quoteInputsState, unavailable: [], loading: false }) }));
+
 vi.mock('@/hooks/useCloseTrade', () => ({
   useCloseTrade: () => ({ closeTrade: closeTradeMock, isPending: false }),
   FULL_CLOSE_PERCENT: 10000,
@@ -104,6 +107,7 @@ beforeEach(() => {
   Object.values(actions).forEach((f) => typeof f === 'function' && (f as ReturnType<typeof vi.fn>).mockClear());
   approveMock.mockClear();
   allowance = 10_000_000_000n;
+  quoteInputsState = null;
 });
 
 describe('<PositionsList>', () => {
@@ -274,6 +278,23 @@ describe('<PositionsList>', () => {
     });
     expect(await screen.findByTestId('close-pending')).toHaveTextContent(/pending keeper execution/i);
     expect(screen.queryByTestId('close-dialog')).not.toBeInTheDocument();
+  });
+
+  // A 1% half-spread under the 110.00 mark: closing the long sells at ~108.90, outside a
+  // flat 0.5%. The close must go out with a tolerance that covers the quoted fill, and the
+  // dialog must show that tolerance rather than the flat one.
+  it('sends a close with a tolerance that covers the quoted closing price', async () => {
+    const M = 110n * 10n ** 18n;
+    quoteInputsState = {
+      netVolThreshold: 0n, decayRate: 0n, priceImpactK: 0n, buyVolume: 0n, sellVolume: 0n,
+      lastUpdateTimestamp: 0n, blockTimestamp: 0n, price: M, askPrice: M, bidPrice: M - M / 100n,
+    };
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    expect(screen.getByTestId('close-slippage')).toHaveTextContent('1.01%');
+    fireEvent.click(screen.getByTestId('close-confirm'));
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
+    expect(closeTradeMock.mock.calls[0]![0]).toMatchObject({ slippageBps: 101n });
   });
 
   it('closes the quick size picked in the dialog', async () => {
