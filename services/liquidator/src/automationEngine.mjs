@@ -57,6 +57,12 @@
  * over if the trigger is still hit and still not pending on chain takeoverMs after it first
  * saw it so — the owner is down, out of gas or stuck. A single instance owns everything.
  *
+ * Gas self-check: before sending, the forwarder's balance is read and published. Below
+ * minGasBalanceWei nothing is sent and the sweep reports `gas_low`: transactions that would
+ * fail for want of gas only burn the deadline, while the triggers left unsent (not pending
+ * on chain) are exactly what the other instance takes over. A failed balance read does not
+ * stop sending — an RPC blip must not silence the bot.
+ *
  * Batch isolation: executeAutomationOrder can revert (pair delisted, trading done) and a
  * revert of one entry reverts the whole batch. When a multi-trigger batch REVERTS (mined,
  * or refused by estimateGas), its keys are marked isolated and go out one per transaction
@@ -81,6 +87,9 @@ export const DEFAULT_REPORT_MAX_AGE_SEC = 10;
 export const DEFAULT_DELIVERY_MARGIN_SEC = 4;
 /** Candidate evaluations in flight at once. Each one costs a handful of eth_calls. */
 export const DEFAULT_EVALUATION_CONCURRENCY = 16;
+/** Below this the forwarder stops sending: a few batches' worth on 1874's gas prices. */
+export const DEFAULT_MIN_GAS_BALANCE_WEI = 10n ** 16n; // 0.01 WBT
+
 /** Ceiling of the entry backoff: a cancelled entry is retried at least this often. */
 export const DEFAULT_OPEN_BACKOFF_MAX_MS = 15 * 60_000;
 /** How long a non-owner waits on a hit, not-pending trigger before sending it itself: a
@@ -155,6 +164,8 @@ export async function mapLimit(items, limit, fn) {
  * @param {number} [deps.instanceIndex] this instance, 0-based
  * @param {number} [deps.instanceCount] instances splitting the triggers
  * @param {number} [deps.takeoverMs]
+ * @param {() => Promise<bigint>} [deps.readGasBalance] the forwarder's native balance, wei
+ * @param {bigint} [deps.minGasBalanceWei]
  * @param {boolean} [deps.liquidateWhenDegraded]
  * @param {object} [deps.metrics] see metrics.mjs
  */
@@ -180,6 +191,8 @@ export function createAutomationEngine({
   instanceIndex = 0,
   instanceCount = 1,
   takeoverMs = DEFAULT_TAKEOVER_MS,
+  readGasBalance = null,
+  minGasBalanceWei = DEFAULT_MIN_GAS_BALANCE_WEI,
   liquidateWhenDegraded = false,
   metrics = {},
 }) {
@@ -400,8 +413,28 @@ export function createAutomationEngine({
     for (const key of waitingSince.keys()) if (!stillWaiting.has(key)) waitingSince.delete(key);
 
     metrics.positionsBelowMaintenance?.set(belowMaintenance);
+
+    const gas = await checkGas();
+    if (!gas.ok) {
+      if (triggers.size > 0) metrics.sweepErrors?.inc(1, { stage: 'gas' });
+      return { results, sent: [], error: `gas_low: forwarder balance ${gas.balance} wei is below ${minGasBalanceWei}; ${triggers.size} trigger(s) left to the other instance` };
+    }
     const sent = await sendTriggers([...triggers.values()]);
-    return { results, sent };
+    return { results, sent, ...(gas.error ? { warning: `gas balance unknown: ${gas.error}` } : {}) };
+  }
+
+  async function checkGas() {
+    if (!readGasBalance) return { ok: true };
+    let balance;
+    try {
+      balance = BigInt(await readGasBalance());
+    } catch (err) {
+      return { ok: true, error: err?.message ?? String(err) };
+    }
+    metrics.forwarderBalance?.set(Number(balance) / 1e18);
+    const low = balance < minGasBalanceWei;
+    metrics.gasLow?.set(low ? 1 : 0);
+    return { ok: !low, balance };
   }
 
   function toBatches(list) {

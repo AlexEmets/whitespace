@@ -703,6 +703,41 @@ test('rejects an instance index outside [0, instanceCount)', () => {
   assert.throws(() => world({ deps: { instanceIndex: 0, instanceCount: 0 } }), /instanceIndex/);
 });
 
+// ---------------------------------------------------------------- gas self-check
+
+test('below the minimum gas balance nothing is sent, loudly, and the triggers stay free for the other instance', async () => {
+  const gas = { balance: 10n ** 16n - 1n };
+  // (one wei short of the minimum)
+  const { w, engine, metrics } = world({ price: LIQ_PRICE, deps: { readGasBalance: async () => gas.balance, minGasBalanceWei: 10n ** 16n } });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+
+  const r = await engine.sweep();
+  assert.equal(w.sends.length, 0);
+  assert.deepEqual(r.sent, []);
+  assert.match(r.error, /^gas_low: forwarder balance 9999999999999999 wei is below 10000000000000000; 1 trigger/);
+  assert.equal(metrics.gasLow.value(), 1);
+  assert.ok(Math.abs(metrics.forwarderBalance.value() - 0.01) < 1e-12, 'published in WBT');
+  assert.equal(engine.isCoolingDown(triggerKey(A, 0, 0, 'LIQ')), false, 'not cooled down: nothing went out');
+
+  // Topped up to exactly the minimum: sends again at once.
+  gas.balance = 10n ** 16n;
+  w.now += 1_000;
+  const r2 = await engine.sweep();
+  assert.equal(r2.error, undefined);
+  assert.equal(w.sends.length, 1);
+  assert.equal(metrics.gasLow.value(), 0);
+});
+
+test('a failed balance read does not stop sending', async () => {
+  const { w, engine } = world({ price: LIQ_PRICE, deps: { readGasBalance: async () => Promise.reject(new Error('rpc down')) } });
+  w.positions = [pos(A, 0)];
+  w.trades[`${A}-0-0`] = { ...TRADE };
+  const r = await engine.sweep();
+  assert.equal(w.sends.length, 1);
+  assert.equal(r.warning, 'gas balance unknown: rpc down');
+});
+
 test('rejects a batch size below 1', () => {
   assert.throws(() => world({ deps: { maxBatchSize: 0 } }), /maxBatchSize/);
 });

@@ -95,6 +95,8 @@ async function main() {
     instanceIndex: config.instanceIndex,
     instanceCount: config.instanceCount,
     takeoverMs: config.takeoverMs,
+    readGasBalance: () => publicClient.getBalance({ address: account.address }),
+    minGasBalanceWei: config.minGasBalanceWei,
     liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });
@@ -119,9 +121,11 @@ async function main() {
     sweep: async () => {
       metrics.setSequencerState(sequencerMonitor.state);
       metrics.deadLetterDepth.set(deadLetter.size());
-      const { results, sent, error } = await engine.sweep();
+      const { results, sent, error, warning } = await engine.sweep();
       lastSweepCompletedAt = Date.now();
-      if (error) logError('sweep:', error);
+      if (error?.startsWith('gas_low')) logError(`!!! FORWARDER ${account.address} OUT OF GAS — top it up !!!`, error);
+      else if (error) logError('sweep:', error);
+      if (warning) logError('sweep:', warning);
       if (metrics.limitOrderTableAvailable.value() === 0 && !warnedNoLimitTable) {
         warnedNoLimitTable = true;
         logError('indexer has no limit_order table yet: LIMIT/STOP entries are not automated until it does');

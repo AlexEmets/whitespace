@@ -21,6 +21,7 @@ import {
   DEFAULT_EVALUATION_CONCURRENCY,
   DEFAULT_OPEN_BACKOFF_MAX_MS,
   DEFAULT_TAKEOVER_MS,
+  DEFAULT_MIN_GAS_BALANCE_WEI,
 } from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
 import { DEFAULT_MAX_SWEEP_AGE_MS } from './healthServer.mjs';
@@ -51,6 +52,13 @@ function nonNegativeInt(env, key, fallback) {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) throw new Error(`loadConfig: ${key} must be a non-negative integer, got ${JSON.stringify(raw)}`);
   return n;
+}
+
+function weiAmount(env, key, fallback) {
+  const raw = env[key];
+  if (raw === undefined || raw === '') return fallback;
+  if (!/^[0-9]+$/.test(raw)) throw new Error(`loadConfig: ${key} must be an integer amount of wei, got ${JSON.stringify(raw)}`);
+  return BigInt(raw);
 }
 
 function bool(env, key, fallback) {
@@ -95,6 +103,7 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     instanceIndex,
     instanceCount,
     takeoverMs: positiveInt(env, 'LIQUIDATOR_TAKEOVER_MS', DEFAULT_TAKEOVER_MS),
+    minGasBalanceWei: weiAmount(env, 'LIQUIDATOR_MIN_GAS_BALANCE_WEI', DEFAULT_MIN_GAS_BALANCE_WEI),
     tradingStorageAddress: requireAddress('LIQUIDATOR_TRADING_STORAGE_ADDRESS', 'tradingStorage'),
     pairInfosAddress: requireAddress('LIQUIDATOR_PAIR_INFOS_ADDRESS', 'pairInfos'),
     pairsStorageAddress: requireAddress('LIQUIDATOR_PAIRS_STORAGE_ADDRESS', 'pairsStorage'),
@@ -142,7 +151,8 @@ export function describeConfig(config) {
   } catch {
     /* keep the placeholder */
   }
-  return { ...config, databaseUrl: db };
+  // JSON.stringify cannot print a bigint.
+  return { ...config, databaseUrl: db, minGasBalanceWei: String(config.minGasBalanceWei) };
 }
 
 /** @param {string} path */

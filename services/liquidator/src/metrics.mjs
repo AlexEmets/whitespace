@@ -32,6 +32,8 @@ export function createLiquidatorMetrics() {
     oracleStalenessMs: registry.gauge('liquidator_oracle_staleness_ms', 'Age of the last successful publisher price snapshot, in milliseconds'),
     sequencerState: registry.gauge('liquidator_sequencer_state', 'Sequencer liveness state (0=LIVE, 1=STALLED, 2=RECOVERING)'),
     rpcHealthy: registry.gauge('liquidator_rpc_healthy', 'RPC endpoint health (1=last probe succeeded, 0=failed)'),
+    forwarderBalance: registry.gauge('liquidator_forwarder_balance', "The forwarder's native balance (WBT) at the last sweep"),
+    gasLow: registry.gauge('liquidator_gas_low', '1 while the forwarder balance is below the minimum and this instance sends nothing'),
     deadLetterDepth: registry.gauge('liquidator_dead_letter_depth', 'Entries currently in the dead-letter queue'),
   };
 
