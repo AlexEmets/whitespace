@@ -7,12 +7,13 @@ import { useCloseTrade } from '@/hooks/useCloseTrade';
 import { useErc20 } from '@/hooks/useErc20';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
+import { useOrders } from '@/hooks/useOrders';
 import { useMarkets } from '@/hooks/useMarkets';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
 import { useQuoteInputs } from '@/hooks/useQuote';
 import { useTradingActions } from '@/hooks/useTradingActions';
-import { CALLBACKS_ABI, PAIR_INFOS_ABI, TRADING_STORAGE_ABI } from '@/lib/abi';
+import { CALLBACKS_ABI, PAIR_INFOS_ABI, TRADING_STORAGE_ABI, explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { CALLBACKS_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { closeSlippageBps } from '@/lib/closeTicket';
@@ -208,7 +209,25 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   const { closeTrade } = useCloseTrade();
   const [closeOpen, setCloseOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
-  const [closeRequested, setCloseRequested] = useState(false);
+  // The close request being followed, by order id. The "pending" note used to be a flag that
+  // was set and never cleared, so after a partial close, or a close cancelled for SLIPPAGE, the
+  // row said "pending keeper execution" forever and never said that the close had failed.
+  const [closeRequested, setCloseRequested] = useState<{ orderId: string | null } | null>(null);
+  const { orders } = useOrders(address);
+  const closeOrder = closeRequested?.orderId ? orders.find((o) => o.orderId === closeRequested.orderId) : undefined;
+  const closeNote: { text: string; failed: boolean } | null =
+    closeRequested === null
+      ? null
+      : closeOrder?.status === 'cancelled'
+        ? {
+            text: `Close cancelled (${closeOrder.cancelReason ?? 'unknown reason'}): ${explainCancelReason(closeOrder.cancelReason ?? '')}`,
+            failed: true,
+          }
+        : closeOrder?.status === 'executed' || closeOrder?.status === 'timeout'
+          ? null
+          : closeOrder?.expired
+            ? { text: 'No keeper report arrived for this close — release the position from Orders.', failed: true }
+            : { text: 'Close requested — pending keeper execution.', failed: false };
 
   const collateralRaw = collateralToRaw(position.collateral);
   const leverageRaw = leverageToRaw(position.leverage);
@@ -277,14 +296,14 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   async function submitClose(share: number): Promise<CloseOutcome> {
     if (!price) return { done: false, error: 'There is no live price to close against right now.' };
     try {
-      await closeTrade({
+      const sent = await closeTrade({
         pairIndex: position.pairIndex,
         index: position.index,
         closePercentage: share,
         marketPriceRaw: priceToRaw(price.mark),
         slippageBps: slippageForShare(share),
       });
-      setCloseRequested(true);
+      setCloseRequested({ orderId: sent.orderId === undefined ? null : sent.orderId.toString() });
       return { done: true };
     } catch (err) {
       return { done: false, error: describeTxError(err) };
@@ -353,10 +372,10 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
               testId={`position-share-${position.pairIndex}-${position.index}`}
             />
           ) : null}
-          {closeRequested ? (
-            <span data-testid="close-pending" role="status">
+          {closeNote ? (
+            <span data-testid="close-pending" role="status" className={closeNote.failed ? 'error-text' : undefined}>
               {' '}
-              Close requested — pending keeper execution.
+              {closeNote.text}
             </span>
           ) : null}
           <ClosePositionDialog

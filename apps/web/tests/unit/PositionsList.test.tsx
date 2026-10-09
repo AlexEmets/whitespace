@@ -4,7 +4,12 @@ import { PositionsList } from '@/components/PositionsList';
 import type { CloseTradeParams } from '@/hooks/useCloseTrade';
 import type { PositionSummary } from '@/lib/types';
 
-const closeTradeMock = vi.fn(async (_params: CloseTradeParams) => ({ hash: '0xclose' as const, receipt: {} }));
+const closeTradeMock = vi.fn(async (_params: CloseTradeParams) => ({
+  hash: '0xclose' as const,
+  receipt: {},
+  orderId: 77n as bigint | undefined,
+}));
+let ordersMock: Record<string, unknown>[] = [];
 
 const openPosition: PositionSummary = {
   pairIndex: 0,
@@ -73,6 +78,8 @@ vi.mock('@/hooks/useErc20', () => ({
 let oracleFeeRaw: bigint | null = 1_000_000n;
 vi.mock('@/hooks/useMarketFees', () => ({ useMarketFees: () => ({ oracleFeeRaw, takerFeeRaw: 0n }) }));
 
+vi.mock('@/hooks/useOrders', () => ({ useOrders: () => ({ orders: ordersMock, error: null, loading: false }) }));
+
 vi.mock('@/hooks/usePositions', () => ({
   usePositions: () => ({ positions: [openPosition], error: null, loading: false, refetch: vi.fn() }),
 }));
@@ -113,6 +120,7 @@ beforeEach(() => {
   quoteInputsState = null;
   oracleFeeRaw = 1_000_000n;
   openPosition.sl = '0';
+  ordersMock = [];
 });
 
 describe('<PositionsList>', () => {
@@ -344,6 +352,40 @@ describe('<PositionsList>', () => {
     fireEvent.click(screen.getByTestId('close-confirm'));
     await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(1));
     expect(closeTradeMock.mock.calls[0]![0]).toMatchObject({ slippageBps: 101n });
+  });
+
+  const closeOrder = (over: Record<string, unknown>) => ({
+    orderId: '77', pairIndex: 0, kind: 'close', buy: true, collateral: '1000.000000', leverage: '10.00', requestedAt: 0,
+    requestedAtBlock: '1', status: 'pending', expired: false, resolvedAt: null, cancelReason: null, tradeId: '7', ...over,
+  });
+
+  async function requestFullClose() {
+    const view = render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-confirm'));
+    await screen.findByTestId('close-pending');
+    return view;
+  }
+
+  it('replaces the pending note with the reason when the close is cancelled', async () => {
+    const { rerender } = await requestFullClose();
+    ordersMock = [closeOrder({ status: 'cancelled', cancelReason: 'SLIPPAGE' })];
+    rerender(<PositionsList />);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent(/Close cancelled \(SLIPPAGE\)/);
+  });
+
+  it('clears the pending note once the close has executed', async () => {
+    const { rerender } = await requestFullClose();
+    ordersMock = [closeOrder({ status: 'executed' })];
+    rerender(<PositionsList />);
+    expect(screen.queryByTestId('close-pending')).toBeNull();
+  });
+
+  it('points an expired close at the release in Orders', async () => {
+    const { rerender } = await requestFullClose();
+    ordersMock = [closeOrder({ expired: true })];
+    rerender(<PositionsList />);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent(/release the position from Orders/);
   });
 
   it('closes the quick size picked in the dialog', async () => {

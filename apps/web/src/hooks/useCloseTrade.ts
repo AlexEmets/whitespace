@@ -1,5 +1,6 @@
 'use client';
 
+import { parseEventLogs, type TransactionReceipt } from 'viem';
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
@@ -20,6 +21,12 @@ export interface CloseTradeParams {
   marketPriceRaw: bigint;
   /** slippageP, PRECISION_2 percent == bps. */
   slippageBps: bigint;
+}
+
+/** The close request's order id, so the caller can follow it to its fill, cancel or timeout. */
+function closeOrderId(receipt: TransactionReceipt): bigint | undefined {
+  const events = parseEventLogs({ abi: TRADING_ABI, eventName: 'MarketCloseOrderInitiatedV2', logs: receipt.logs });
+  return events[0]?.args.orderId;
 }
 
 /** Submits `closeTradeMarket` directly against the Trading contract. Same two-phase
@@ -45,7 +52,8 @@ export function useCloseTrade() {
     // With one-click trading on, the session key signs the close locally (no popup) — its own
     // send() simulates delegatedAction first, so the revert-reason benefit below is preserved.
     if (session.active) {
-      return session.send('closeTradeMarket', args, 'close the position');
+      const sent = await session.send('closeTradeMarket', args, 'close the position');
+      return { ...sent, orderId: closeOrderId(sent.receipt) };
     }
 
     // Simulated before it is sent, which is the only point at which the chain will say
@@ -72,7 +80,7 @@ export function useCloseTrade() {
     const hash = await writeContractAsync(await padGas(publicClient, request as never));
 
     const receipt = await confirmTx(publicClient, hash, 'close the position');
-    return { hash, receipt };
+    return { hash, receipt, orderId: closeOrderId(receipt) };
   }
 
   return { closeTrade, isPending };
