@@ -68,8 +68,7 @@ export function applyDepthUpdate(book, params) {
 
 /**
  * Reads the current best bid/ask off a locally maintained book, in the same
- * normalized 18-decimal bigint shape every other venue parser returns. `ts` is taken
- * from the update's own event_time/timestamp (seconds, float) converted to ms.
+ * normalized 18-decimal bigint shape every other venue parser returns, stamped `ts`.
  * @param {{ bids: Map, asks: Map }} book
  * @param {number} ts ms epoch to attach
  * @returns {{ bid: bigint, ask: bigint, ts: number }|null}
@@ -94,14 +93,15 @@ export function bestOfBook(book, ts) {
  * returns the new best bid/ask tick, or null if the message wasn't a depth_update or
  * the book has no two-sided quote yet.
  * @param {{ bids: Map, asks: Map }} book
+ * `ts` is the RECEIPT time `now`, not the frame's event_time: staleness is judged against
+ * this box's clock, and an exchange timestamp put any offset between the two clocks
+ * straight into the staleness bound, rejecting live data as stale.
  * @param {unknown} message parsed JSON from the WS frame
+ * @param {number} [now] receipt time, ms epoch
  * @returns {{ bid: bigint, ask: bigint, ts: number }|null}
  */
-export function parseMessage(book, message) {
+export function parseMessage(book, message, now = Date.now()) {
   if (!message || message.method !== 'depth_update' || !Array.isArray(message.params)) return null;
   applyDepthUpdate(book, message.params);
-  const payload = message.params[1];
-  const eventTimeS = payload?.event_time ?? payload?.timestamp;
-  const ts = typeof eventTimeS === 'number' ? Math.round(eventTimeS * 1000) : Date.now();
-  return bestOfBook(book, ts);
+  return bestOfBook(book, now);
 }

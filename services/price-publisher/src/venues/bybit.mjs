@@ -6,6 +6,11 @@
  * observed was a full snapshot (not an incremental patch):
  *   {"topic":"orderbook.1.BTCUSDT","ts":1788882595939,"type":"snapshot",
  *    "data":{"s":"BTCUSDT","b":[["78779.7","0.144931"]],"a":[["78779.8","0.584126"]],...}}
+ *
+ * `ts` is the caller's RECEIPT time, not the exchange's event time. Staleness is judged
+ * against this box's clock, so an exchange timestamp put any clock offset between the two
+ * straight into the 2 s staleness bound: a venue whose clock (or ours) ran 2 s apart was
+ * rejected as stale on every tick while delivering perfectly live data.
  */
 
 import { parseDecimalTo18 } from '@whitespace/shared/decimal';
@@ -21,14 +26,15 @@ export function subscribePayload(symbol) {
 
 /**
  * @param {unknown} message parsed JSON from the WS frame
+ * @param {number} [now] receipt time, ms epoch — used as `ts` (see module doc)
  * @returns {{ bid: bigint, ask: bigint, ts: number }|null}
  */
-export function parseMessage(message) {
+export function parseMessage(message, now = Date.now()) {
   if (!message || typeof message !== 'object' || typeof message.topic !== 'string') return null;
   if (!message.topic.startsWith('orderbook.')) return null;
   const data = message.data;
   const bidLevel = data?.b?.[0];
   const askLevel = data?.a?.[0];
-  if (!bidLevel || !askLevel || typeof message.ts !== 'number') return null;
-  return { bid: parseDecimalTo18(bidLevel[0]), ask: parseDecimalTo18(askLevel[0]), ts: message.ts };
+  if (!bidLevel || !askLevel) return null;
+  return { bid: parseDecimalTo18(bidLevel[0]), ask: parseDecimalTo18(askLevel[0]), ts: now };
 }

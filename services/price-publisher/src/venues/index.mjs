@@ -153,7 +153,9 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
         return;
       }
       try {
-        const tick = bookBased ? mod.parseMessage(book, message) : mod.parseMessage(message, Date.now());
+        // Receipt time for every venue (see the venue modules for why not exchange time).
+        const receivedAt = Date.now();
+        const tick = bookBased ? mod.parseMessage(book, message, receivedAt) : mod.parseMessage(message, receivedAt);
         if (tick) onTick({ venue: venueId, ...tick });
       } catch (err) {
         onError(err);

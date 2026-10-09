@@ -26,7 +26,12 @@ test('binance.wsUrlFor lowercases the symbol into the stream path', () => {
   assert.equal(binance.wsUrlFor('BTCUSDT'), 'wss://stream.binance.com:9443/ws/btcusdt@bookTicker');
 });
 
-test('bybit.parseMessage extracts bid/ask + exchange ts from a real orderbook.1 frame', () => {
+// Receipt time, not exchange time: the frames below carry exchange timestamps from 2026-09-08,
+// and `now` is deliberately ten seconds away from them. With the exchange time used, every
+// one of these ticks would be judged by how far apart two clocks are, not by how fresh it is.
+const RECEIVED_AT = 1_788_882_610_000;
+
+test('bybit.parseMessage extracts bid/ask from a real orderbook.1 frame and stamps receipt time', () => {
   const raw = {
     topic: 'orderbook.1.BTCUSDT',
     ts: 1_788_882_595_939,
@@ -34,10 +39,10 @@ test('bybit.parseMessage extracts bid/ask + exchange ts from a real orderbook.1 
     data: { s: 'BTCUSDT', b: [['78779.7', '0.144931']], a: [['78779.8', '0.584126']], u: 94220140, seq: 113768148026 },
     cts: 1_788_882_595_937,
   };
-  const tick = bybit.parseMessage(raw);
+  const tick = bybit.parseMessage(raw, RECEIVED_AT);
   assert.equal(tick.bid, parseDecimalTo18('78779.7'));
   assert.equal(tick.ask, parseDecimalTo18('78779.8'));
-  assert.equal(tick.ts, 1_788_882_595_939);
+  assert.equal(tick.ts, RECEIVED_AT);
 });
 
 test('bybit.parseMessage ignores the tickers channel and non-orderbook frames (no bid/ask there)', () => {
@@ -46,15 +51,15 @@ test('bybit.parseMessage ignores the tickers channel and non-orderbook frames (n
   assert.equal(bybit.parseMessage({ success: true, op: 'subscribe' }), null);
 });
 
-test('okx.parseMessage extracts bid/ask + exchange ts from a real tickers frame', () => {
+test('okx.parseMessage extracts bid/ask from a real tickers frame and stamps receipt time', () => {
   const raw = {
     arg: { channel: 'tickers', instId: 'BTC-USDT' },
     data: [{ instId: 'BTC-USDT', last: '78756.4', askPx: '78760.1', askSz: '0.16525432', bidPx: '78760', bidSz: '0.66797875', ts: '1788882603169' }],
   };
-  const tick = okx.parseMessage(raw);
+  const tick = okx.parseMessage(raw, RECEIVED_AT);
   assert.equal(tick.bid, parseDecimalTo18('78760'));
   assert.equal(tick.ask, parseDecimalTo18('78760.1'));
-  assert.equal(tick.ts, 1_788_882_603_169);
+  assert.equal(tick.ts, RECEIVED_AT);
 });
 
 test('okx.parseMessage ignores the subscribe ack', () => {
@@ -85,10 +90,10 @@ test('whitebit: a full update (isFullUpdate=true) seeds both sides and yields be
     ],
     id: null,
   };
-  const tick = whitebit.parseMessage(book, message);
+  const tick = whitebit.parseMessage(book, message, RECEIVED_AT);
   assert.equal(tick.bid, parseDecimalTo18('78726.34')); // highest bid
   assert.equal(tick.ask, parseDecimalTo18('78726.35')); // lowest ask
-  assert.equal(tick.ts, Math.round(1_788_882_538.3163829 * 1000));
+  assert.equal(tick.ts, RECEIVED_AT); // receipt time, not event_time
 });
 
 test('whitebit: a partial update (isFullUpdate=false) patches only the side it carries', () => {
@@ -152,4 +157,11 @@ test('whitebit.bestOfBook returns null until both sides have at least one level'
   assert.equal(whitebit.bestOfBook(book, 0), null);
   whitebit.applyDepthUpdate(book, [true, { bids: [['100', '1']] }, 'BTC_USDT']);
   assert.equal(whitebit.bestOfBook(book, 0), null); // no ask yet
+});
+
+test('a venue frame with no exchange timestamp still yields a tick (receipt time is enough)', () => {
+  const bybitNoTs = { topic: 'orderbook.1.BTCUSDT', type: 'snapshot', data: { b: [['1', '1']], a: [['2', '1']] } };
+  assert.equal(bybit.parseMessage(bybitNoTs, RECEIVED_AT).ts, RECEIVED_AT);
+  const okxNoTs = { arg: { channel: 'tickers', instId: 'BTC-USDT' }, data: [{ bidPx: '1', askPx: '2' }] };
+  assert.equal(okx.parseMessage(okxNoTs, RECEIVED_AT).ts, RECEIVED_AT);
 });
