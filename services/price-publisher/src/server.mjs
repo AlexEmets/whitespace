@@ -72,8 +72,28 @@ export function createServerApp(engine, opts = {}) {
   const now = opts.now ?? engine.now ?? (() => Date.now());
   const metrics = opts.metrics ?? createPublisherMetrics(engine);
 
-  return createServer(async (req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+  // The handler is async, and node:http ignores the promise it returns: anything thrown
+  // inside became an unhandled rejection, which terminates the process. `GET //` was
+  // enough — `new URL('//', base)` throws — so one stray request took down the only thing
+  // that can sign a price. Every failure now ends in a response instead.
+  return createServer((req, res) => {
+    handle(req, res).catch((err) => {
+      console.error(`[publisher] ${req.method} ${req.url} failed:`, err);
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      sendJson(res, 500, { error: 'internal error' });
+    });
+  });
+
+  async function handle(req, res) {
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      return sendJson(res, 400, { error: 'malformed request target' });
+    }
 
     // Health is about whether this service can do its job, and its job is producing a
     // signable price. A publisher with no venue connected cannot; the keeper then has no
@@ -185,5 +205,5 @@ export function createServerApp(engine, opts = {}) {
     }
 
     sendJson(res, 404, { error: 'not found' });
-  });
+  }
 }
