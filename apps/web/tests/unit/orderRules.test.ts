@@ -205,8 +205,8 @@ describe('exposureError (withinExposureLimits)', () => {
   });
 
   it('prices the side’s existing OI at the mark', () => {
-    // 5 base units at 100 = 500 USDW already open, so 600 more does not fit under 1,000.
-    const s = { ...base, longOi: 5n * E18 * 10n ** 12n / 1n };
+    // 5 base units (OI is stored as base x 1e18) at 100 = 500 USDW already open, so 600 more does not fit under 1,000.
+    const s = { ...base, longOi: 5n * E18 };
     expect(exposureError(s, { ...order, collateralRaw: 60_000000n })).toMatch(/at most 500.00 USDW/);
     expect(exposureError(s, { ...order, collateralRaw: 50_000000n })).toBeNull();
   });
