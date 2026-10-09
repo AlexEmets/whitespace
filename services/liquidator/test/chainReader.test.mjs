@@ -249,10 +249,17 @@ test('readPriceSnapshot gives up on a publisher that does not answer within stat
       signal?.addEventListener('abort', () => reject(signal.reason));
     });
   const reader = createChainReader({ publicClient: fakeClient({}), ...ADDR, publisherBaseUrl: 'http://p', fetchImpl, statusTimeoutMs: 30 });
-  const started = Date.now();
-  await assert.rejects(reader.readPriceSnapshot(), (err) => err.name === 'TimeoutError');
-  assert.ok(Date.now() - started < 2_000);
-  assert.equal(signal.aborted, true);
+  // AbortSignal.timeout's timer is unref'd; with nothing else pending the runner would see
+  // an idle loop and cancel the test. In the bot, the sweep loop keeps the process alive.
+  const keepAlive = setInterval(() => {}, 1_000);
+  try {
+    const started = Date.now();
+    await assert.rejects(reader.readPriceSnapshot(), (err) => err.name === 'TimeoutError');
+    assert.ok(Date.now() - started < 2_000);
+    assert.equal(signal.aborted, true);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });
 
 test('the /status timeout defaults to 3 s', async () => {
