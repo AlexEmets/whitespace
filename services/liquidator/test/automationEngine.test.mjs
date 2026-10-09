@@ -345,6 +345,55 @@ test('a limit entry updated after the sweep timestamp is skipped (BACKDATED_EXEC
   assert.equal(results[0].reason, 'backdated');
 });
 
+/** Sweeps every second for `seconds` and returns the offsets (s) at which something was sent. */
+async function sendTimes(w, engine, seconds, each = () => {}) {
+  const times = [];
+  const start = w.now;
+  for (let s = 0; s <= seconds; s++) {
+    w.now = start + s * 1_000;
+    each(s);
+    const before = w.sends.length;
+    await engine.sweep();
+    if (w.sends.length > before) times.push(s);
+  }
+  return times;
+}
+
+test('an entry the callback keeps cancelling (still resting, still hit) backs off exponentially; closes do not', async () => {
+  const { w, engine } = world({ price: 90n * E18, deps: { cooldownMs: 30_000, maxOpenBackoffMs: 240_000 } });
+  w.limitOrders = [pos(A, 3)];
+  w.orders[`${A}-0-3`] = { ...ORDER };
+  // Gaps 30, 60, 120, then capped at 240.
+  assert.deepEqual(await sendTimes(w, engine, 700), [0, 30, 90, 210, 450, 690]);
+
+  // A liquidatable position next to it is re-sent every cooldown, never backed off.
+  const liq = world({ price: LIQ_PRICE, deps: { cooldownMs: 30_000 } });
+  liq.w.positions = [pos(A, 0)];
+  liq.w.trades[`${A}-0-0`] = { ...TRADE };
+  assert.deepEqual(await sendTimes(liq.w, liq.engine, 120), [0, 30, 60, 90, 120]);
+});
+
+test('the entry backoff resets once the entry is not hit, and once it leaves the indexer', async () => {
+  const { w, engine } = world({ price: 90n * E18, deps: { cooldownMs: 30_000 } });
+  w.limitOrders = [pos(A, 3)];
+  w.orders[`${A}-0-3`] = { ...ORDER };
+  // Sent at 0, 30, 90 (next would be 210). At 100 the market moves away for one sweep.
+  const times = await sendTimes(w, engine, 260, (s) => {
+    w.price = s >= 210 && s < 215 ? 100n * E18 : 90n * E18;
+  });
+  // Not hit at 210 -> streak reset; hit again at 215 -> sent, then 30 s later, not 120.
+  assert.deepEqual(times, [0, 30, 90, 215, 245]);
+
+  // Leaves the indexer (filled / cancelled), a new order in the same slot starts afresh.
+  const b = world({ price: 90n * E18, deps: { cooldownMs: 30_000 } });
+  b.w.orders[`${A}-0-3`] = { ...ORDER };
+  const t2 = await sendTimes(b.w, b.engine, 250, (s) => {
+    b.w.limitOrders = s === 100 ? [] : [pos(A, 3)];
+  });
+  // The cooldown already running (until 210) still holds; after it, gaps start at 30 s again.
+  assert.deepEqual(t2, [0, 30, 90, 210, 240]);
+});
+
 test('a limit entry already filled/cancelled on chain is a lost race, not a send', async () => {
   const { w, engine, metrics } = world({ price: 90n * E18 });
   w.limitOrders = [pos(A, 3)];

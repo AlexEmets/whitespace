@@ -41,6 +41,15 @@
  * position would be re-triggered every sweep. Two instances race harmlessly: the loser
  * gets PENDING_TRIGGER / NO_TRADE / NO_LIMIT, which is a status, not a revert.
  *
+ * Entry backoff: a LIMIT/STOP entry the callback cancels (EXPOSURE_LIMITS, PRICE_IMPACT,
+ * MAX_LEVERAGE, ... — OstiumTradingCallbacks.executeAutomationOpenOrderCallback) is NOT
+ * removed: it keeps resting with its trigger cleared, and is just as hit on the next sweep.
+ * Those checks depend on pool-wide state the bot does not model, so instead each further
+ * trigger of the same still-resting entry waits twice as long as the last (cooldownMs,
+ * 2x, 4x, ... up to maxOpenBackoffMs). The streak resets once the entry is evaluated as not
+ * hit (the market moved; a new situation) or leaves the indexer (filled or cancelled).
+ * Close kinds are not backed off: a liquidation must never wait minutes behind a NOT_HIT.
+ *
  * Batch isolation: executeAutomationOrder can revert (pair delisted, trading done) and a
  * revert of one entry reverts the whole batch. When a multi-trigger batch REVERTS (mined,
  * or refused by estimateGas), its keys are marked isolated and go out one per transaction
@@ -65,6 +74,8 @@ export const DEFAULT_REPORT_MAX_AGE_SEC = 10;
 export const DEFAULT_DELIVERY_MARGIN_SEC = 4;
 /** Candidate evaluations in flight at once. Each one costs a handful of eth_calls. */
 export const DEFAULT_EVALUATION_CONCURRENCY = 16;
+/** Ceiling of the entry backoff: a cancelled entry is retried at least this often. */
+export const DEFAULT_OPEN_BACKOFF_MAX_MS = 15 * 60_000;
 
 const LIMIT_ORDER_CODE = { TP: LimitOrder.TP, SL: LimitOrder.SL, LIQ: LimitOrder.LIQ, OPEN: LimitOrder.OPEN };
 const CLOSE_KINDS = [TriggerKind.LIQ, TriggerKind.SL, TriggerKind.TP];
@@ -116,6 +127,7 @@ export async function mapLimit(items, limit, fn) {
  * @param {number} [deps.reportMaxAgeSec]
  * @param {number} [deps.deliveryMarginSec]
  * @param {number} [deps.evaluationConcurrency]
+ * @param {number} [deps.maxOpenBackoffMs]
  * @param {boolean} [deps.liquidateWhenDegraded]
  * @param {object} [deps.metrics] see metrics.mjs
  */
@@ -137,6 +149,7 @@ export function createAutomationEngine({
   reportMaxAgeSec = DEFAULT_REPORT_MAX_AGE_SEC,
   deliveryMarginSec = DEFAULT_DELIVERY_MARGIN_SEC,
   evaluationConcurrency = DEFAULT_EVALUATION_CONCURRENCY,
+  maxOpenBackoffMs = DEFAULT_OPEN_BACKOFF_MAX_MS,
   liquidateWhenDegraded = false,
   metrics = {},
 }) {
@@ -151,6 +164,8 @@ export function createAutomationEngine({
   const cooldownUntil = new Map();
   /** keys whose last multi-trigger batch reverted; sent one per tx until one succeeds */
   const isolated = new Set();
+  /** OPEN key -> triggers sent in a row while the entry stayed resting and hit */
+  const openStreak = new Map();
   const startedAt = now();
   let lastPriceOkAt = null;
 
@@ -297,7 +312,10 @@ export function createAutomationEngine({
       }
       const [fees, impact] = await Promise.all([readOpenFees(trader, pairIndex, index), impactFor(pairIndex)]);
       const r = evaluateOpenTrigger({ order, market: { ...quote, impact }, fees, blockTimestamp: BigInt(tsSec) });
-      if (!r.hit) return skip(out, o, TriggerKind.OPEN, r.reason);
+      if (!r.hit) {
+        openStreak.delete(triggerKey(trader, pairIndex, index, TriggerKind.OPEN));
+        return skip(out, o, TriggerKind.OPEN, r.reason);
+      }
       if (order.lastUpdated > tsSec) return skip(out, o, TriggerKind.OPEN, 'backdated');
 
       return queueIfFree(out, o, TriggerKind.OPEN, { priceAfterImpact: r.priceAfterImpact });
@@ -323,6 +341,7 @@ export function createAutomationEngine({
       ...limitOrders.map((o) => triggerKey(o.trader, o.pairIndex, o.index, TriggerKind.OPEN)),
     ]);
     for (const key of isolated) if (!listed.has(key)) isolated.delete(key);
+    for (const key of openStreak.keys()) if (!listed.has(key)) openStreak.delete(key);
 
     const results = [];
     const triggers = new Map(); // key -> trigger; the first listing of a slot wins
@@ -371,7 +390,7 @@ export function createAutomationEngine({
     const neverSent = !result.ok && result.expired === true && !(result.attempts > 0);
     // A shared batch that reverted: split it up and retry every key alone next sweep.
     const splitUp = !result.ok && batch.length > 1 && isRevert(result);
-    const until = now() + cooldownMs;
+    const sentAt = now();
     for (const t of batch) {
       if (neverSent) {
         metrics.triggersExpired?.inc(1, { kind: t.kind });
@@ -385,7 +404,7 @@ export function createAutomationEngine({
         metrics.triggersFailed?.inc(1, { kind: t.kind });
       }
       if (splitUp) isolated.add(t.key);
-      else cooldownUntil.set(t.key, until);
+      else cooldownUntil.set(t.key, sentAt + cooldownFor(t));
     }
     metrics.batchesSent?.inc(1, { ok: String(result.ok) });
     return {
@@ -396,6 +415,13 @@ export function createAutomationEngine({
       timestamp,
       ...(result.expired ? { expired: true } : {}),
     };
+  }
+
+  function cooldownFor(t) {
+    if (t.kind !== TriggerKind.OPEN) return cooldownMs;
+    const streak = openStreak.get(t.key) ?? 0;
+    openStreak.set(t.key, streak + 1);
+    return Math.min(cooldownMs * 2 ** streak, Math.max(cooldownMs, maxOpenBackoffMs));
   }
 
   return {

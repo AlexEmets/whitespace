@@ -91,6 +91,7 @@ async function main() {
     reportMaxAgeSec: config.reportMaxAgeSec,
     deliveryMarginSec: config.deliveryMarginSec,
     evaluationConcurrency: config.evaluationConcurrency,
+    maxOpenBackoffMs: config.maxOpenBackoffMs,
     liquidateWhenDegraded: config.liquidateWhenDegraded,
     metrics,
   });

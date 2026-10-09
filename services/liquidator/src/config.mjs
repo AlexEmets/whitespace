@@ -17,6 +17,7 @@ import {
   DEFAULT_REPORT_MAX_AGE_SEC,
   DEFAULT_DELIVERY_MARGIN_SEC,
   DEFAULT_EVALUATION_CONCURRENCY,
+  DEFAULT_OPEN_BACKOFF_MAX_MS,
 } from './automationEngine.mjs';
 import { DEFAULT_RECEIPT_TIMEOUT_MS } from './txSender.mjs';
 import { SEQUENCER_STALL_THRESHOLD_MS, SEQUENCER_RECOVERY_WINDOW_MS } from './sequencerLiveness.mjs';
@@ -89,6 +90,7 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
     reportMaxAgeSec: positiveInt(env, 'LIQUIDATOR_REPORT_MAX_AGE_SEC', DEFAULT_REPORT_MAX_AGE_SEC),
     deliveryMarginSec: positiveInt(env, 'LIQUIDATOR_DELIVERY_MARGIN_SEC', DEFAULT_DELIVERY_MARGIN_SEC),
     evaluationConcurrency: positiveInt(env, 'LIQUIDATOR_EVALUATION_CONCURRENCY', DEFAULT_EVALUATION_CONCURRENCY),
+    maxOpenBackoffMs: positiveInt(env, 'LIQUIDATOR_OPEN_BACKOFF_MAX_MS', DEFAULT_OPEN_BACKOFF_MAX_MS),
     sequencerStallThresholdMs: positiveInt(env, 'LIQUIDATOR_SEQUENCER_STALL_THRESHOLD_MS', SEQUENCER_STALL_THRESHOLD_MS),
     sequencerRecoveryWindowMs: positiveInt(env, 'LIQUIDATOR_SEQUENCER_RECOVERY_WINDOW_MS', SEQUENCER_RECOVERY_WINDOW_MS),
     // Off unless an operator opts in: degradedMode.mjs's documented decision is never to
