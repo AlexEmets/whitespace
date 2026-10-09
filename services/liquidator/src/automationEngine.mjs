@@ -228,7 +228,7 @@ export function createAutomationEngine({
         return skip(out, p, null, 'not_open');
       }
       const quote = await quoteFor(pairIndex);
-      if (!isTradeableQuote(quote)) return skip(out, p, null, 'market_closed');
+      if (!isTradeableQuote(quote)) return skip(out, p, null, quote.untradeable ?? 'market_closed');
 
       const [maxLeverage, liqMarginThresholdP, impact] = await Promise.all([
         maxLevFor(pairIndex, trade.isDayTrade === true),
@@ -273,7 +273,7 @@ export function createAutomationEngine({
       // Gate before any chain read: a degraded market or a stalled chain rules out every
       // entry on it regardless of the order's details.
       const quote = await quoteFor(pairIndex);
-      if (!isTradeableQuote(quote)) return skip(out, o, TriggerKind.OPEN, 'market_closed');
+      if (!isTradeableQuote(quote)) return skip(out, o, TriggerKind.OPEN, quote.untradeable ?? 'market_closed');
       const gate = canTrigger({
         kind: TriggerKind.OPEN,
         sequencerState,

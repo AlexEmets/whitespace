@@ -35,9 +35,13 @@ import { getDynamicTradePriceImpact, calculatePostFeeCollateral } from './priceI
 
 export const TriggerKind = Object.freeze({ TP: 'TP', SL: 'SL', LIQ: 'LIQ', OPEN: 'OPEN' });
 
-/** @param {{ price: bigint, bid: bigint, ask: bigint }} m */
+/**
+ * A side <= 0 is cancelled MARKET_CLOSED on chain; a quote flagged `untradeable` (stale
+ * mark, no venues: see chainReader.quoteFromStatus) is one the publisher will not sign.
+ * @param {{ price: bigint, bid: bigint, ask: bigint, untradeable?: string }} m
+ */
 export function isTradeableQuote(m) {
-  return m.price > 0n && m.bid > 0n && m.ask > 0n;
+  return !m.untradeable && m.price > 0n && m.bid > 0n && m.ask > 0n;
 }
 
 /** lib :419-422, compared against the raw report price. */

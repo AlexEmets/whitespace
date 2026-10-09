@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createChainReader, quoteFromStatus, isTriggerPending } from '../src/chainReader.mjs';
 import { MARKETS as MARKET_MAP } from '@whitespace/shared/markets';
+import { isTradeableQuote } from '../src/triggerRules.mjs';
 
 const MARKETS = Object.values(MARKET_MAP);
 
@@ -200,6 +201,17 @@ test('quoteFromStatus: price = mark, bid/ask = index quote with the mark as fall
   assert.equal(partial.bid, 100n);
   assert.equal(partial.ask, 100n);
   assert.equal(partial.minHealthyVenues, 3, 'falls back to the global minimum when the publisher omits it');
+});
+
+test('quoteFromStatus: a stale mark or a feed with no venues is flagged untradeable (the publisher will not sign it)', () => {
+  const base = { mark: '100', indexBid: '99', indexAsk: '101', healthyCount: 4, minHealthyVenues: 3 };
+  assert.equal(quoteFromStatus({ ...base, markStale: true }).untradeable, 'mark_stale');
+  assert.equal(quoteFromStatus({ ...base, noData: true, healthyCount: 0 }).untradeable, 'no_data');
+  assert.equal(quoteFromStatus({ ...base, markStale: true, noData: true }).untradeable, 'no_data');
+  assert.equal('untradeable' in quoteFromStatus({ ...base, markStale: false, noData: false }), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, markStale: true })), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, noData: true })), false);
+  assert.equal(isTradeableQuote(quoteFromStatus({ ...base, markStale: false, noData: false })), true);
 });
 
 test('readPriceSnapshot fetches /status once and resolves any pair against it', async () => {

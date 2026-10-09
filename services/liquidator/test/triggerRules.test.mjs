@@ -66,6 +66,11 @@ test('a quote with any side <= 0 is not tradeable (MARKET_CLOSED)', () => {
   assert.equal(isTradeableQuote({ price: 1n, bid: 1n, ask: -1n }), false);
 });
 
+test('a quote the publisher will not sign (untradeable) is not tradeable, whatever its prices', () => {
+  assert.equal(isTradeableQuote({ price: 1n, bid: 1n, ask: 1n, untradeable: 'mark_stale' }), false);
+  assert.equal(isTradeableQuote({ price: 1n, bid: 1n, ask: 1n, untradeable: 'no_data' }), false);
+});
+
 // Same fixture as marginEngine.test.mjs: 1000 USDW, 10x, 100x max, 25% threshold.
 // Long liquidation boundary: 90.25.
 const TRADE = {

@@ -19,12 +19,20 @@ const OPEN_ORDER_TYPE_NAME = { [OpenOrderType.LIMIT]: 'LIMIT', [OpenOrderType.ST
  * The prices a report for `feed` would carry right now, exactly as
  * services/price-publisher engine.signReportFor builds them: price = mark,
  * bid/ask = aggregated index quote, each side falling back to the mark when missing.
+ *
+ * A feed the publisher flags `markStale` or `noData` still carries its last mark, but the
+ * publisher refuses to sign any report for it (engine.signReportFor `mark_stale`,
+ * aggregator.canSignForOrderType `no_healthy_venues`). A trigger on it can never be
+ * delivered and only parks the trade behind TriggerPending, so the quote is marked
+ * `untradeable` with the reason; isTradeableQuote then rejects it.
  * @param {{ mark?: string|null, indexBid?: string|null, indexAsk?: string|null,
- *           healthyCount?: number, minHealthyVenues?: number } | undefined} snap
+ *           healthyCount?: number, minHealthyVenues?: number,
+ *           markStale?: boolean, noData?: boolean } | undefined} snap
  */
 export function quoteFromStatus(snap) {
   if (!snap || snap.mark === null || snap.mark === undefined) return null;
   const price = BigInt(snap.mark);
+  const untradeable = snap.noData === true ? 'no_data' : snap.markStale === true ? 'mark_stale' : null;
   return {
     price,
     bid: snap.indexBid === null || snap.indexBid === undefined ? price : BigInt(snap.indexBid),
@@ -32,6 +40,7 @@ export function quoteFromStatus(snap) {
     healthyVenueCount: snap.healthyCount ?? 0,
     // Older publishers omit it; the global minimum can only be stricter than the truth.
     minHealthyVenues: snap.minHealthyVenues ?? MIN_HEALTHY_VENUES,
+    ...(untradeable ? { untradeable } : {}),
   };
 }
 

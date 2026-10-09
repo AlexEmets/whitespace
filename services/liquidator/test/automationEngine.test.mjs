@@ -74,7 +74,14 @@ function world(overrides = {}) {
       w.calls.snapshot++;
       if (w.snapshotError) throw new Error(w.snapshotError);
       return {
-        quoteFor: async () => ({ price: w.price, bid: w.bid ?? w.price, ask: w.ask ?? w.price, healthyVenueCount: w.healthy, minHealthyVenues: w.minHealthy }),
+        quoteFor: async () => ({
+          price: w.price,
+          bid: w.bid ?? w.price,
+          ask: w.ask ?? w.price,
+          healthyVenueCount: w.healthy,
+          minHealthyVenues: w.minHealthy,
+          ...(w.untradeable ? { untradeable: w.untradeable } : {}),
+        }),
       };
     },
     readTrade: async (trader, pairIndex, index) => {
@@ -279,6 +286,24 @@ test('a quote with a zero side is MARKET_CLOSED on chain: nothing is sent', asyn
   assert.equal(w.sends.length, 0);
   assert.deepEqual(results.map((r) => r.reason), ['market_closed', 'market_closed']);
   assert.equal(w.calls.readLimitOrder, 0);
+});
+
+test('a stale mark or no venue data: nothing is triggered, with the publisher\'s reason', async () => {
+  for (const [flag, reason] of [
+    ['mark_stale', 'mark_stale'],
+    ['no_data', 'no_data'],
+  ]) {
+    const { w, engine } = world({ price: LIQ_PRICE });
+    w.positions = [pos(A, 0)];
+    w.trades[`${A}-0-0`] = { ...TRADE };
+    w.limitOrders = [pos(A, 1)];
+    w.orders[`${A}-0-1`] = { ...ORDER };
+    w.untradeable = flag;
+    const { results } = await engine.sweep();
+    assert.equal(w.sends.length, 0);
+    assert.deepEqual(results.map((r) => r.reason), [reason, reason]);
+    assert.equal(w.calls.readLimitOrder, 0);
+  }
 });
 
 // ---------------------------------------------------------------- limit / stop entries
