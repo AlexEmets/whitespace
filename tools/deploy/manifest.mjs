@@ -7,7 +7,7 @@
 // address the system does not use.
 //
 //   REGISTRY_ADDRESS=0x... START_BLOCK=123 RPC_URL=https://rpc.testnet.whitechain.io \
-//     node tools/deploy/manifest.mjs > deployments/1874.json
+//     [PREVIOUS_PRICE_UPKEEPS=0xold,...] node tools/deploy/manifest.mjs > deployments/1874.json
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
@@ -58,7 +58,13 @@ export function fromBytes32(hex) {
  * @param read async (address, signature, args) => value — injected so this is testable
  *             without a chain.
  */
-export async function buildManifest({ read, chainId, registry, startBlock, commit, deployedAt }) {
+/**
+ * @param previousPriceUpKeeps upkeeps the registry pointed at before the current one. The
+ *   registry only knows the current address, so after `installHardenedUpkeep` replaces an
+ *   outdated upkeep the old one has to be named here, or a re-indexed history would lose
+ *   every request and report it ever emitted (candles come from those reports).
+ */
+export async function buildManifest({ read, chainId, registry, startBlock, commit, deployedAt, previousPriceUpKeeps = [] }) {
   const contracts = { registry };
   for (const key of CORE_KEYS) {
     contracts[key] = await read(registry, ABI.getContractAddress, [toBytes32(key)]);
@@ -93,6 +99,13 @@ export async function buildManifest({ read, chainId, registry, startBlock, commi
     throw new Error(`expected every market to resolve to ONE price upkeep, found ${upkeeps.size}`);
   }
   contracts.priceUpKeep = markets[0].priceUpKeep;
+  const previous = [...new Set(previousPriceUpKeeps.map((a) => a.trim()).filter(Boolean))].filter(
+    (a) => a.toLowerCase() !== contracts.priceUpKeep.toLowerCase(),
+  );
+  for (const a of previous) {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(a)) throw new Error(`previous price upkeep is not an address: ${a}`);
+  }
+  if (previous.length > 0) contracts.previousPriceUpKeeps = previous;
 
   const oracle = {
     verifier: contracts.verifier,
@@ -148,6 +161,7 @@ async function main() {
     startBlock,
     commit: execSync('git rev-parse HEAD').toString().trim(),
     deployedAt: new Date().toISOString().replace(/\.\d+Z$/, 'Z'),
+    previousPriceUpKeeps: (process.env.PREVIOUS_PRICE_UPKEEPS ?? '').split(','),
   });
   process.stdout.write(`${JSON.stringify(manifest, (_, v) => (typeof v === 'bigint' ? v.toString() : v), 2)}\n`);
 }

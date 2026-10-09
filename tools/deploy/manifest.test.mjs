@@ -96,3 +96,31 @@ test('a missing core key fails loudly instead of writing a partial manifest', as
     /NotFound\(tradesUpKeep\)/,
   );
 });
+
+test('records the upkeeps the registry used to point at, so a re-index keeps their history', async () => {
+  const { read, registry } = fakeChain();
+  const m = await buildManifest({
+    read, chainId: 1874, registry, startBlock: 1, commit: 'c', deployedAt: 't',
+    previousPriceUpKeeps: [addr(0x40), ` ${addr(0x41)} `, addr(0x40), ''],
+  });
+  assert.deepEqual(m.contracts.previousPriceUpKeeps, [addr(0x40), addr(0x41)]);
+});
+
+test('never lists the current upkeep as a previous one, and omits the field when there is none', async () => {
+  const { read, registry } = fakeChain();
+  const m = await buildManifest({
+    read, chainId: 1874, registry, startBlock: 1, commit: 'c', deployedAt: 't',
+    previousPriceUpKeeps: [addr(0x50).toUpperCase().replace('0X', '0x')],
+  });
+  assert.equal('previousPriceUpKeeps' in m.contracts, false);
+  const none = await buildManifest({ read, chainId: 1874, registry, startBlock: 1, commit: 'c', deployedAt: 't' });
+  assert.equal('previousPriceUpKeeps' in none.contracts, false);
+});
+
+test('refuses a previous upkeep that is not an address', async () => {
+  const { read, registry } = fakeChain();
+  await assert.rejects(
+    buildManifest({ read, chainId: 1874, registry, startBlock: 1, commit: 'c', deployedAt: 't', previousPriceUpKeeps: ['nope'] }),
+    /not an address: nope/,
+  );
+});

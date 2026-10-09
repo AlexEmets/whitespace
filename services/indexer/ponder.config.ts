@@ -10,6 +10,7 @@ import { pairsStorageAbi } from './abis/pairsStorage.js';
 import { tradingStorageAbi } from './abis/tradingStorage.js';
 import { vaultAbi } from './abis/vault.js';
 import { parsePollingInterval } from './src/lib/pollingInterval.js';
+import { priceUpKeepAddresses } from './src/lib/upkeepAddresses.js';
 
 // Whitechain testnet 1874 is an OP Stack rollup — see
 // docs/superpowers/specs/2026-09-08-whitechain-perp-dex-design.md §2.2.
@@ -86,7 +87,8 @@ export default createConfig({
     PriceUpKeep: {
       abi: priceUpKeepAbi,
       chain: 'whitechain1874',
-      address: deployment.contracts.priceUpKeep as `0x${string}`,
+      // The current upkeep plus any it replaced, so a re-index keeps their requests and reports.
+      address: priceUpKeepAddresses(deployment.contracts),
       startBlock,
     },
     PairsStorage: {
