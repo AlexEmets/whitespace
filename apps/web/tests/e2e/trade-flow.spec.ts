@@ -19,6 +19,10 @@ import { MOCK_TRADER_ADDRESS, TestState } from './testState';
  */
 
 test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, baseURL }) => {
+  // The whole product in one test: six steps, two of them waiting on a 5 s positions poll,
+  // against `next dev` compiling each page on first visit. It ran out of the default 30 s
+  // on a cold dev server before any assertion had failed.
+  test.setTimeout(90_000);
   const apiBaseUrl = `${baseURL}/__api`;
   const state = new TestState();
 
@@ -52,7 +56,9 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     // connection made above stays live — a real trader clicks between tabs without
     // reconnecting their wallet every time.
     await page.getByTestId('nav-vaults').click();
-    await expect(page.getByTestId('vault-usdw-balance')).toContainText('10,000.00');
+    // First visit compiles the page under `next dev`; that is not the thing under test.
+    await page.waitForURL('**/vaults', { timeout: 30_000 });
+    await expect(page.getByTestId('vault-usdw-balance')).toContainText('10,000.00', { timeout: 15_000 });
 
     // The deposit controls moved out of VaultPanel into FundingModal (2026-09-21) — the
     // same dialog the header's DEPOSIT button opens. /vaults now triggers it rather than
