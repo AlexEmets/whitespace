@@ -164,7 +164,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     function ensureGroupAndFee(address registry) public {
         IOstiumPairsStorage ps = IOstiumPairsStorage(IOstiumRegistry(registry).getContractAddress("pairsStorage"));
         if (ps.groupsCount() == 0) {
-            _relay(msg.sender);
+            _relay();
             ps.addGroup(
                 IOstiumPairsStorage.Group({
                     name: GROUP_NAME,
@@ -175,7 +175,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
             );
         }
         if (ps.feesCount() == 0) {
-            _relay(msg.sender);
+            _relay();
             ps.addFee(
                 IOstiumPairsStorage.Fee({
                     name: FEE_NAME,
@@ -187,7 +187,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         }
         (bytes32 name, uint64 minLevPos, uint64 oracleFee, uint16 liqFeeP) = ps.fees(0);
         if (name != FEE_NAME || minLevPos != FEE_MIN_LEV_POS || oracleFee != TESTNET_ORACLE_FEE || liqFeeP != FEE_LIQ_FEE_P) {
-            _relay(msg.sender);
+            _relay();
             ps.updateFee(
                 0,
                 IOstiumPairsStorage.Fee({
@@ -216,7 +216,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
             makerFeeP != f.makerFeeP || takerFeeP != f.takerFeeP || usageFeeP != f.usageFeeP
                 || utilP != f.utilizationThresholdP || makerMaxLev != f.makerMaxLeverage || vaultFeeP != f.vaultFeePercent
         ) {
-            _relay(msg.sender);
+            _relay();
             pi.setPairOpeningFees(pairIndex, f);
         }
 
@@ -228,7 +228,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
                 || springFactor != fu.springFactor || hillPos != fu.hillPosScale || hillNeg != fu.hillNegScale
                 || up != fu.sFactorUpScaleP || down != fu.sFactorDownScaleP
         ) {
-            _relay(msg.sender);
+            _relay();
             pi.setPairFundingFees(pairIndex, fu);
         }
 
@@ -239,7 +239,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
             lastUpdateBlock == 0 || lastLongPure != r.lastLongPure || brokerPremium != r.brokerPremium
                 || maxRollover != r.maxRolloverFeePerBlock || negAllowed != r.isNegativeRolloverAllowed
         ) {
-            _relay(msg.sender);
+            _relay();
             pi.setPairRolloverFees(pairIndex, r);
         }
     }
@@ -251,7 +251,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         IOstiumPairInfos pi = IOstiumPairInfos(IOstiumRegistry(registry).getContractAddress("pairInfos"));
         (uint256 thr, uint128 decay, uint256 k) = OstiumPairInfos(address(pi)).pairDynamicSpreadParams(pairIndex);
         if (thr == m.spread.netVolThreshold && decay == m.spread.decayRate && k == m.spread.priceImpactK) return;
-        _relay(msg.sender);
+        _relay();
         pi.setPairDynamicSpreadParams(pairIndex, m.spread);
     }
 
@@ -261,7 +261,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     function alignMarketOrdersTimeout(address registry) public {
         IOstiumTrading trading = IOstiumTrading(IOstiumRegistry(registry).getContractAddress("trading"));
         if (trading.marketOrdersTimeout() == TESTNET_MARKET_ORDERS_TIMEOUT) return;
-        _relay(msg.sender);
+        _relay();
         trading.setMarketOrdersTimeout(TESTNET_MARKET_ORDERS_TIMEOUT);
     }
 
@@ -270,7 +270,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     function configureVaultSettlement(address vault) public {
         OstiumVault v = OstiumVault(vault);
         if (v.maxSettlementInterval() == TESTNET_MAX_SETTLEMENT_INTERVAL) return;
-        _relay(msg.sender);
+        _relay();
         v.updateMaxSettlementInterval(TESTNET_MAX_SETTLEMENT_INTERVAL);
     }
 

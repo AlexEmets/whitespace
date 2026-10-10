@@ -108,7 +108,7 @@ contract OperateScript is Script {
     ///      the call INTO one of this contract's public functions, so by the time that function
     ///      makes its OWN nested call into pairsStorage/verifier/vault/etc., the nested call
     ///      would otherwise see `address(this)` (this script), not the intended role. Each
-    ///      mutating nested call is therefore preceded by `_relay(msg.sender)` to re-establish
+    ///      mutating nested call is therefore preceded by `_relay()` to re-establish
     ///      the correct sender for that one hop.
     ///
     ///      Under `run()`, these same functions are invoked as plain internal calls wrapped in
@@ -129,9 +129,15 @@ contract OperateScript is Script {
     ///      instead of on whether `vm.prank` happens to succeed: no `vm.prank` call is even
     ///      attempted while broadcasting, and outside of broadcasting an unexpected prank
     ///      failure now propagates instead of being hidden.
-    function _relay(address who) internal {
+    ///
+    ///      `msg.sender` is read here, after the `_broadcasting` check, not passed in by the
+    ///      caller. Passed as an argument it was evaluated under broadcast too, and forge 1.8
+    ///      refuses any read of `msg.sender` inside a broadcast ("Usage of `msg.sender` inside a
+    ///      `broadcast` in script contract detected"), which failed every deploy before a
+    ///      single transaction went out.
+    function _relay() internal {
         if (_broadcasting) return;
-        vm.prank(who);
+        vm.prank(msg.sender);
     }
 
     /// @notice Lists the BTC/USD market: the Crypto group, the BTC-USD fee tier, and the pair
@@ -141,7 +147,7 @@ contract OperateScript is Script {
         IOstiumPairsStorage ps = IOstiumPairsStorage(c.pairsStorage);
 
         if (ps.groupsCount() == 0) {
-            _relay(msg.sender);
+            _relay();
             ps.addGroup(
                 IOstiumPairsStorage.Group({
                     name: GROUP_NAME,
@@ -153,7 +159,7 @@ contract OperateScript is Script {
         }
 
         if (ps.feesCount() == 0) {
-            _relay(msg.sender);
+            _relay();
             ps.addFee(
                 IOstiumPairsStorage.Fee({
                     name: FEE_NAME,
@@ -170,7 +176,7 @@ contract OperateScript is Script {
             return pairIndex;
         }
 
-        _relay(msg.sender);
+        _relay();
         ps.addPair(
             IOstiumPairsStorage.Pair({
                 from: PAIR_FROM,
@@ -212,7 +218,7 @@ contract OperateScript is Script {
         (,,,,, uint64 springFactor,,,,,,) = OstiumPairInfos(address(pairInfos)).pairFundingFees(pairIndex);
         if (springFactor != 0) return;
 
-        _relay(msg.sender);
+        _relay();
         pairInfos.setPairFundingFees(
             pairIndex,
             IOstiumPairInfos.PairFundingFeesV2({
@@ -256,7 +262,7 @@ contract OperateScript is Script {
         IOstiumRegistry registry = IOstiumRegistry(c.registry);
         address callbacks = registry.getContractAddress("callbacks");
         if (IERC20(c.usdw).allowance(callbacks, c.vault) > 0) return;
-        _relay(msg.sender);
+        _relay();
         IOstiumTradingCallbacks(callbacks).setVaultMaxAllowance();
     }
 
@@ -269,7 +275,7 @@ contract OperateScript is Script {
         IOstiumTradingStorage ts =
             IOstiumTradingStorage(IOstiumRegistry(c.registry).getContractAddress("tradingStorage"));
         if (ts.openInterest(pairIndex, 2) > 0) return;
-        _relay(msg.sender);
+        _relay();
         ts.setMaxOpenInterest(pairIndex, PAIR_MAX_OI);
     }
 
@@ -278,7 +284,7 @@ contract OperateScript is Script {
     function authoriseSigner(Config memory c) public {
         IOstiumVerifier verifier = IOstiumVerifier(c.verifier);
         if (verifier.isAuthorizedSigner(c.signer)) return;
-        _relay(msg.sender);
+        _relay();
         verifier.registerAuthorizedSigner(c.signer);
     }
 
@@ -288,7 +294,7 @@ contract OperateScript is Script {
     function authoriseForwarder(Config memory c) public {
         IOstiumForwarded upkeep = IOstiumForwarded(c.priceUpKeep);
         if (upkeep.isForwarder(c.keeper)) return;
-        _relay(msg.sender);
+        _relay();
         upkeep.registerForwarder(c.keeper);
     }
 
@@ -301,7 +307,7 @@ contract OperateScript is Script {
         try registry.getContractAddress(PRICE_UPKEEP_KEY) returns (address) {
             return;
         } catch {
-            _relay(msg.sender);
+            _relay();
             registry.registerContract(PRICE_UPKEEP_KEY, c.priceUpKeep);
         }
     }
@@ -336,7 +342,7 @@ contract OperateScript is Script {
         if (vault.currentBalance() > 0) return;
         uint32 id = vault.targetSettlementId(true);
         if (usdw.balanceOf(c.lp) + vault.pendingDepositRequest(c.lp, id) >= c.lpAmount) return;
-        _relay(msg.sender);
+        _relay();
         usdw.mint(c.lp, c.lpAmount);
     }
 
@@ -364,10 +370,10 @@ contract OperateScript is Script {
         }
         if (vault.currentBalance() > 0) return 0; // nothing pending, and liquidity already landed
 
-        _relay(msg.sender);
+        _relay();
         IERC20(c.usdw).approve(c.vault, c.lpAmount);
 
-        _relay(msg.sender);
+        _relay();
         vault.requestDeposit(c.lpAmount);
     }
 
@@ -378,7 +384,7 @@ contract OperateScript is Script {
     function settle(Config memory c) public {
         IOstiumVault vault = IOstiumVault(c.vault);
         if (vault.currentBalance() > 0) return;
-        _relay(msg.sender);
+        _relay();
         vault.forceSettlement();
     }
 
@@ -414,7 +420,7 @@ contract OperateScript is Script {
         IOstiumVault vault = IOstiumVault(c.vault);
         uint32 id = settlementId == 0 ? vault.targetSettlementId(true) - 1 : settlementId; // == lastSettlementId
         if (vault.getDepositStatus(c.lp, id) != IOstiumVault.RequestStatus.CLAIMABLE) return;
-        _relay(msg.sender);
+        _relay();
         vault.claimDeposit(id);
     }
 
@@ -474,7 +480,7 @@ contract OperateScript is Script {
 
         verifier = address(new WhitespaceVerifier(registry, c.signers, c.threshold));
 
-        _relay(msg.sender);
+        _relay();
         if (found) registry.updateContract(VERIFIER_KEY, verifier);
         else registry.registerContract(VERIFIER_KEY, verifier);
     }
@@ -491,12 +497,12 @@ contract OperateScript is Script {
 
         for (uint256 i = 0; i < c.signers.length; i++) {
             if (verifier.isAuthorizedSigner(c.signers[i])) continue;
-            _relay(msg.sender);
+            _relay();
             verifier.registerAuthorizedSigner(c.signers[i]);
         }
 
         if (verifier.threshold() == c.threshold) return;
-        _relay(msg.sender);
+        _relay();
         verifier.setThreshold(c.threshold);
     }
 
@@ -550,7 +556,7 @@ contract OperateScript is Script {
         for (uint256 i = 0; i < feedKeys.length; i++) {
             (bool found, address current) = _lookup(registry, feedKeys[i]);
             if (found && current == upkeep) continue;
-            _relay(msg.sender);
+            _relay();
             if (found) registry.updateContract(feedKeys[i], upkeep);
             else registry.registerContract(feedKeys[i], upkeep);
         }
@@ -566,7 +572,7 @@ contract OperateScript is Script {
     function _carryOverEmergencyState(IOstiumRegistry registry, WhitespacePriceUpKeep old, address upkeep) internal {
         WhitespacePriceUpKeep next = WhitespacePriceUpKeep(upkeep);
         if (old.paused()) {
-            _relay(msg.sender);
+            _relay();
             next.pause();
         }
         IOstiumPairsStorage ps = IOstiumPairsStorage(registry.getContractAddress("pairsStorage"));
@@ -574,7 +580,7 @@ contract OperateScript is Script {
         for (uint16 i = 0; i < count; i++) {
             bytes32 feed = ps.pairFeed(i);
             if (old.isFeedHalted(feed) && !next.isFeedHalted(feed)) {
-                _relay(msg.sender);
+                _relay();
                 next.haltFeed(feed);
             }
         }
@@ -589,7 +595,7 @@ contract OperateScript is Script {
     function authoriseHardenedForwarder(OracleConfig memory c) public {
         IOstiumForwarded upkeep = IOstiumForwarded(_requireHardenedUpkeep(c.registry));
         if (upkeep.isForwarder(c.keeper)) return;
-        _relay(msg.sender);
+        _relay();
         upkeep.registerForwarder(c.keeper);
     }
 
@@ -603,15 +609,15 @@ contract OperateScript is Script {
         WhitespacePriceUpKeep upkeep = WhitespacePriceUpKeep(_requireHardenedUpkeep(c.registry));
 
         if (upkeep.maxAge() != c.maxAge) {
-            _relay(msg.sender);
+            _relay();
             upkeep.setMaxAge(c.maxAge);
         }
         if (upkeep.maxDeviationBps() != c.maxDeviationBps) {
-            _relay(msg.sender);
+            _relay();
             upkeep.setMaxDeviationBps(c.maxDeviationBps);
         }
         if (upkeep.guardian() != c.guardian) {
-            _relay(msg.sender);
+            _relay();
             upkeep.setGuardian(c.guardian);
         }
     }
@@ -842,7 +848,7 @@ contract OperateScript is Script {
             abi.encodeCall(OstiumTradesUpKeep.initialize, (registry))
         );
 
-        _relay(msg.sender);
+        _relay();
         registry.registerContract(TRADES_UPKEEP_KEY, upkeep);
     }
 
@@ -853,7 +859,7 @@ contract OperateScript is Script {
     function authoriseLiquidator(LiquidationConfig memory c) public {
         OstiumTradesUpKeep upkeep = OstiumTradesUpKeep(payable(_requireTradesUpKeep(c.registry)));
         if (upkeep.isForwarder(c.liquidator)) return;
-        _relay(msg.sender);
+        _relay();
         upkeep.registerForwarder(c.liquidator);
     }
 
@@ -1116,7 +1122,7 @@ contract OperateScript is Script {
         if (ps.isPairListed(from, to)) {
             pairIndex = _findPairIndexFor(ps, from, to);
         } else {
-            _relay(msg.sender);
+            _relay();
             ps.addPair(
                 IOstiumPairsStorage.Pair({
                     from: from,
@@ -1161,7 +1167,7 @@ contract OperateScript is Script {
         IOstiumTradingStorage ts =
             IOstiumTradingStorage(IOstiumRegistry(m.registry).getContractAddress("tradingStorage"));
         if (ts.openInterest(pairIndex, 2) > 0) return;
-        _relay(msg.sender);
+        _relay();
         ts.setMaxOpenInterest(pairIndex, m.maxOi);
     }
 
@@ -1193,7 +1199,7 @@ contract OperateScript is Script {
         (bool found,) = _lookup(registry, key);
         if (found) return;
         address incumbent = _incumbentUpkeep(registry);
-        _relay(msg.sender);
+        _relay();
         registry.registerContract(key, incumbent);
     }
 
