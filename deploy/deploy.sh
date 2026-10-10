@@ -2,6 +2,16 @@
 # Deploy the public testnet stack. Run as the `whitespace` user.
 set -euo pipefail
 
+# Overridable only so deploy/test/deploySh.test.mjs can run this against a scratch clone with
+# stubbed sudo/systemctl/pnpm; production uses the defaults.
+REPO=${WHITESPACE_REPO:-/home/whitespace/whitespace}
+# Which commit the installed unit files came from (see changed_since).
+STATE_DIR=${WHITESPACE_DEPLOY_STATE:-$HOME/.whitespace-deploy}
+VERIFY_DELAY_S=${WHITESPACE_VERIFY_DELAY_S:-5}
+
+# Set while web and indexer are stopped for the build; see recover_on_exit.
+UNITS_STOPPED_FOR_BUILD=0
+
 # EVERYTHING lives inside main(), which is called on the last line, and that structure is
 # load-bearing rather than stylistic. bash reads a script incrementally, keeping a byte
 # offset into the file — and the first thing this script does is `git pull`, which can
@@ -11,7 +21,8 @@ set -euo pipefail
 # the previous body. A function body is parsed in full before any of it executes, so
 # wrapping the work here makes a self-modifying pull harmless.
 main() {
-  cd /home/whitespace/whitespace
+  cd "$REPO"
+  trap recover_on_exit EXIT
 
   echo "==> pulling"
   git pull --ff-only
@@ -22,11 +33,14 @@ main() {
   echo "==> naming the indexer build schema"
   write_indexer_build_env
 
+  install_units_if_changed
+
   echo "==> stopping memory-heavy units for the build"
   # One `sudo systemctl <verb> <single-unit>` per call, never a multi-unit line.
   # /etc/sudoers.d/whitespace matches the WHOLE command including its arguments, so
   # `systemctl restart a b c` is a different — and unpermitted — command from three
   # separate restarts. Batching them fails with "I'm afraid I can't do that".
+  UNITS_STOPPED_FOR_BUILD=1
   ws_ctl stop whitespace-web whitespace-indexer
 
   echo "==> building the frontend"
@@ -45,20 +59,43 @@ main() {
   # on 2026-09-22 after a build failure it did not notice.
   if [ ! -f apps/web/.next/BUILD_ID ]; then
     echo "    FAIL: the build produced no .next/BUILD_ID — NOT restarting web" >&2
-    echo "    The site is currently DOWN (web was stopped for the build)." >&2
     echo "    Recover with: rm -rf apps/web/.next && pnpm --filter @whitespace/web build" >&2
-    echo "    then: sudo systemctl start whitespace-indexer whitespace-web" >&2
+    echo "    then: sudo systemctl start whitespace-web" >&2
     exit 1
   fi
 
   echo "==> restarting the stack"
   ws_ctl restart whitespace-publisher whitespace-keeper whitespace-api
   ws_ctl start whitespace-indexer whitespace-web
+  UNITS_STOPPED_FOR_BUILD=0
   # The automation bots read candidates from the indexer's database, so they come up after
   # it. Two instances, two forwarder keys (services/liquidator/.env.a, .env.b).
   ws_ctl restart whitespace-bot@a whitespace-bot@b
 
   verify_running_build
+}
+
+# Whatever ends the run — a failed build, a failed install, a failed restart, Ctrl-C — the
+# indexer and web must not be left stopped. Under `set -e` any failing command between the
+# stop and the start used to exit right there, and the site stayed down until someone
+# noticed and started the units by hand.
+recover_on_exit() {
+  local status=$?
+  if [ "$UNITS_STOPPED_FOR_BUILD" = 1 ]; then
+    echo "==> deploy failed with web and indexer stopped — bringing them back" >&2
+    sudo systemctl start whitespace-indexer || echo "    could not start whitespace-indexer" >&2
+    # Web only onto a complete build: `next start` on a tree without BUILD_ID crash-loops.
+    # build_web's retry clears .next first, so a BUILD_ID here is a whole build — this
+    # deploy's, or the previous one if the failure came before the build replaced it.
+    if [ -f "$REPO/apps/web/.next/BUILD_ID" ]; then
+      sudo systemctl start whitespace-web || echo "    could not start whitespace-web" >&2
+    else
+      echo "    whitespace-web NOT started: apps/web/.next has no BUILD_ID. The site is DOWN." >&2
+      echo "    Recover with: rm -rf apps/web/.next && pnpm --filter @whitespace/web build" >&2
+      echo "    then: sudo systemctl start whitespace-web" >&2
+    fi
+  fi
+  exit "$status"
 }
 
 # `next build` can fail in "Collecting build traces" against a .next left behind by an
@@ -98,16 +135,56 @@ ws_ctl() {
   for unit in "$@"; do sudo systemctl "$verb" "$unit"; done
 }
 
+# Succeeds when any of <paths> differs between the commit recorded under <name> and HEAD.
+# Also succeeds when there is no record or the recorded commit is unknown (first run, a
+# rewritten history): an unnecessary restart is cheap, a missed one runs stale code.
+#
+# Compared against what was last installed, not against the pre-pull HEAD: a deploy that
+# pulled and then failed before installing would otherwise leave the next run seeing
+# "nothing changed" and the old definitions in place indefinitely.
+changed_since() {
+  local name=$1
+  shift
+  local stamp="$STATE_DIR/$name.sha" last
+  [ -f "$stamp" ] || return 0
+  last=$(cat "$stamp")
+  git cat-file -e "${last}^{commit}" 2>/dev/null || return 0
+  ! git diff --quiet "$last" HEAD -- "$@"
+}
+
+mark_deployed() {
+  mkdir -p "$STATE_DIR"
+  git rev-parse HEAD > "$STATE_DIR/$1.sha"
+}
+
+# A unit file change does nothing until it is copied over and systemd re-reads it; pulling
+# a new MemoryMax or ExecStart and restarting used to keep running the old definition.
+# One file per sudo call for the same sudoers reason as ws_ctl (the runbook lists the
+# entries). Only .service/.timer files that exist in the repo are installed.
+install_units_if_changed() {
+  if ! changed_since units deploy/systemd; then
+    return 0
+  fi
+  echo "==> installing changed systemd units"
+  local f
+  for f in deploy/systemd/*.service deploy/systemd/*.timer; do
+    [ -f "$f" ] || continue
+    sudo cp "$f" "/etc/systemd/system/$(basename "$f")"
+  done
+  sudo systemctl daemon-reload
+  mark_deployed units
+}
+
 # "Deployed" and "running" are different claims. A build writes .next; only a restart makes
 # `next start` serve it, and a restart that silently failed leaves the old bundle live with
 # every other signal looking green. Assert the running server started after the build it is
 # supposed to be serving, and fail the deploy loudly if it did not.
 verify_running_build() {
   echo "==> verifying the running server is the build on disk"
-  sleep 5
+  sleep "$VERIFY_DELAY_S"
 
   local build_epoch started_epoch
-  build_epoch=$(stat -c %Y /home/whitespace/whitespace/apps/web/.next/BUILD_ID)
+  build_epoch=$(stat -c %Y "$REPO/apps/web/.next/BUILD_ID")
   started_epoch=$(date -d "$(systemctl show -p ActiveEnterTimestamp --value whitespace-web)" +%s)
 
   echo "    BUILD_ID written : $(date -d "@$build_epoch" '+%F %T')"

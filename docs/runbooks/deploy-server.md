@@ -36,7 +36,10 @@ whitespace-balances.timer   gas + disk check every 30 min (deploy/check-balances
 whitespace-backup.timer     daily pg_dump of api_series (deploy/backup-api-series.sh)
 ```
 
-Install/refresh unit files after a pull that changed `deploy/systemd/`:
+`deploy.sh` installs the unit files itself whenever `deploy/systemd/` changed since it last
+did (one `sudo cp deploy/systemd/<file> /etc/systemd/system/<file>` per file, then
+`sudo systemctl daemon-reload`; the commit is recorded in `~/.whitespace-deploy/units.sha`).
+First install, or by hand:
 
 ```bash
 sudo cp deploy/systemd/*.service deploy/systemd/*.timer /etc/systemd/system/
@@ -45,7 +48,10 @@ sudo systemctl enable --now whitespace-bot@a whitespace-bot@b whitespace-balance
 ```
 
 `/etc/sudoers.d/whitespace` must allow single-unit `systemctl start|stop|restart|is-active`
-for every unit above, including `whitespace-bot@a` and `whitespace-bot@b`.
+for every unit above, including `whitespace-bot@a` and `whitespace-bot@b`, plus
+`systemctl daemon-reload` and, for each file in `deploy/systemd/`, exactly
+`/usr/bin/cp deploy/systemd/<file> /etc/systemd/system/<file>` (sudoers matches the whole
+command, so list each file).
 
 ## Memory budget
 
@@ -94,9 +100,13 @@ the box. `deploy/alerts.env` (git-ignored) holds the Telegram token for alerts.
 
 ## Routine deploy
 
-`deploy/deploy.sh` as `whitespace`: pull, install, build web with web+indexer stopped,
-restart everything, then verify every unit and timer is `active` and that the web process
-started after the build it serves. It exits non-zero on any failure.
+`deploy/deploy.sh` as `whitespace`: pull, install, install changed unit files, build web
+with web+indexer stopped, restart everything, then verify every unit and timer is `active`
+and that the web process started after the build it serves. It exits non-zero on any
+failure — and if it fails while web and indexer are stopped, an exit trap starts the
+indexer again, and web too when `apps/web/.next/BUILD_ID` exists (otherwise it prints the
+rebuild command; the site is down until then). `node --test deploy/test/*.test.mjs` runs
+the script against a scratch clone with stubbed sudo/systemctl/pnpm.
 
 ## Alerts
 
