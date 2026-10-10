@@ -12,6 +12,7 @@ import { vaultAbi } from './abis/vault.js';
 import { parseGetLogsBlockRange, parsePollingInterval } from './src/lib/pollingInterval.js';
 import { priceUpKeepAddresses } from './src/lib/upkeepAddresses.js';
 import { parseMaxRps, rateLimitedTransport } from './src/lib/rateLimitedTransport.js';
+import { coalescingLogsTransport } from './src/lib/coalescingLogsTransport.js';
 
 // Whitechain testnet 1874 is an OP Stack rollup — see
 // docs/superpowers/specs/2026-09-08-whitechain-perp-dex-design.md §2.2.
@@ -88,9 +89,12 @@ export default createConfig({
     whitechain1874: {
       id: CHAIN_ID,
       // Capped, so a backfill cannot take the whole per-IP budget the keeper also lives on.
-      rpc: rateLimitedTransport(fallback(rpcUrls.map((url) => http(url))), {
-        rps: parseMaxRps(process.env.PONDER_MAX_RPS),
-      }),
+      // Coalescing sits outside the cap, so only requests that reach the RPC take a slot.
+      rpc: coalescingLogsTransport(
+        rateLimitedTransport(fallback(rpcUrls.map((url) => http(url))), {
+          rps: parseMaxRps(process.env.PONDER_MAX_RPS),
+        }),
+      ),
       // Ponder's 1 s default doubles the request rate on a 1 s chain for no gain here, and the
       // public RPC rate-limits by IP: the indexer, keeper and both automation bots share one.
       pollingInterval: pollingIntervalMs,
