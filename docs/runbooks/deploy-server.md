@@ -138,6 +138,20 @@ sudo systemctl restart rsyslog
 docker restart whitespace-postgres      # if it does not recover by itself
 ```
 
+## RPC budget
+
+The public 1874 RPC rate-limits per IP, and the keeper, both bots and the indexer share this
+host's. The keeper has the least slack (a report must land within 10 s of the order), so:
+
+- Node services resolve IPv4 first (`--dns-result-order=ipv4first` in every unit): the
+  provider raised the limit for `65.21.53.147`, not for the host's IPv6.
+- The indexer is capped by `PONDER_MAX_RPS` in `services/indexer/.env` (10 today). At 25 the
+  keeper started seeing "rate limit exceeded" again.
+- Browsers read the chain directly: `NEXT_PUBLIC_RPC_URL` stays unset in
+  `apps/web/.env.local`, so visitors do not spend this host's budget.
+
+Watch: `journalctl -u whitespace-keeper --since -10min -o cat | grep -c "rate limit"` must be 0.
+
 ## Alerts
 
 `check-balances.sh` alerts to Telegram when the keeper or a bot forwarder is under
