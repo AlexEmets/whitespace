@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
 import { truncateAll, seedMarket, seedOpenPosition, seedClosedPosition, seedPartialClose, TRADER, OTHER_TRADER, TX_B } from './seed.js';
+import { getPool } from '../src/db.js';
+import { POSITION_HISTORY_DEFAULT_LIMIT, POSITION_HISTORY_MAX_LIMIT } from '../src/routes/positions.js';
 
 describe('GET /positions/:address', () => {
   let server: TestServer;
@@ -143,6 +145,60 @@ describe('GET /positions/:address/history', () => {
     const theirs = await (await fetch(`${server.baseUrl}/positions/${OTHER_TRADER}/history`)).json();
     expect(mine).toHaveLength(1);
     expect(theirs).toHaveLength(0);
+  });
+});
+
+describe('GET /positions/:address/history is bounded', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startTestServer();
+    await truncateAll();
+    await seedMarket();
+    // DEFAULT + 1 full closes at closed_at 1..501, and 3 partial closes interleaved at the top.
+    await getPool().query(
+      `INSERT INTO closed_position (trade_id, trader, pair_index, index, buy, collateral, leverage, open_price, close_price, tp, sl,
+         close_reason, percent_profit, usdc_sent_to_trader, percentage_closed, open_order_id, close_order_id, opened_at, closed_at, close_tx_hash)
+       SELECT g, $1, 0, 0, true, 1, 100, 1, 1, 0, 0, 'close', 0, 1, 10000, g, 100000 + g, g, g, '0x01'
+         FROM generate_series(1, $2::int) g`,
+      [TRADER, POSITION_HISTORY_DEFAULT_LIMIT + 1],
+    );
+    for (const closedAt of [10_000, 10_002, 10_004]) await seedPartialClose({ orderId: closedAt, closedAt });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  const get = async (q: string) => {
+    const res = await fetch(`${server.baseUrl}/positions/${TRADER}/history${q}`);
+    return { status: res.status, body: await res.json() };
+  };
+
+  it(`defaults to the newest ${POSITION_HISTORY_DEFAULT_LIMIT}`, async () => {
+    const { body } = await get('');
+    expect(body).toHaveLength(POSITION_HISTORY_DEFAULT_LIMIT);
+    expect(body[0].closedAt).toBe(10_004);
+    // 504 rows exist; the 4 oldest full closes (closed_at 1..4) are the ones dropped.
+    expect(body[body.length - 1].closedAt).toBe(5);
+  });
+
+  it('honours ?limit across both sources, newest first', async () => {
+    const { body } = await get('?limit=4');
+    expect(body.map((r: { closedAt: number; isPartial: boolean }) => [r.closedAt, r.isPartial])).toEqual([
+      [10_004, true],
+      [10_002, true],
+      [10_000, true],
+      [POSITION_HISTORY_DEFAULT_LIMIT + 1, false],
+    ]);
+  });
+
+  it(`accepts ?limit=${POSITION_HISTORY_MAX_LIMIT} (boundary) and returns everything there is`, async () => {
+    const { status, body } = await get(`?limit=${POSITION_HISTORY_MAX_LIMIT}`);
+    expect(status).toBe(200);
+    expect(body).toHaveLength(POSITION_HISTORY_DEFAULT_LIMIT + 4);
+  });
+
+  it.each(['0', String(POSITION_HISTORY_MAX_LIMIT + 1), 'abc', '-5', '1.5'])('rejects ?limit=%s with 400', async (raw) => {
+    expect((await get(`?limit=${raw}`)).status).toBe(400);
   });
 });
 

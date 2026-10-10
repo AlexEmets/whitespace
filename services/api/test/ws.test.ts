@@ -1,8 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import WebSocket from 'ws';
+import net from 'node:net';
 import { startTestServer, type TestServer } from './testServer.js';
 import { truncateAll, seedMarket, seedPriceReport, TRADER, seedOpenPosition, seedLimitOrder, seedFee } from './seed.js';
-import { parseChannel, MAX_SUBSCRIPTIONS_PER_SOCKET } from '../src/ws.js';
+import {
+  parseChannel,
+  createWsManager,
+  MAX_SUBSCRIPTIONS_PER_SOCKET,
+  MAX_PAYLOAD_BYTES,
+  WS_CLOSE_TOO_MANY,
+} from '../src/ws.js';
 import { MAX_POSITIONS } from '../src/routes/positions.js';
 import { getPool } from '../src/db.js';
 
@@ -245,6 +252,85 @@ describe('WS polling is bounded', () => {
   });
 });
 
+describe('WS survives hostile peers', () => {
+  let server: TestServer;
+  // An 'error' emitted with no listener is thrown as an uncaught exception — in production
+  // that is the process dying. Capture them here so the test fails on the crash itself.
+  const uncaught: unknown[] = [];
+  const onUncaught = (err: unknown) => uncaught.push(err);
+  beforeAll(async () => {
+    server = await startTestServer({ wsPollIntervalMs: 30 });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+  beforeEach(() => {
+    uncaught.length = 0;
+    process.on('uncaughtException', onUncaught);
+  });
+  afterEach(() => {
+    process.off('uncaughtException', onUncaught);
+  });
+
+  /** Upgrades a raw TCP socket, then writes `frame` and resolves when the server hangs up. */
+  function rawUpgradeThenSend(frame: Buffer): Promise<void> {
+    const { port } = new URL(server.baseUrl);
+    return new Promise((resolve, reject) => {
+      const s = net.connect(Number(port), '127.0.0.1', () => {
+        s.write(
+          'GET /ws HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
+            'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n',
+        );
+      });
+      let upgraded = false;
+      s.on('data', (chunk) => {
+        if (!upgraded && chunk.toString().startsWith('HTTP/1.1 101')) {
+          upgraded = true;
+          s.write(frame);
+        }
+      });
+      s.on('error', () => undefined);
+      s.on('close', () => (upgraded ? resolve() : reject(new Error('upgrade never completed'))));
+    });
+  }
+
+  async function stillServing(): Promise<void> {
+    const ws = await connect(server.wsUrl);
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:0' }));
+    expect(await onceMessage(ws)).toEqual({ type: 'subscribed', channel: 'price:0' });
+    ws.close();
+  }
+
+  it('a frame with reserved RSV bits set closes that socket without crashing the process', async () => {
+    // FIN + RSV1-3 + text opcode, masked, zero-length: a protocol violation `ws` reports
+    // as an 'error' on the socket.
+    await rawUpgradeThenSend(Buffer.from([0xf1, 0x80, 0, 0, 0, 0]));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(uncaught).toEqual([]);
+    await stillServing();
+  });
+
+  it('closes a socket that sends more than MAX_PAYLOAD_BYTES with 1009, and keeps serving', async () => {
+    const ws = await connect(server.wsUrl);
+    ws.on('error', () => undefined);
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+    ws.send('x'.repeat(MAX_PAYLOAD_BYTES + 1));
+    expect(await closed).toBe(1009);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(uncaught).toEqual([]);
+    await stillServing();
+  });
+
+  it('accepts a message of exactly MAX_PAYLOAD_BYTES (boundary) and answers it', async () => {
+    const ws = await connect(server.wsUrl);
+    // Valid JSON padded to the limit with whitespace, so the reply proves it was processed.
+    const body = JSON.stringify({ type: 'subscribe', channel: 'price:0' });
+    ws.send(body + ' '.repeat(MAX_PAYLOAD_BYTES - body.length));
+    expect(await onceMessage(ws)).toEqual({ type: 'subscribed', channel: 'price:0' });
+    ws.close();
+  });
+});
+
 describe('parseChannel', () => {
   it('lowercases the address of the new wallet channels', () => {
     expect(parseChannel('fees:0x2B8BA090DEdF879F8045C0DDa5a78762CED90D19')).toEqual({
@@ -252,5 +338,185 @@ describe('parseChannel', () => {
       args: ['0x2b8ba090dedf879f8045c0dda5a78762ced90d19'],
     });
     expect(parseChannel(`limitOrders:${TRADER}`)).toEqual({ kind: 'limitOrders', args: [TRADER] });
+  });
+
+  it.each(['price:0', 'price:7', 'price:9999'])('accepts the canonical pair index %s', (channel) => {
+    expect(parseChannel(channel)).toEqual({ kind: 'price', args: [channel.split(':')[1]] });
+  });
+
+  // Each of these used to be accepted as its own polled channel.
+  it.each(['price:abc', 'price:01', 'price:-1', 'price:1e0', 'price:0x1', 'price:1.0', 'price: 1', 'price:10000'])(
+    'rejects the non-canonical pair index %s',
+    (channel) => {
+      expect(parseChannel(channel)).toBeNull();
+    },
+  );
+
+  it.each(['1m', '5m', '15m', '1h', '4h', '1d'])('accepts candles with the supported interval %s', (interval) => {
+    expect(parseChannel(`candles:0:${interval}`)).toEqual({ kind: 'candles', args: ['0', interval] });
+  });
+
+  it.each(['candles:0:7m', 'candles:0:1H', 'candles:abc:1m', 'candles:01:1m', 'candles:0:', 'candles:0:1m:x'])(
+    'rejects the malformed candles channel %s',
+    (channel) => {
+      expect(parseChannel(channel)).toBeNull();
+    },
+  );
+});
+
+describe('WS poll sweeps never overlap', () => {
+  it('a slow sweep is joined, not stacked, by later ticks', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const manager = createWsManager({
+      pollIntervalMs: 5,
+      fetchChannelData: async () => {
+        calls++;
+        await gate;
+        return null;
+      },
+    });
+    // A fake socket is enough: the sweep only reads readyState and calls send.
+    const fake = { readyState: 1, OPEN: 1, send: () => undefined } as unknown as WebSocket;
+    expect(manager.subscribe(fake, 'price:0')).toBe(true);
+    manager.start();
+    try {
+      // Many ticks elapse while the first sweep is stuck on its query.
+      await new Promise((r) => setTimeout(r, 100));
+      expect(calls).toBe(1);
+      // A direct call during the stall joins the same sweep too.
+      const joined = manager.pollOnce();
+      expect(calls).toBe(1);
+      release();
+      await joined;
+      // Once it finishes, the next tick starts a fresh sweep.
+      await waitForCondition(() => calls >= 2);
+    } finally {
+      manager.stop();
+    }
+  });
+
+  it('a failing sweep does not wedge the poller', async () => {
+    let calls = 0;
+    const manager = createWsManager({
+      pollIntervalMs: 5,
+      fetchChannelData: async () => {
+        calls++;
+        throw new Error('db down');
+      },
+    });
+    const fake = { readyState: 1, OPEN: 1, send: () => undefined } as unknown as WebSocket;
+    manager.subscribe(fake, 'price:0');
+    manager.start();
+    try {
+      await waitForCondition(() => calls >= 3);
+    } finally {
+      manager.stop();
+    }
+  });
+});
+
+describe('WS connection caps', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startTestServer({ wsPollIntervalMs: 1000, ws: { maxConnectionsPerIp: 2, maxConnections: 3 } });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  // The close code is recorded from the moment of connecting: a refused socket is closed
+  // right after the handshake, before a listener attached later would see it.
+  const closeCodes = new WeakMap<WebSocket, Promise<number>>();
+
+  function connectAs(ip: string): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(server.wsUrl, { headers: { 'x-forwarded-for': ip } });
+      closeCodes.set(ws, new Promise((r) => ws.once('close', (code) => r(code))));
+      ws.once('open', () => resolve(ws));
+      ws.once('error', reject);
+    });
+  }
+
+  /** Resolves with the close code if the server hangs up within `ms`, else null. */
+  function closedWithin(ws: WebSocket, ms = 300): Promise<number | null> {
+    return Promise.race([closeCodes.get(ws)!, new Promise<null>((r) => setTimeout(() => r(null), ms))]);
+  }
+
+  async function closeAndWait(ws: WebSocket): Promise<void> {
+    if (ws.readyState === ws.CLOSED) return;
+    const done = closeCodes.get(ws)!;
+    ws.close();
+    await done;
+    // Let the server's own 'close' handler (which frees the slot) run too.
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  it('enforces the per-IP and total caps, and frees a slot when a socket closes', async () => {
+    const a1 = await connectAs('203.0.113.10');
+    const a2 = await connectAs('203.0.113.10');
+    expect(await closedWithin(a1)).toBeNull();
+    expect(await closedWithin(a2)).toBeNull();
+
+    // Third from the same IP: over the per-IP cap.
+    const a3 = await connectAs('203.0.113.10');
+    expect(await closedWithin(a3)).toBe(WS_CLOSE_TOO_MANY);
+
+    // A different client still gets in (total now 3, at the cap)...
+    const b1 = await connectAs('203.0.113.11');
+    expect(await closedWithin(b1)).toBeNull();
+    // ...and the next one from anywhere is over the total cap.
+    const c1 = await connectAs('203.0.113.12');
+    expect(await closedWithin(c1)).toBe(WS_CLOSE_TOO_MANY);
+
+    // Closing one of A's sockets frees both its per-IP slot and a total slot.
+    await closeAndWait(a1);
+    const a4 = await connectAs('203.0.113.10');
+    expect(await closedWithin(a4)).toBeNull();
+
+    for (const ws of [a2, b1, a4]) await closeAndWait(ws);
+  });
+
+  it('counts every address in one IPv6 /64 as the same client', async () => {
+    const x1 = await connectAs('2001:db8:1:2::1');
+    const x2 = await connectAs('2001:db8:1:2::2');
+    const x3 = await connectAs('2001:db8:1:2:ffff::3');
+    expect(await closedWithin(x1)).toBeNull();
+    expect(await closedWithin(x2)).toBeNull();
+    expect(await closedWithin(x3)).toBe(WS_CLOSE_TOO_MANY);
+    for (const ws of [x1, x2]) await closeAndWait(ws);
+  });
+});
+
+describe('WS dead-peer detection', () => {
+  let server: TestServer;
+  beforeAll(async () => {
+    server = await startTestServer({ wsPollIntervalMs: 1000, ws: { pingIntervalMs: 40 } });
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('terminates a socket that stops answering pings, and drops its subscriptions', async () => {
+    // autoPong off: the client receives pings but never answers, like a peer that vanished
+    // without a FIN.
+    const ws = new WebSocket(server.wsUrl, { autoPong: false });
+    await new Promise((r) => ws.once('open', r));
+    ws.send(JSON.stringify({ type: 'subscribe', channel: 'price:42' }));
+    await onceMessage(ws);
+    expect(server.app.wsManager.channelSubscriberCount('price:42')).toBe(1);
+    const code = await new Promise<number>((resolve) => ws.once('close', resolve));
+    expect(code).toBe(1006); // terminated, no close frame
+    await waitForCondition(() => server.app.wsManager.channelSubscriberCount('price:42') === 0);
+  });
+
+  it('keeps a socket that answers pings open across many ping intervals', async () => {
+    const ws = await connect(server.wsUrl);
+    let closed = false;
+    ws.on('close', () => (closed = true));
+    await new Promise((r) => setTimeout(r, 400)); // ten ping intervals
+    expect(closed).toBe(false);
+    ws.close();
   });
 });

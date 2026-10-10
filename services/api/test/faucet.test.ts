@@ -144,6 +144,26 @@ describe('POST /faucet/wbt', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('blocks a second claim from another address in the same IPv6 /64', async () => {
+    // One connection owns the whole /64; rotating the interface ID must not reset the cooldown.
+    const { sender, calls } = makeSender();
+    __setFaucetTestOverrides({ sender });
+
+    expect((await claim(server.baseUrl, ADDR_A, '2001:db8:aa:bb::1')).status).toBe(200);
+    const res = await claim(server.baseUrl, ADDR_B, '2001:db8:aa:bb:dead:beef:1234:5678');
+    expect(res.status).toBe(429);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('lets a claim through from the neighbouring IPv6 /64 (boundary)', async () => {
+    const { sender, calls } = makeSender();
+    __setFaucetTestOverrides({ sender });
+
+    expect((await claim(server.baseUrl, ADDR_A, '2001:db8:aa:bb::1')).status).toBe(200);
+    expect((await claim(server.baseUrl, ADDR_B, '2001:db8:aa:bc::1')).status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+
   it('lets a different address on a different IP claim independently', async () => {
     const { sender, calls } = makeSender();
     __setFaucetTestOverrides({ sender });

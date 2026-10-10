@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import { createApp, type App } from '../src/server.js';
+import type { WsManagerOptions } from '../src/ws.js';
 import { resetPool } from '../src/db.js';
 import { ensureIndexSeriesSchema } from '../src/indexSeries.js';
 import { ensureFaucetSchema } from '../src/faucet.js';
@@ -11,7 +12,9 @@ export type TestServer = {
   close: () => Promise<void>;
 };
 
-export async function startTestServer(opts: { wsPollIntervalMs?: number } = {}): Promise<TestServer> {
+export async function startTestServer(
+  opts: { wsPollIntervalMs?: number; ws?: WsManagerOptions } = {},
+): Promise<TestServer> {
   resetPool(); // pick up the current DATABASE_URL (globalSetup sets it once, but be defensive)
   // The index series is this service's own storage (src/indexSeries.ts), created by the
   // real entrypoint at boot. Tests need it for the same reason: the candles route reads
@@ -22,7 +25,7 @@ export async function startTestServer(opts: { wsPollIntervalMs?: number } = {}):
   // The faucet keeps its cooldown ledger in its own schema, created at boot by the real
   // entrypoint; tests need it present for the same reason the index series is created here.
   await ensureFaucetSchema();
-  const app = createApp({ wsPollIntervalMs: opts.wsPollIntervalMs ?? 50 });
+  const app = createApp({ wsPollIntervalMs: opts.wsPollIntervalMs ?? 50, ws: opts.ws });
   await new Promise<void>((resolve) => app.server.listen(0, resolve));
   const { port } = app.server.address() as AddressInfo;
   return {

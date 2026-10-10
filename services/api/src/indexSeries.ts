@@ -105,13 +105,19 @@ export type IndexCandleRow = {
  * traded in that bucket on chain. `COALESCE(..., 0)` because a bucket with no trades has
  * no row on the indexer side, and the honest volume for "nobody traded" is zero.
  */
+/**
+ * At most `limit` candles: the MOST RECENT ones in [from, to], returned oldest first. The
+ * series is recorded every few seconds forever, so a wide range (or the route's default of
+ * "since epoch") used to read and serialise the pair's entire history in one response.
+ */
 export async function readIndexCandles(
   pairIndex: number,
   interval: string,
   from: number,
   to: number,
+  limit: number,
 ): Promise<IndexCandleRow[]> {
-  return query<IndexCandleRow>(
+  const rows = await query<IndexCandleRow>(
     `SELECT i.bucket_start,
             i.open, i.high, i.low, i.close,
             COALESCE(c.volume, 0) AS volume
@@ -122,9 +128,11 @@ export async function readIndexCandles(
              AND c.bucket_start = i.bucket_start
       WHERE i.pair_index = $1 AND i.interval = $2
         AND i.bucket_start >= $3 AND i.bucket_start <= $4
-      ORDER BY i.bucket_start ASC`,
-    [pairIndex, interval, from, to],
+      ORDER BY i.bucket_start DESC
+      LIMIT $5`,
+    [pairIndex, interval, from, to, limit],
   );
+  return rows.reverse();
 }
 
 /** The most recent index candle for a bucket, for the WS `candles:` channel. */

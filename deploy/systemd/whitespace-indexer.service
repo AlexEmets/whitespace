@@ -27,7 +27,14 @@ ExecStart=/home/whitespace/whitespace/services/indexer/node_modules/.bin/ponder 
 Restart=always
 RestartSec=5
 # Measured 203 MB PSS at peak during historical backfill, which is the heaviest phase.
-MemoryMax=600M
+# Memory budget (see docker-compose.yml and deploy/test/memoryBudget.test.mjs): MemoryHigh
+# is where systemd starts reclaiming from this unit, MemoryMax the hard kill, and the V8 heap
+# cap sits under both so Node collects garbage before the cgroup has to step in. The sum of
+# every MemoryMax plus the container limits stays inside physical RAM; it used to exceed it,
+# so under load the kernel OOM killer chose for us, and it chose Postgres.
+MemoryHigh=272M
+MemoryMax=320M
+Environment=NODE_OPTIONS=--max-old-space-size=208
 
 [Install]
 WantedBy=multi-user.target

@@ -31,6 +31,19 @@ import { weightOf } from '@whitespace/shared/venues';
  * jitter; three in a row means the index is gone. */
 export const MARK_STALE_SAMPLES = 3;
 
+/**
+ * How long a feed must be continuously below its healthy-venue minimum before opens are
+ * refused, once it has been healthy. Without it `degraded` was recomputed from scratch on
+ * every request, so one venue tick landing a few ms past the staleness bound flipped a
+ * single request to `degraded_opens_blocked` and the next one back — traders saw opens
+ * fail at random on a market that was, by any sensible reading, fine. Two sample intervals:
+ * long enough to ride out a late tick, far too short to trade on a real venue loss.
+ *
+ * Deliberately one-sided. Recovery is immediate, and the grace never applies to a feed
+ * that has not yet been healthy (startup) or to `noData` (nothing to price with at all).
+ */
+export const DEFAULT_DEGRADED_ENTER_GRACE_MS = 2_000;
+
 export function createPublisherEngine({
   chainId,
   verifierAddress,
@@ -41,6 +54,7 @@ export function createPublisherEngine({
   signatureThresholdK,
   now = () => Date.now(),
   markStalenessMs,
+  degradedEnterGraceMs = DEFAULT_DEGRADED_ENTER_GRACE_MS,
 }) {
   // Bounds are resolved ONCE per feed and stored beside that feed's ticks, rather than
   // looked up at each use. There is exactly one place the index is computed
@@ -56,6 +70,10 @@ export function createPublisherEngine({
       /** When a real (non-null) index last moved the mark. */
       markUpdatedAt: null,
       staleAfterMs: markStalenessMs ?? MARK_STALE_SAMPLES * feedBounds.markEmaSampleIntervalMs,
+      /** The degraded verdict after hysteresis; starts degraded until proven healthy. */
+      degraded: true,
+      /** When the raw aggregate first said degraded while the feed was still healthy. */
+      degradedSince: null,
       ema: createMarkEma({
         windowMs: feedBounds.markEmaWindowMs,
         sampleIntervalMs: feedBounds.markEmaSampleIntervalMs,
@@ -77,7 +95,27 @@ export function createPublisherEngine({
   /** @param {string} feed @param {number} [at] */
   function currentAggregate(feed, at = now()) {
     const s = requireFeed(feed);
-    return computeIndex([...s.ticks.values()], at, s.bounds, weightOf);
+    return withDegradedHysteresis(s, computeIndex([...s.ticks.values()], at, s.bounds, weightOf), at);
+  }
+
+  /** See DEFAULT_DEGRADED_ENTER_GRACE_MS. `rawDegraded` keeps the instantaneous verdict
+   * visible to anyone diagnosing a flap. */
+  function withDegradedHysteresis(s, aggregate, at) {
+    const rawDegraded = aggregate.degraded;
+    if (aggregate.noData) {
+      s.degraded = true;
+      s.degradedSince = null;
+    } else if (!rawDegraded) {
+      s.degraded = false;
+      s.degradedSince = null;
+    } else if (!s.degraded) {
+      if (s.degradedSince === null) s.degradedSince = at;
+      if (at - s.degradedSince >= degradedEnterGraceMs) {
+        s.degraded = true;
+        s.degradedSince = null;
+      }
+    }
+    return { ...aggregate, degraded: s.degraded, rawDegraded };
   }
 
   /** Advances the mark EMA by one sample from the current index. Called on a fixed
@@ -147,6 +185,19 @@ export function createPublisherEngine({
     }
 
     const market = getMarket(feed);
+    // `price` is the EMA mark while `bid`/`ask` are the live index quotes. Mixed on
+    // purpose, and checked against how the contracts consume them
+    // (contracts/src/vendor/ostium/lib/TradingCallbacksLib.sol):
+    //   - every deployed market has a non-zero priceImpactK (DeployTestnet.s.sol: 2e18 for
+    //     BTC/ETH/SOL, 1e19 for WBT), so fills take the DYNAMIC path: the fill price is
+    //     `price * (1 ± impact)`, i.e. anchored on the mark, and bid/ask only enter through
+    //     spreadComponent = (ask - bid) / (2 * price). Mark and index differ by the EMA lag
+    //     (fractions of a percent), which scales a ~1 bp half-spread by that same fraction —
+    //     negligible, and never negative: each venue has ask >= bid, so the medians do too.
+    //   - the STATIC path (priceImpactK == 0) fills at the raw `ask`/`bid` and measures the
+    //     impact against the mark, which would mix the two series. No configured market
+    //     uses it; a market listed with priceImpactK = 0 must revisit this.
+    // The mark-only fallback below applies when the aggregate has no two-sided quote.
     const reportData = buildReportDataV2({
       chainId,
       verifier: verifierAddress,

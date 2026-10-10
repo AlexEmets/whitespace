@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import net from 'node:net';
 import assert from 'node:assert/strict';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { createPublisherEngine } from '../src/engine.mjs';
@@ -22,6 +23,9 @@ async function withServer(engine, fn) {
   try {
     await fn(`http://127.0.0.1:${port}`);
   } finally {
+    // Drop any connection still waiting on a response, so a broken handler fails the test
+    // instead of hanging it on close.
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
 }
@@ -188,5 +192,81 @@ test('the window follows the configured maxAge and skew', async () => {
     assert.equal((await reportAt(base, NOW_S + 1)).status, 400);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+/**
+ * The request handler is async and node:http drops its promise, so a throw inside it was an
+ * unhandled rejection — process exit. These pin that every failure ends in a response and
+ * the server keeps serving afterwards.
+ */
+function rawRequest(base, requestLine, timeoutMs = 1000) {
+  const { port } = new URL(base);
+  return new Promise((resolve) => {
+    const socket = net.connect(Number(port), '127.0.0.1', () => {
+      socket.write(`${requestLine}\r\nHost: x\r\nConnection: close\r\n\r\n`);
+    });
+    let data = '';
+    const timer = setTimeout(() => {
+      socket.destroy();
+      resolve(null);
+    }, timeoutMs);
+    socket.on('data', (chunk) => (data += chunk));
+    socket.on('error', () => undefined);
+    socket.on('close', () => {
+      clearTimeout(timer);
+      resolve(data || null);
+    });
+  });
+}
+
+function captureRejections() {
+  const seen = [];
+  const onRejection = (err) => seen.push(err);
+  process.on('unhandledRejection', onRejection);
+  return { seen, restore: () => process.off('unhandledRejection', onRejection) };
+}
+
+test('GET // answers 400 instead of rejecting, and the server keeps serving', async () => {
+  const rejections = captureRejections();
+  try {
+    await withServer(newEngine(), async (base) => {
+      const raw = await rawRequest(base, 'GET // HTTP/1.1');
+      assert.ok(raw, 'the server must answer');
+      assert.match(raw, /^HTTP\/1\.1 400 /);
+      assert.equal(rejections.seen.length, 0);
+      assert.equal((await fetch(`${base}/health`)).status, 503);
+    });
+  } finally {
+    rejections.restore();
+  }
+});
+
+test('an exception inside a route answers a generic 500 and the server keeps serving', async () => {
+  const rejections = captureRejections();
+  const engine = healthyEngine();
+  engine.signReportFor = async () => {
+    throw new Error('signer exploded: secret detail');
+  };
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => logged.push(args.map(String).join(' '));
+  try {
+    await withServer(engine, async (base) => {
+      // Bounded: without a response the request would otherwise hang the test forever.
+      const res = await fetch(`${base}/v2/report?feed=${encodeURIComponent('BTC/USD')}&timestamp=${NOW_S}&orderType=MARKET_CLOSE`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      assert.equal(res.status, 500);
+      const text = await res.text();
+      assert.deepEqual(JSON.parse(text), { error: 'internal error' });
+      assert.doesNotMatch(text, /secret/);
+      assert.ok(logged.some((l) => l.includes('/v2/report') && l.includes('signer exploded')));
+      assert.equal(rejections.seen.length, 0);
+      assert.equal((await fetch(`${base}/health`)).status, 200);
+    });
+  } finally {
+    console.error = originalError;
+    rejections.restore();
   }
 });

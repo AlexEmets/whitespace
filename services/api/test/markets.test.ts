@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
 import { truncateAll, seedMarket, seedCandle } from './seed.js';
+import { getPool } from '../src/db.js';
+import { DEFAULT_CANDLE_LIMIT, MAX_CANDLE_LIMIT } from '../src/routes/markets.js';
 
 describe('GET /markets', () => {
   let server: TestServer;
@@ -143,5 +145,66 @@ describe('GET /markets/:pairIndex/candles', () => {
     const res = await fetch(`${server.baseUrl}/markets/0/candles?interval=1m`);
     const body = await res.json();
     expect(body.map((c: { t: number }) => c.t)).toEqual([60, 120]);
+  });
+});
+
+describe('GET /markets/:pairIndex/candles is bounded', () => {
+  let server: TestServer;
+  const N = MAX_CANDLE_LIMIT + 1;
+
+  beforeAll(async () => {
+    server = await startTestServer();
+  });
+  afterAll(async () => {
+    await server.close();
+  });
+  beforeEach(async () => {
+    await truncateAll();
+    await seedMarket();
+  });
+
+  const ts = (body: Array<{ t: number }>) => body.map((c) => c.t);
+
+  async function seedIndexSeries(count: number): Promise<void> {
+    await getPool().query(
+      `INSERT INTO api_series.index_candle (pair_index, interval, bucket_start, open, high, low, close, tick_count, updated_at)
+       SELECT 0, '1m', g * 60, 1, 1, 1, 1, 1, g * 60 FROM generate_series(1, $1::int) g`,
+      [count],
+    );
+  }
+
+  it(`a wide range over the index series returns the most recent ${MAX_CANDLE_LIMIT}, oldest first`, async () => {
+    await seedIndexSeries(N);
+    const body = ts(await (await fetch(`${server.baseUrl}/markets/0/candles?interval=1m&from=0&to=${N * 60}`)).json());
+    expect(body).toHaveLength(MAX_CANDLE_LIMIT);
+    expect(body[0]).toBe(2 * 60); // the oldest (bucket 1) is the one dropped
+    expect(body[body.length - 1]).toBe(N * 60);
+  });
+
+  it(`a range holding exactly ${MAX_CANDLE_LIMIT} returns all of them (boundary)`, async () => {
+    await seedIndexSeries(MAX_CANDLE_LIMIT);
+    const body = ts(await (await fetch(`${server.baseUrl}/markets/0/candles?interval=1m&from=0&to=${N * 60}`)).json());
+    expect(body).toHaveLength(MAX_CANDLE_LIMIT);
+    expect(body[0]).toBe(60);
+  });
+
+  it(`no range over the index series returns the most recent ${DEFAULT_CANDLE_LIMIT}, not the whole series`, async () => {
+    await seedIndexSeries(DEFAULT_CANDLE_LIMIT + 10);
+    const body = ts(await (await fetch(`${server.baseUrl}/markets/0/candles?interval=1m`)).json());
+    expect(body).toHaveLength(DEFAULT_CANDLE_LIMIT);
+    expect(body[body.length - 1]).toBe((DEFAULT_CANDLE_LIMIT + 10) * 60);
+    expect(body[0]).toBe(11 * 60);
+  });
+
+  it(`a wide range over the on-chain fallback is capped at ${MAX_CANDLE_LIMIT} too`, async () => {
+    await getPool().query(
+      `INSERT INTO candle (id, pair_index, interval, bucket_start, open, high, low, close, volume)
+       SELECT '0-1m-' || g, 0, '1m', g * 60, 1, 1, 1, 1, 0 FROM generate_series(1, $1::int) g`,
+      [N],
+    );
+    const body = ts(await (await fetch(`${server.baseUrl}/markets/0/candles?interval=1m&from=0&to=${N * 60}`)).json());
+    expect(body).toHaveLength(MAX_CANDLE_LIMIT);
+    expect(body[0]).toBe(2 * 60);
+    expect(body[body.length - 1]).toBe(N * 60);
   });
 });

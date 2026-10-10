@@ -20,6 +20,7 @@ import * as bybit from './bybit.mjs';
 import * as okx from './okx.mjs';
 import * as whitebit from './whitebit.mjs';
 import * as whitebit_perp from './whitebit_perp.mjs';
+import { createLiveBook } from './liveBook.mjs';
 
 export const VENUE_MODULES = { binance, bybit, okx, whitebit, whitebit_perp };
 
@@ -56,6 +57,16 @@ const PING_INTERVAL_MS = 8_000;
 const IDLE_TIMEOUT_MS = 20_000;
 
 /**
+ * How recently a frame must have arrived for the last book to count as current (see
+ * liveBook.mjs). Longer than PING_INTERVAL_MS, so a quiet venue that only answers our
+ * pings stays live; shorter than IDLE_TIMEOUT_MS, so a socket the watchdog is about to
+ * kill has already stopped vouching for its book. Re-issued every LIVE_REFRESH_MS, well
+ * inside the 2 s staleness bound.
+ */
+export const LIVE_WINDOW_MS = 10_000;
+const LIVE_REFRESH_MS = 500;
+
+/**
  * Connects one venue's WS feed for one market symbol and calls `onTick` with every
  * normalized { venue, bid, ask, ts } update. Reconnects with a fixed backoff on
  * close/error — "venue disconnects -> drop it, continue on the rest" (design spec §7)
@@ -87,6 +98,9 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
     let lastSeen = Date.now();
     let pingTimer = null;
     let idleTimer = null;
+    let refreshTimer = null;
+    // Per connection: a reconnect starts with no book to vouch for.
+    const liveBook = createLiveBook({ liveWindowMs: LIVE_WINDOW_MS });
     // One reconnect per connection attempt. Without this, terminating a stale socket
     // schedules a reconnect from the watchdog AND again from the `close` it provokes,
     // and the venue ends up with two live sockets racing each other.
@@ -95,8 +109,11 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
     const clearTimers = () => {
       if (pingTimer) clearInterval(pingTimer);
       if (idleTimer) clearInterval(idleTimer);
+      if (refreshTimer) clearInterval(refreshTimer);
       pingTimer = null;
       idleTimer = null;
+      refreshTimer = null;
+      liveBook.reset();
     };
 
     const reconnect = (reason) => {
@@ -113,6 +130,7 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
 
     const seen = () => {
       lastSeen = Date.now();
+      liveBook.heard(lastSeen);
     };
 
     socket.on('open', () => {
@@ -137,6 +155,11 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
           reconnect(`no frame for ${Math.round((Date.now() - lastSeen) / 1000)}s — assuming half-open`);
         }
       }, IDLE_TIMEOUT_MS / 2);
+
+      refreshTimer = setInterval(() => {
+        const tick = liveBook.refresh(Date.now());
+        if (tick) onTick({ venue: venueId, ...tick });
+      }, LIVE_REFRESH_MS);
     });
 
     // A pong counts as liveness even though it carries no market data: it proves the peer
@@ -153,8 +176,13 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
         return;
       }
       try {
-        const tick = bookBased ? mod.parseMessage(book, message) : mod.parseMessage(message, Date.now());
-        if (tick) onTick({ venue: venueId, ...tick });
+        // Receipt time for every venue (see the venue modules for why not exchange time).
+        const receivedAt = Date.now();
+        const tick = bookBased ? mod.parseMessage(book, message, receivedAt) : mod.parseMessage(message, receivedAt);
+        if (tick) {
+          liveBook.record(tick, receivedAt);
+          onTick({ venue: venueId, ...tick });
+        }
       } catch (err) {
         onError(err);
       }

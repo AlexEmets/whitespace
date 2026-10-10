@@ -12,9 +12,10 @@ import { handlePnl } from './routes/pnl.js';
 import { handleVaultSettlements } from './routes/vault.js';
 import { handleFaucetWbt } from './routes/faucet.js';
 import { handlePoints, handleLeaderboard } from './routes/points.js';
-import { createWsManager, type WsManager } from './ws.js';
+import { createWsManager, type WsManager, type WsManagerOptions } from './ws.js';
 import { ensureIndexSeriesSchema, startIndexRecorder } from './indexSeries.js';
 import { ensureFaucetSchema } from './faucet.js';
+import { retryWithBackoff } from './db.js';
 
 const router = new Router();
 router.get('/health', handleHealth);
@@ -73,7 +74,7 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
   };
 }
 
-export function createApp(opts: { wsPollIntervalMs?: number } = {}): App {
+export function createApp(opts: { wsPollIntervalMs?: number; ws?: WsManagerOptions } = {}): App {
   const server = createServer((req, res) => {
     void (async () => {
       const cors = corsHeaders(req.headers.origin);
@@ -94,13 +95,21 @@ export function createApp(opts: { wsPollIntervalMs?: number } = {}): App {
         res.writeHead(code, { ...cors, 'content-type': 'application/json' });
         res.end(JSON.stringify(body));
       } catch (err) {
+        // The detail stays in the server log. It used to be echoed in the body, which handed
+        // any caller raw Postgres errors — table and schema names, constraint names, and
+        // connection details while the database was down.
+        console.error(`[api] ${req.method} ${req.url} failed:`, err);
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
         res.writeHead(500, { ...cors, 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: 'internal error', message: (err as Error).message }));
+        res.end(JSON.stringify({ error: 'internal error' }));
       }
     })();
   });
 
-  const wsManager = createWsManager({ pollIntervalMs: opts.wsPollIntervalMs });
+  const wsManager = createWsManager({ ...opts.ws, pollIntervalMs: opts.wsPollIntervalMs ?? opts.ws?.pollIntervalMs });
   wsManager.attach(server);
 
   return { server, wsManager };
@@ -117,16 +126,38 @@ if (isMain) {
   // Only the long-running process records the index series — never `createApp()`, which
   // the test suite calls many times per run and which must not start background timers
   // or reach for a publisher that is not there.
-  await ensureIndexSeriesSchema();
-  await ensureFaucetSchema();
-  const recorder = startIndexRecorder();
+  //
+  // The schema setup retries rather than being awaited before listen: if Postgres is down or
+  // still in crash recovery at boot, throwing here exited the process, and systemd's restart
+  // loop gives up after StartLimitBurst and leaves the API dead after Postgres comes back.
+  // Meanwhile the API listens and answers what it can; the recorder starts once the schema
+  // exists.
+  let recorder: { stop: () => void } | undefined;
+  let stopping = false;
+  void retryWithBackoff(
+    async () => {
+      await ensureIndexSeriesSchema();
+      await ensureFaucetSchema();
+    },
+    { label: 'schema setup' },
+  ).then(() => {
+    if (!stopping) recorder = startIndexRecorder();
+  });
   const stop = () => {
-    recorder.stop();
+    stopping = true;
+    recorder?.stop();
     server.close(() => process.exit(0));
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
 
+  // The WS server now listens for (and only logs) errors the HTTP server emits, so a bind
+  // failure such as EADDRINUSE would no longer crash on its own and the process would sit
+  // there serving nothing. Exit so systemd restarts it and the failure is visible.
+  server.on('error', (err) => {
+    console.error('[api] http server error:', err.message);
+    process.exit(1);
+  });
   server.listen(port, host, () => {
     // eslint-disable-next-line no-console
     console.log(`services/api listening on ${host}:${port} (index recorder sampling ${process.env.PUBLISHER_URL ?? 'http://127.0.0.1:8787'})`);
