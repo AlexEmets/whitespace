@@ -112,6 +112,32 @@ indexer again, and web too when `apps/web/.next/BUILD_ID` exists (otherwise it p
 rebuild command; the site is down until then). `node --test deploy/test/*.test.mjs` runs
 the script against a scratch clone with stubbed sudo/systemctl/pnpm.
 
+## Log limits
+
+Install once per host (and again if `deploy/journald` or `deploy/logrotate` change):
+
+```bash
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo cp deploy/journald/whitespace.conf /etc/systemd/journald.conf.d/whitespace.conf
+sudo systemctl restart systemd-journald
+sudo cp deploy/logrotate/rsyslog /etc/logrotate.d/rsyslog
+```
+
+**Why (2026-10-09 outage).** journald forwarded every service line to rsyslog, which rotated
+`/var/log/syslog` weekly with no size cap. RPC rate-limit stack traces from Ponder and the
+bots grew it to 28 GB, the disk hit 100%, Postgres could not write WAL and crash-looped
+("database system is in recovery mode"), and every API route returned 500. The disk alert
+fired every 30 minutes the whole time, but Telegram was not configured, so it went nowhere —
+**set `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` in `deploy/alerts.env`**.
+
+Freeing space after such an event (logs are expendable; the database is not):
+
+```bash
+sudo truncate -s 0 /var/log/syslog.1 /var/log/syslog
+sudo systemctl restart rsyslog
+docker restart whitespace-postgres      # if it does not recover by itself
+```
+
 ## Alerts
 
 `check-balances.sh` alerts to Telegram when the keeper or a bot forwarder is under
@@ -127,4 +153,5 @@ the script against a scratch clone with stubbed sudo/systemctl/pnpm.
 | opens refused, closes work | publisher `/status` degraded | venue outage — by design |
 | site 502 | `systemctl status whitespace-web`; `.next/BUILD_ID` | rerun `deploy/deploy.sh` |
 | indexer lag grows | Ponder logs, RPC 429s | eRPC health; restart indexer |
-| disk alert | `du -sh /var/lib/docker /var/backups/whitespace` | prune backups (14-day retention) |
+| disk alert | `du -xh --max-depth=2 /var \| sort -h \| tail` | logs: see Log limits; backups: prune (14-day retention) |
+| API 500 "recovery mode" | `df -h /` | disk full: see Log limits |

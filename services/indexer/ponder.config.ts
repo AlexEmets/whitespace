@@ -9,7 +9,7 @@ import { priceUpKeepAbi } from './abis/priceUpKeep.js';
 import { pairsStorageAbi } from './abis/pairsStorage.js';
 import { tradingStorageAbi } from './abis/tradingStorage.js';
 import { vaultAbi } from './abis/vault.js';
-import { parsePollingInterval } from './src/lib/pollingInterval.js';
+import { parseGetLogsBlockRange, parsePollingInterval } from './src/lib/pollingInterval.js';
 import { priceUpKeepAddresses } from './src/lib/upkeepAddresses.js';
 
 // Whitechain testnet 1874 is an OP Stack rollup — see
@@ -90,6 +90,8 @@ export default createConfig({
       // Ponder's 1 s default doubles the request rate on a 1 s chain for no gain here, and the
       // public RPC rate-limits by IP: the indexer, keeper and both automation bots share one.
       pollingInterval: pollingIntervalMs,
+      // Set, not discovered: see parseGetLogsBlockRange.
+      ethGetLogsBlockRange: parseGetLogsBlockRange(process.env.PONDER_GETLOGS_BLOCK_RANGE),
     },
   },
   contracts: {
