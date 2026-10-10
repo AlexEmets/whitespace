@@ -49,7 +49,7 @@ const viem = await import(pathToFileURL(viemMain).href);
 const { privateKeyToAccount, generatePrivateKey } = await import(
   pathToFileURL(join(dirname(viemMain), 'accounts', 'index.js')).href
 );
-const { createPublicClient, createWalletClient, http, parseAbi, parseEther, defineChain, decodeEventLog } = viem;
+const { createPublicClient, createWalletClient, http, parseAbi, parseEther, defineChain, decodeEventLog, encodeFunctionData } = viem;
 
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const env = process.env;
@@ -99,6 +99,10 @@ const TRADING = parseAbi([
   'function removeCollateral(uint16 pairIndex, uint8 index, uint256 removeAmount)',
   'function updateOpenLimitOrder(uint16 pairIndex, uint8 index, uint192 price, uint192 tp, uint192 sl)',
   'function cancelOpenLimitOrder(uint16 pairIndex, uint8 index)',
+  'function setDelegate(address delegate)',
+  'function removeDelegate()',
+  'function delegatedAction(address trader, bytes call_data) returns (bytes)',
+  'function delegations(address) view returns (address)',
   'event MarketOpenOrderInitiated(uint256 indexed orderId, address indexed trader, uint16 indexed pairIndex)',
   'event MarketCloseOrderInitiatedV2(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint16 pairIndex, uint16 closePercentage)',
   `event OpenLimitPlacedV2(address indexed trader, uint16 indexed pairIndex, uint8 index, ${TRADE} trade, uint8 orderType, (address builder,uint32 builderFee) builderFee)`,
@@ -622,6 +626,73 @@ async function main() {
   }
   await item('limit', 'LIMIT entry: place, update, cancel, triggered fill', () => entryLifecycle(LIMIT, 'LIMIT'));
   await item('stop', 'STOP entry: place, update, cancel, triggered fill', () => entryLifecycle(STOP, 'STOP'));
+
+  // ── one-click trading: a delegated session key opens and closes for the trader ─────────
+  // The web terminal's one-click mode: the trader registers a browser-held key with
+  // setDelegate, and that key sends delegatedAction(trader, call) with no wallet prompt.
+  // The keeper must fill it like any other order and every payout must reach the TRADER.
+  await item('oneclick', 'one-click: delegated open and close fill, pay the trader, stop after revoke', async () => {
+    const session = privateKeyToAccount(generatePrivateKey());
+    const g = await wallet(funder).sendTransaction({ to: session.address, value: parseEther('0.05'), type: 'legacy', gasPrice: await pub.getGasPrice() });
+    await pub.waitForTransactionReceipt({ hash: g });
+    await send(trader, C.trading, TRADING, 'setDelegate', [session.address]);
+    check((await read(C.trading, TRADING, 'delegations', [trader.address])).toLowerCase() === session.address.toLowerCase(), 'delegate not registered');
+
+    const via = (functionName, args) =>
+      send(session, C.trading, TRADING, 'delegatedAction', [trader.address, encodeFunctionData({ abi: TRADING, functionName, args })]);
+
+    const { mark } = await quote(0);
+    const t = { collateral: 50n * E6, openPrice: mark, tp: 0n, sl: 0n, trader: trader.address, leverage: 1000, pairIndex: 0, index: 0, buy: true, isDayTrade: false };
+    const before = await usdwOf(trader.address);
+    const receipt = await via('openTrade', [t, { builder: '0x0000000000000000000000000000000000000000', builderFee: 0 }, MARKET, 100n]);
+    const ev = decodeLogs(receipt, TRADING).find((e) => e.eventName === 'MarketOpenOrderInitiated');
+    check(ev && ev.args.trader.toLowerCase() === trader.address.toLowerCase(), 'order not recorded for the trader');
+    check((await usdwOf(trader.address)) === before - 50n * E6, 'collateral not taken from the trader');
+    const opened = await awaitOpen(trader, { orderId: ev.args.orderId, block: receipt.blockNumber, wanted: mark, slippageP: 100 });
+
+    const { mark: closeMark } = await quote(0);
+    const mid = await usdwOf(trader.address);
+    const sessionUsdw = await usdwOf(session.address);
+    const closeReceipt = await via('closeTradeMarket', [opened.pairIndex, opened.index, 10_000, closeMark, 200]);
+    const closeEv = decodeLogs(closeReceipt, TRADING).find((e) => e.eventName === 'MarketCloseOrderInitiatedV2');
+    const closed = await waitFor(`one-click close ${closeEv.args.orderId}`, async () => {
+      const evs = await logsSince(C.callbacks, CALLBACKS, closeReceipt.blockNumber);
+      return evs.find((e) => e.args.orderId === closeEv.args.orderId && (e.eventName === 'MarketCloseExecutedV2' || e.eventName === 'MarketCloseCanceled'));
+    }, 45_000);
+    check(closed.eventName === 'MarketCloseExecutedV2', `one-click close cancelled: ${CANCEL_REASONS[closed.args.cancelReason]}`);
+    check((await usdwOf(trader.address)) === mid + closed.args.usdcSentToTrader, 'close proceeds did not reach the trader');
+    check((await usdwOf(session.address)) === sessionUsdw, 'the session key received funds');
+    ctx.ledger.push({ tradeId: opened.tradeId, closeOrderId: closeEv.args.orderId, collateralClosed: opened.collateral, usdcSent: closed.args.usdcSentToTrader, reason: 'close', partial: false });
+
+    await send(trader, C.trading, TRADING, 'removeDelegate');
+    let refused = false;
+    try {
+      await via('openTrade', [t, { builder: '0x0000000000000000000000000000000000000000', builderFee: 0 }, MARKET, 100n]);
+    } catch {
+      refused = true;
+    }
+    check(refused, 'a revoked session key could still trade');
+    return { session: session.address, openFill: opened.fillTx, closeFill: closed.log.transactionHash, paidToTrader: usd(closed.args.usdcSentToTrader) };
+  });
+
+  // ── a burst of market opens: every one must fill inside the report window ─────────────
+  // A keeper that sends one transaction per receipt cannot deliver the fourth order of a
+  // burst within maxAge; that is how most opens on 1874 went unfilled.
+  await item('burst', 'eight market opens in the same second all fill', async () => {
+    const traders = Array.from({ length: 8 }, () => privateKeyToAccount(generatePrivateKey()));
+    for (const a of traders) {
+      await fundWallet(a, 100n * E6);
+      await send(a, C.collateral, ERC20, 'approve', [C.tradingStorage, 2n ** 255n]);
+    }
+    const reqs = await Promise.all(traders.map((a) => openMarket(a, { pair: 0, collateral: 20n * E6, leverage: 500 })));
+    const blocks = new Set(reqs.map((r) => r.block));
+    const fills = await Promise.all(traders.map((a, i) => awaitOpen(a, reqs[i])));
+    // These traders are not the one the history item checks; keep their closes out of its ledger.
+    const ledgerBefore = ctx.ledger.length;
+    for (let i = 0; i < traders.length; i++) await close(traders[i], fills[i]);
+    ctx.ledger.length = ledgerBefore;
+    return { orders: reqs.length, requestBlocks: [...blocks].map(String), filled: fills.length };
+  });
 
   // 6 ── timeout reclaim for an open and a close ────────────────────────────────────────
   await item('timeout', 'timeout reclaim for an open and for a close (keeper stopped)', async () => {
