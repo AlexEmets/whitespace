@@ -533,15 +533,18 @@ contract OperateScript is Script {
         require(feedKeys.length > 0, "installHardenedUpkeep: no feed keys");
         IOstiumRegistry registry = IOstiumRegistry(c.registry);
 
+        address outdated;
         for (uint256 i = 0; i < feedKeys.length; i++) {
             (bool found, address current) = _lookup(registry, feedKeys[i]);
-            if (found && _isHardenedUpkeep(current)) {
+            if (found && _isCurrentUpkeep(current)) {
                 upkeep = current;
                 break;
             }
+            if (found && outdated == address(0) && _isHardenedUpkeep(current)) outdated = current;
         }
         if (upkeep == address(0)) {
             upkeep = address(new WhitespacePriceUpKeep(registry, c.guardian));
+            if (outdated != address(0)) _carryOverEmergencyState(registry, WhitespacePriceUpKeep(outdated), upkeep);
         }
 
         for (uint256 i = 0; i < feedKeys.length; i++) {
@@ -550,6 +553,30 @@ contract OperateScript is Script {
             _relay(msg.sender);
             if (found) registry.updateContract(feedKeys[i], upkeep);
             else registry.registerContract(feedKeys[i], upkeep);
+        }
+    }
+
+    /// @dev An upkeep being replaced by a newer build may be paused or have feeds halted. Those
+    ///      are emergency decisions somebody made on purpose, and an upgrade must not quietly
+    ///      undo them; the new instance starts in the same state. Gov may pause and halt, so the
+    ///      caller of `installHardenedUpkeep` can do this. Baselines are not carried: the new
+    ///      instance takes its first price per feed as a fresh baseline, which is the point of
+    ///      the upgrade for a wedged feed. Orders still pending on the old instance time out and
+    ///      are reclaimed by their traders, exactly as in the original vendored -> hardened move.
+    function _carryOverEmergencyState(IOstiumRegistry registry, WhitespacePriceUpKeep old, address upkeep) internal {
+        WhitespacePriceUpKeep next = WhitespacePriceUpKeep(upkeep);
+        if (old.paused()) {
+            _relay(msg.sender);
+            next.pause();
+        }
+        IOstiumPairsStorage ps = IOstiumPairsStorage(registry.getContractAddress("pairsStorage"));
+        uint16 count = ps.pairsCount();
+        for (uint16 i = 0; i < count; i++) {
+            bytes32 feed = ps.pairFeed(i);
+            if (old.isFeedHalted(feed) && !next.isFeedHalted(feed)) {
+                _relay(msg.sender);
+                next.haltFeed(feed);
+            }
         }
     }
 
@@ -619,6 +646,15 @@ contract OperateScript is Script {
     /// @dev Same probe for the upkeep. `OstiumPrivatePriceUpKeep` has no `maxAge()`.
     function _isHardenedUpkeep(address a) internal view returns (bool) {
         (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(WhitespacePriceUpKeep(a).maxAge, ()));
+        return ok && ret.length == 32;
+    }
+
+    /// @dev The current build of the upkeep, as opposed to any hardened one. A hardened upkeep
+    ///      without `baselineMaxAge()` predates the stale-baseline fix and wedges a feed that
+    ///      nobody trades for a while, so `installHardenedUpkeep` replaces it instead of reusing it.
+    function _isCurrentUpkeep(address a) internal view returns (bool) {
+        (bool ok, bytes memory ret) =
+            a.staticcall(abi.encodeCall(WhitespacePriceUpKeep(a).baselineMaxAge, ()));
         return ok && ret.length == 32;
     }
 

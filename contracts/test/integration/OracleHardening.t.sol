@@ -31,6 +31,26 @@ import {ReportLib} from "../helpers/ReportLib.sol";
 ///         exchange, which is a worse outcome than the failure the rail was added to prevent.
 ///
 ///         Every `vm.expectRevert` is pinned to the exact error payload.
+/// @dev A hardened upkeep from before `baselineMaxAge` existed: it answers `maxAge()` (so the
+///      script recognises it as hardened) but not `baselineMaxAge()`. Only the getters the
+///      upgrade path reads are implemented.
+contract OutdatedHardenedUpkeepStub {
+    bool public paused;
+    mapping(bytes32 => bool) public isFeedHalted;
+
+    function maxAge() external pure returns (uint32) {
+        return 10;
+    }
+
+    function setPaused(bool p) external {
+        paused = p;
+    }
+
+    function setHalted(bytes32 feed, bool h) external {
+        isFeedHalted[feed] = h;
+    }
+}
+
 contract OracleHardeningTest is Test {
     // N=5 authorised signing keys, k=3.
     uint256 internal constant K1 = 0xA11CE01;
@@ -499,6 +519,58 @@ contract OracleHardeningTest is Test {
     }
 
     // -------------------------------------------------------------------------------------
+    // Upgrading an outdated hardened upkeep
+    // -------------------------------------------------------------------------------------
+
+    /// @dev Points the BTC/USD key at an upkeep built before the stale-baseline fix, the state
+    ///      chain 1874 is in. A plain reuse-if-hardened check would keep it forever.
+    function _pointAtOutdatedUpkeep(bool paused, bool btcHalted) internal returns (OutdatedHardenedUpkeepStub stub) {
+        stub = new OutdatedHardenedUpkeepStub();
+        stub.setPaused(paused);
+        stub.setHalted(FEED, btcHalted);
+        vm.prank(gov);
+        IOstiumRegistry(d.registry).updateContract(PRICE_UPKEEP_KEY, address(stub));
+    }
+
+    function test_installReplacesAnOutdatedHardenedUpkeep() public {
+        OutdatedHardenedUpkeepStub stub = _pointAtOutdatedUpkeep(false, false);
+
+        vm.prank(gov);
+        address u = operator.installHardenedUpkeep(_oracleConfig());
+
+        assertTrue(u != address(stub), "an outdated upkeep must be replaced, not reused");
+        assertEq(IOstiumRegistry(d.registry).getContractAddress(PRICE_UPKEEP_KEY), u);
+        assertEq(WhitespacePriceUpKeep(u).baselineMaxAge(), 15 minutes);
+        assertFalse(WhitespacePriceUpKeep(u).paused());
+        assertFalse(WhitespacePriceUpKeep(u).isFeedHalted(FEED));
+
+        vm.prank(gov);
+        address again = operator.installHardenedUpkeep(_oracleConfig());
+        assertEq(again, u, "once current, a replay must reuse it");
+    }
+
+    function test_upgradeCarriesOverPauseAndHaltedFeeds() public {
+        _pointAtOutdatedUpkeep(true, true);
+
+        vm.prank(gov);
+        address u = operator.installHardenedUpkeep(_oracleConfig());
+
+        assertTrue(WhitespacePriceUpKeep(u).paused(), "a pause must survive the upgrade");
+        assertTrue(WhitespacePriceUpKeep(u).isFeedHalted(FEED), "a halted feed must stay halted");
+    }
+
+    function test_upgradedUpkeepTradesOnceItsForwarderIsAuthorised() public {
+        _pointAtOutdatedUpkeep(false, false);
+        OperateScript.OracleConfig memory oc = _oracleConfig();
+        vm.prank(gov);           address u = operator.installHardenedUpkeep(oc);
+        vm.prank(address(this)); operator.authoriseHardenedForwarder(oc);
+        vm.prank(gov);           operator.configureOracleRails(oc);
+        upkeep = WhitespacePriceUpKeep(u);
+
+        _openPositionAtBaseline();
+    }
+
+    // -------------------------------------------------------------------------------------
     // Rail 2 — deviation from the last accepted price
     // -------------------------------------------------------------------------------------
 
@@ -593,6 +665,82 @@ contract OracleHardeningTest is Test {
         _deliver(closeOrderId, report); // the exact same bytes now land
         assertEq(_openCollateral(), 0, "after clearing the baseline the close must go through");
         assertEq(upkeep.lastPrice(FEED), BTC_PLUS_6PCT);
+    }
+
+    /// @dev The wedge `clearPriceBaseline` used to be the only way out of. The baseline moves
+    ///      only when an order fills, so a feed nobody trades for a while keeps an old price,
+    ///      and a genuine move since then must not lock the feed. Seen on 1874: ETH and SOL
+    ///      drifted ~8% from their last fill and every report after that reverted.
+    function test_deviationRailIgnoresABaselineOlderThanBaselineMaxAge() public {
+        _openPositionAtBaseline();
+        vm.warp(block.timestamp + upkeep.baselineMaxAge() + 1);
+
+        (uint256 closeOrderId, uint32 closeTimestamp) = _requestClose();
+        _deliver(closeOrderId, _signed(closeTimestamp, BTC_PLUS_6PCT));
+
+        assertEq(_openCollateral(), 0, "a stale baseline must not block the close");
+        assertEq(upkeep.lastPrice(FEED), BTC_PLUS_6PCT, "the accepted price must become the new baseline");
+        assertEq(upkeep.lastPriceAt(FEED), closeTimestamp, "the new baseline must carry its report time");
+    }
+
+    /// @dev The other side of the boundary: a baseline exactly `baselineMaxAge` old is still
+    ///      fresh, so a jump against it is still the aggregation bug rail 2 exists to catch.
+    function test_deviationRailStillAppliesAtTheBaselineMaxAgeBoundary() public {
+        _openPositionAtBaseline();
+        vm.warp(block.timestamp + upkeep.baselineMaxAge());
+
+        (uint256 closeOrderId, uint32 closeTimestamp) = _requestClose();
+        bytes memory report = _signed(closeTimestamp, BTC_PLUS_6PCT);
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WhitespacePriceUpKeep.PriceDeviationTooLarge.selector,
+                FEED, BTC_65K, BTC_PLUS_6PCT, MAX_DEVIATION_BPS
+            )
+        );
+        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+    }
+
+    function test_baselineMaxAgeDefaultsToFifteenMinutes() public view {
+        assertEq(upkeep.baselineMaxAge(), 15 minutes);
+    }
+
+    function test_govCanSetBaselineMaxAge() public {
+        vm.prank(gov);
+        upkeep.setBaselineMaxAge(1 hours);
+        assertEq(upkeep.baselineMaxAge(), 1 hours);
+
+        _openPositionAtBaseline();
+        vm.warp(block.timestamp + 16 minutes); // past the old default, inside the new value
+        (uint256 closeOrderId, uint32 closeTimestamp) = _requestClose();
+        bytes memory report = _signed(closeTimestamp, BTC_PLUS_6PCT);
+        vm.prank(keeper);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                WhitespacePriceUpKeep.PriceDeviationTooLarge.selector,
+                FEED, BTC_65K, BTC_PLUS_6PCT, MAX_DEVIATION_BPS
+            )
+        );
+        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+    }
+
+    function test_setBaselineMaxAgeRejectsZeroAndNonGov() public {
+        vm.prank(gov);
+        vm.expectRevert(IOstiumPriceUpKeep.WrongParams.selector);
+        upkeep.setBaselineMaxAge(0);
+
+        vm.prank(guardian);
+        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        upkeep.setBaselineMaxAge(1 hours);
+    }
+
+    function test_clearPriceBaselineAlsoClearsItsTimestamp() public {
+        _openPositionAtBaseline();
+        assertGt(upkeep.lastPriceAt(FEED), 0, "an accepted price must record its time");
+
+        vm.prank(gov);
+        upkeep.clearPriceBaseline(FEED);
+        assertEq(upkeep.lastPriceAt(FEED), 0);
     }
 
     /// @dev A zero or negative price on an open market is rejected outright. Without this,

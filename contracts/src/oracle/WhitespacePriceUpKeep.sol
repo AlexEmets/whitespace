@@ -63,6 +63,8 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     ///      forgets to configure is safe rather than open; gov tunes them afterwards.
     uint32 public constant DEFAULT_MAX_AGE = 10; // seconds
     uint16 public constant DEFAULT_MAX_DEVIATION_BPS = 500; // 5.00%
+    /// @dev How long an accepted price stays a deviation baseline. See `_checkPrice`.
+    uint32 public constant DEFAULT_BASELINE_MAX_AGE = 15 minutes;
 
     IOstiumRegistry public immutable registry;
 
@@ -78,6 +80,9 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     bool public paused;
     uint32 public maxAge;
     uint16 public maxDeviationBps;
+    /// @notice Seconds an accepted price remains the deviation baseline for its feed. Older
+    ///         baselines are not enforced; the next accepted price replaces them.
+    uint32 public baselineMaxAge;
 
     mapping(bytes32 feedId => bool) public isFeedHalted;
 
@@ -86,11 +91,15 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     ///      price on an open market, so a real accepted price is always strictly positive.
     mapping(bytes32 feedId => int192) public lastPrice;
 
+    /// @notice Report timestamp of `lastPrice[feedId]`. Zero alongside a zero `lastPrice`.
+    mapping(bytes32 feedId => uint32) public lastPriceAt;
+
     event GuardianUpdated(address guardian);
     event PauseUpdated(bool paused);
     event FeedHaltUpdated(bytes32 indexed feedId, bool halted);
     event MaxAgeUpdated(uint32 maxAge);
     event MaxDeviationBpsUpdated(uint16 maxDeviationBps);
+    event BaselineMaxAgeUpdated(uint32 baselineMaxAge);
     event PriceBaselineCleared(bytes32 indexed feedId, int192 previousPrice);
     event PriceAccepted(bytes32 indexed feedId, int192 price, uint32 timestamp);
 
@@ -141,9 +150,11 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
         guardian = _guardian;
         maxAge = DEFAULT_MAX_AGE;
         maxDeviationBps = DEFAULT_MAX_DEVIATION_BPS;
+        baselineMaxAge = DEFAULT_BASELINE_MAX_AGE;
         emit GuardianUpdated(_guardian);
         emit MaxAgeUpdated(DEFAULT_MAX_AGE);
         emit MaxDeviationBpsUpdated(DEFAULT_MAX_DEVIATION_BPS);
+        emit BaselineMaxAgeUpdated(DEFAULT_BASELINE_MAX_AGE);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -235,6 +246,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
             // Rail 2 — deviation from this feed's last accepted price.
             _checkPrice(expectedFeedId, a.price);
             lastPrice[expectedFeedId] = a.price;
+            lastPriceAt[expectedFeedId] = timestamp;
             emit PriceAccepted(expectedFeedId, a.price, timestamp);
         } else {
             // Same as the vendored upkeep: a closed market carries no tradeable price, and the
@@ -255,6 +267,14 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     ///      deviation-checked — there is nothing to compare it against, and inventing a bound
     ///      would mean hardcoding an expected price per asset.
     ///
+    ///      A baseline older than `baselineMaxAge` is treated the same way. The baseline only
+    ///      moves when an order fills, so on a quiet feed it can be days old, and a genuine
+    ///      market move over those days is not an aggregation bug. Enforcing it anyway wedged
+    ///      ETH/USD and SOL/USD on 1874: both drifted ~8% while nobody traded them, and from
+    ///      then on every honest report reverted PriceDeviationTooLarge until gov stepped in.
+    ///      The rail is meant to catch a jump between reports that are close together in time,
+    ///      which is exactly the case a fresh baseline still covers.
+    ///
     ///      Non-positive prices are rejected outright on an open market. That is not decoration:
     ///      it is what makes `lastPrice == 0` a sound "no baseline" sentinel, and a zero price
     ///      that reached the callbacks would be read as MARKET_CLOSED rather than as an error.
@@ -266,6 +286,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
 
         int192 previous = lastPrice[feedId];
         if (previous == 0) return; // first accepted price for this feed: baseline only
+        if (block.timestamp > uint256(lastPriceAt[feedId]) + baselineMaxAge) return; // stale baseline
 
         uint256 previousAbs = uint256(uint192(previous));
         uint256 diff =
@@ -352,6 +373,14 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
         emit MaxDeviationBpsUpdated(newMaxDeviationBps);
     }
 
+    /// @dev Zero is refused: every baseline would be stale on arrival, which switches rail 2
+    ///      off without saying so. Disabling a rail is not something a parameter should do.
+    function setBaselineMaxAge(uint32 newBaselineMaxAge) external onlyGov {
+        if (newBaselineMaxAge == 0) revert WrongParams();
+        baselineMaxAge = newBaselineMaxAge;
+        emit BaselineMaxAgeUpdated(newBaselineMaxAge);
+    }
+
     /// @notice Drop a feed's deviation baseline so the next accepted price re-establishes it.
     /// @dev Required for liveness, not convenience. A genuine market move larger than
     ///      `maxDeviationBps` — a crash, a weekend gap, a market that reopens far from where it
@@ -361,6 +390,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     function clearPriceBaseline(bytes32 feedId) external onlyGov {
         int192 previous = lastPrice[feedId];
         delete lastPrice[feedId];
+        delete lastPriceAt[feedId];
         emit PriceBaselineCleared(feedId, previous);
     }
 
