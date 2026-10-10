@@ -137,3 +137,12 @@ test('describeConfig never prints the database password', () => {
   assert.doesNotMatch(JSON.stringify(d), /s3cret/);
   assert.equal(describeConfig({ databaseUrl: 'nope' }).databaseUrl, 'invalid DATABASE_URL');
 });
+
+test('the systemd instance name sets the ownership index when no index is given', () => {
+  const at = (id, extra = {}) => loadConfig({ ...ENV, LIQUIDATOR_INSTANCE_COUNT: '2', LIQUIDATOR_INSTANCE_ID: id, ...extra }, { deployment: DEPLOYMENT });
+  assert.equal(at('a').instanceIndex, 0);
+  assert.equal(at('b').instanceIndex, 1);
+  assert.equal(at('b', { LIQUIDATOR_INSTANCE_INDEX: '0' }).instanceIndex, 0, 'an explicit index wins');
+  assert.equal(at('bot-a').instanceIndex, 0, 'anything but a single letter is ignored');
+  assert.throws(() => at('c'), /INSTANCE_INDEX \(2\) must be below/);
+});

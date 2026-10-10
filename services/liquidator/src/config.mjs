@@ -93,7 +93,11 @@ export function loadConfig(env = process.env, { deployment = readDeployment() } 
   // Trigger ownership (automationEngine.mjs): instance i of n sends the keys it owns at
   // once and the others' only after takeoverMs. n = 1 (the default) owns everything.
   const instanceCount = positiveInt(env, 'LIQUIDATOR_INSTANCE_COUNT', 1);
-  const instanceIndex = nonNegativeInt(env, 'LIQUIDATOR_INSTANCE_INDEX', 0);
+  // The systemd template passes its instance name (`a`, `b`, ...) as LIQUIDATOR_INSTANCE_ID,
+  // so the unit alone splits the work without anyone editing the per-instance env files on
+  // the box: `a` is 0, `b` is 1. An explicit LIQUIDATOR_INSTANCE_INDEX still wins.
+  const fromId = /^[a-z]$/.test(env.LIQUIDATOR_INSTANCE_ID ?? '') ? env.LIQUIDATOR_INSTANCE_ID.charCodeAt(0) - 97 : 0;
+  const instanceIndex = nonNegativeInt(env, 'LIQUIDATOR_INSTANCE_INDEX', fromId);
   if (instanceIndex >= instanceCount) {
     throw new Error(`loadConfig: LIQUIDATOR_INSTANCE_INDEX (${instanceIndex}) must be below LIQUIDATOR_INSTANCE_COUNT (${instanceCount})`);
   }
