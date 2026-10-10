@@ -45,7 +45,9 @@ test('a market long with TP/SL signs openTrade at the quoted ask with both level
   await page.getByTestId('size-input').fill('0.01');
   await page.getByTestId('tpsl-toggle').check();
   await page.getByTestId('tp-input').fill('70000');
-  await page.getByTestId('sl-input').fill('60000');
+  // Inside the maxSl_P (75%) limit at 10x: the stop may sit no lower than ~60,132 under a
+  // 65,007.50 entry. A wider one would be pulled in on fill, so the form refuses it.
+  await page.getByTestId('sl-input').fill('61000');
   await page.getByTestId('submit-open-button').click();
   await expect(page.getByTestId('order-pending-banner')).toBeVisible();
 
@@ -59,7 +61,7 @@ test('a market long with TP/SL signs openTrade at the quoted ask with both level
   expect(trade.buy).toBe(true);
   expect(trade.openPrice).toBe(65_007_500_000_000_000_000_000n);
   expect(trade.tp).toBe(70_000n * E18);
-  expect(trade.sl).toBe(60_000n * E18);
+  expect(trade.sl).toBe(61_000n * E18);
   expect(slippage).toBe(50n);
   expect(errors).toEqual([]);
 });
