@@ -19,7 +19,18 @@ export const whitechainTestnet1874 = defineChain({
   name: 'whitechain-testnet-op',
   nativeCurrency: { name: 'White', symbol: 'WBT', decimals: 18 },
   rpcUrls: { default: { http: ['https://rpc.testnet.whitechain.io'] } },
+  // The canonical deterministic deployment; verified present on 1874 (eth_getCode).
+  contracts: { multicall3: { address: '0xcA11bde05977b3631167028862bE2a173976CA11' } },
 });
+
+/**
+ * How long readContract calls wait to be folded into one Multicall3 eth_call. A sweep reads
+ * four to six views per candidate, `evaluationConcurrency` candidates at a time, from two
+ * instances; as separate eth_calls that was most of the host's per-IP RPC budget, which the
+ * keeper and the indexer share, and the public RPC answered the overflow "rate limit
+ * exceeded" — to the keeper as well.
+ */
+export const MULTICALL_WAIT_MS = 16;
 
 /**
  * @param {object} opts
@@ -31,7 +42,7 @@ export function createClients({ rpcUrls, forwarderPrivateKey, chain = whitechain
   if (!rpcUrls?.length) throw new Error('createClients: at least one RPC url is required');
   const transport = rpcUrls.length > 1 ? fallback(rpcUrls.map((url) => http(url))) : http(rpcUrls[0]);
   const account = privateKeyToAccount(forwarderPrivateKey);
-  const publicClient = createPublicClient({ chain, transport });
+  const publicClient = createPublicClient({ chain, transport, batch: { multicall: { wait: MULTICALL_WAIT_MS } } });
   const walletClient = createWalletClient({ chain, transport, account });
   return { publicClient, walletClient, account };
 }
