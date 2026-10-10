@@ -19,6 +19,10 @@
  *    being mined. For a sender whose work expires (the keeper: a report is only valid for
  *    `maxAge` seconds after its order) a strictly serial queue spends ~2 s per order
  *    waiting for a receipt, and the fourth order of a burst is already too old to deliver.
+ *  - `gasHeadroomPercent` estimates a request with no explicit `gas` here and adds that much
+ *    on top. In pipeline mode the node estimates against a state that does not yet include the
+ *    sends still in flight ahead of this one, and an exact estimate then runs out of gas once
+ *    those land first: a burst of eight keeper deliveries on anvil lost four that way.
  *  - A request may carry `deadlineMs`. Nothing is broadcast or retried after it, and a send
  *    that runs out of time is reported `expired` instead of being dead-lettered: re-sending
  *    it later could only revert.
@@ -68,6 +72,7 @@ export function createTxSender({
   bumpDenominator = DEFAULTS.bumpDenominator,
   retryOnRevert = DEFAULTS.retryOnRevert,
   pipeline = false,
+  gasHeadroomPercent = 0,
   now = () => Date.now(),
   sleep = defaultSleep,
   log = () => {},
@@ -121,13 +126,26 @@ export function createTxSender({
     return (gasPrice * bumpNumerator) / bumpDenominator;
   }
 
+  async function gasFor(req) {
+    if (req.gas !== undefined) return req.gas;
+    if (!(gasHeadroomPercent > 0)) return undefined;
+    const estimate = await publicClient.estimateGas({
+      account,
+      to: req.to,
+      data: req.data,
+      ...(req.value !== undefined ? { value: req.value } : {}),
+    });
+    return estimate + (estimate * BigInt(gasHeadroomPercent) + 99n) / 100n;
+  }
+
   async function broadcast(req, txNonce, gasPrice) {
+    const gas = await gasFor(req);
     const hash = await walletClient.sendTransaction({
       account,
       to: req.to,
       data: req.data,
       ...(req.value !== undefined ? { value: req.value } : {}),
-      ...(req.gas !== undefined ? { gas: req.gas } : {}),
+      ...(gas !== undefined ? { gas } : {}),
       nonce: txNonce,
       gasPrice,
       type: 'legacy',

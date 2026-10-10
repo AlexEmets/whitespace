@@ -115,6 +115,8 @@ export function createTxSender(opts: {
     getTransactionCount(args: { address: Hex; blockTag: 'pending' }): Promise<number | bigint>;
     getGasPrice(): Promise<bigint>;
     getTransactionReceipt(args: { hash: Hex }): Promise<{ status: 'success' | 'reverted' } | null>;
+    /** Only used with `gasHeadroomPercent`. */
+    estimateGas?(args: { account: { address: Hex }; to: Hex; data: Hex; value?: bigint }): Promise<bigint>;
   };
   walletClient: { sendTransaction(args: Record<string, unknown>): Promise<Hex> };
   account: { address: Hex };
@@ -131,6 +133,8 @@ export function createTxSender(opts: {
   retryOnRevert?: boolean;
   /** Wait for receipts outside the queue, so sends overlap. See txSender.mjs. */
   pipeline?: boolean;
+  /** Estimate requests without `gas` and add this percent; 0 leaves estimation to the wallet client. */
+  gasHeadroomPercent?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (level: 'warn' | 'error', message: string) => void;

@@ -547,3 +547,36 @@ test('bumps still happen while the deadline is ahead', async () => {
   assert.equal(chain.sent.length, 2, 'one replacement inside the deadline');
   assert.equal(result.ok, false);
 });
+
+test('gasHeadroomPercent pads the estimate of a request that has no gas', async () => {
+  const chain = fakeChain();
+  chain.publicClient.estimateGas = async () => 100_000n;
+  await makeSender(chain, { gasHeadroomPercent: 30 }).send(req());
+  assert.equal(chain.sent[0].gas, 130_000n);
+});
+
+test('gasHeadroomPercent leaves an explicit gas alone, and is off by default', async () => {
+  const chain = fakeChain();
+  let estimates = 0;
+  chain.publicClient.estimateGas = async () => (estimates++, 100_000n);
+  await makeSender(chain, { gasHeadroomPercent: 30 }).send({ ...req(), gas: 50_000n });
+  await makeSender(chain).send(req());
+  assert.equal(chain.sent[0].gas, 50_000n);
+  assert.equal('gas' in chain.sent[1], false);
+  assert.equal(estimates, 0);
+});
+
+test('a failed estimate is a refused broadcast: the nonce is not consumed', async () => {
+  const chain = fakeChain();
+  let fail = true;
+  chain.publicClient.estimateGas = async () => {
+    if (fail) throw new Error('execution reverted');
+    return 100_000n;
+  };
+  const sender = makeSender(chain, { gasHeadroomPercent: 30, maxRetries: 0 });
+  const a = await sender.send(req('a'));
+  assert.equal(a.ok, false);
+  fail = false;
+  const b = await sender.send(req('b'));
+  assert.equal(b.nonce, 5);
+});
