@@ -101,7 +101,11 @@ the box. `deploy/alerts.env` (git-ignored) holds the Telegram token for alerts.
 ## Routine deploy
 
 `deploy/deploy.sh` as `whitespace`: pull, install, install changed unit files, build web
-with web+indexer stopped, restart everything, then verify every unit and timer is `active`
+with web+indexer stopped, restart api/indexer/web/bots — and the publisher and keeper only
+when something they run changed since they last came up (their code, the packages they
+use, `pnpm-lock.yaml` or their unit file; recorded in `~/.whitespace-deploy/*.sha`, so a
+deploy that failed before restarting them still restarts them next time). To force one:
+`rm ~/.whitespace-deploy/publisher.sha`. Then verify every unit and timer is `active`
 and that the web process started after the build it serves. It exits non-zero on any
 failure — and if it fails while web and indexer are stopped, an exit trap starts the
 indexer again, and web too when `apps/web/.next/BUILD_ID` exists (otherwise it prints the

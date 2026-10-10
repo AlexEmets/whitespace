@@ -137,7 +137,43 @@ test('a first deploy installs the units and restarts everything, web and indexer
   }
 });
 
-test('a changed unit file is installed and reloaded before the restarts', () => {
+test('a web-only change leaves publisher and keeper running and does not reinstall units', () => {
+  const f = fixture();
+  try {
+    assert.equal(f.deploy().code, 0);
+    f.commit('apps/web/a');
+    const r = f.deploy();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(restarted(r.calls, 'whitespace-publisher'), false);
+    assert.equal(restarted(r.calls, 'whitespace-keeper'), false);
+    assert.equal(r.calls.includes('sudo systemctl daemon-reload'), false);
+    assert.ok(restarted(r.calls, 'whitespace-api'));
+    assert.match(r.out, /whitespace-publisher: nothing it runs changed/);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a publisher change restarts the publisher only; a shared package change restarts both', () => {
+  const f = fixture();
+  try {
+    assert.equal(f.deploy().code, 0);
+    f.commit('services/price-publisher/a');
+    let r = f.deploy();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(restarted(r.calls, 'whitespace-publisher'), true);
+    assert.equal(restarted(r.calls, 'whitespace-keeper'), false);
+
+    f.commit('packages/shared/a');
+    r = f.deploy();
+    assert.equal(restarted(r.calls, 'whitespace-publisher'), true);
+    assert.equal(restarted(r.calls, 'whitespace-keeper'), true);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a changed unit file is installed and reloaded, and restarts the unit it defines', () => {
   const f = fixture();
   try {
     assert.equal(f.deploy().code, 0);
@@ -147,6 +183,7 @@ test('a changed unit file is installed and reloaded before the restarts', () => 
     assert.ok(r.calls.includes('sudo cp deploy/systemd/whitespace-keeper.service /etc/systemd/system/whitespace-keeper.service'));
     assert.ok(r.calls.includes('sudo systemctl daemon-reload'));
     assert.ok(r.calls.indexOf('sudo systemctl daemon-reload') < r.calls.indexOf('sudo systemctl restart whitespace-keeper'));
+    assert.equal(restarted(r.calls, 'whitespace-publisher'), false);
     // Installed once: an unchanged tree does not reinstall.
     r = f.deploy();
     assert.equal(r.calls.includes('sudo systemctl daemon-reload'), false);
@@ -192,3 +229,19 @@ test('a failure before anything was stopped starts nothing (boundary)', () => {
   }
 });
 
+test('a deploy that failed before restarting the publisher still restarts it on the next run', () => {
+  const f = fixture();
+  try {
+    assert.equal(f.deploy().code, 0);
+    f.commit('services/price-publisher/a');
+    // Pulls the change, then fails before the restart step.
+    assert.notEqual(f.deploy({ FAKE_BUILD_FAIL: '1' }).code, 0);
+    // Nothing new to pull this time, but the publisher is still running the old code.
+    const r = f.deploy();
+    assert.equal(r.code, 0, r.err);
+    assert.equal(restarted(r.calls, 'whitespace-publisher'), true);
+    assert.equal(restarted(r.calls, 'whitespace-keeper'), false);
+  } finally {
+    f.cleanup();
+  }
+});

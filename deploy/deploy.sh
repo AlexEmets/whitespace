@@ -5,7 +5,7 @@ set -euo pipefail
 # Overridable only so deploy/test/deploySh.test.mjs can run this against a scratch clone with
 # stubbed sudo/systemctl/pnpm; production uses the defaults.
 REPO=${WHITESPACE_REPO:-/home/whitespace/whitespace}
-# Which commit the installed unit files came from (see changed_since).
+# Which commit each restart-on-change unit last came up on (see changed_since).
 STATE_DIR=${WHITESPACE_DEPLOY_STATE:-$HOME/.whitespace-deploy}
 VERIFY_DELAY_S=${WHITESPACE_VERIFY_DELAY_S:-5}
 
@@ -65,7 +65,16 @@ main() {
   fi
 
   echo "==> restarting the stack"
-  ws_ctl restart whitespace-publisher whitespace-keeper whitespace-api
+  # The publisher and the keeper hold in-memory state that a restart throws away (the
+  # publisher's mark EMA and venue books, which take a window to rebuild; the keeper's
+  # in-flight deliveries), so they are restarted only when something they run changed.
+  restart_if_changed publisher whitespace-publisher \
+    services/price-publisher packages/shared packages/reporter packages/metrics \
+    pnpm-lock.yaml deploy/systemd/whitespace-publisher.service
+  restart_if_changed keeper whitespace-keeper \
+    services/keeper packages/shared packages/reporter packages/metrics packages/txsender \
+    pnpm-lock.yaml deploy/systemd/whitespace-keeper.service
+  ws_ctl restart whitespace-api
   ws_ctl start whitespace-indexer whitespace-web
   UNITS_STOPPED_FOR_BUILD=0
   # The automation bots read candidates from the indexer's database, so they come up after
@@ -139,9 +148,9 @@ ws_ctl() {
 # Also succeeds when there is no record or the recorded commit is unknown (first run, a
 # rewritten history): an unnecessary restart is cheap, a missed one runs stale code.
 #
-# Compared against what was last installed, not against the pre-pull HEAD: a deploy that
-# pulled and then failed before installing would otherwise leave the next run seeing
-# "nothing changed" and the old definitions in place indefinitely.
+# Compared against what the unit last came up on, not against the pre-pull HEAD: a deploy
+# that pulled and then failed before the restart would otherwise leave the next run seeing
+# "nothing changed" and the old code running indefinitely.
 changed_since() {
   local name=$1
   shift
@@ -155,6 +164,17 @@ changed_since() {
 mark_deployed() {
   mkdir -p "$STATE_DIR"
   git rev-parse HEAD > "$STATE_DIR/$1.sha"
+}
+
+restart_if_changed() {
+  local name=$1 unit=$2
+  shift 2
+  if changed_since "$name" "$@"; then
+    ws_ctl restart "$unit"
+    mark_deployed "$name"
+  else
+    echo "    $unit: nothing it runs changed — left running"
+  fi
 }
 
 # A unit file change does nothing until it is copied over and systemd re-reads it; pulling
