@@ -78,7 +78,7 @@ export function useOpenTrade() {
     // openTrade against the same contract and emit the same events, so the parsing below is shared.
     let hash: Hash;
     let receipt: TransactionReceipt;
-    if (session.active) {
+    if (session.ready) {
       ({ hash, receipt } = await session.send('openTrade', args, describe));
     } else {
       const request = {

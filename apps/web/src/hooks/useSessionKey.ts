@@ -22,6 +22,12 @@ import { confirmTx, describeTxError } from '@/lib/tx';
 /** How often the on-chain delegate is re-read. */
 export const DELEGATION_REFRESH_MS = 10_000;
 
+/** The node refused a send for want of native balance (viem's InsufficientFundsError, or its message). */
+function isOutOfGas(err: unknown): boolean {
+  const text = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+  return /InsufficientFunds|insufficient funds|exceeds the balance of the account/i.test(text);
+}
+
 export interface ManagedSendResult {
   hash: `0x${string}`;
   receipt: Awaited<ReturnType<typeof confirmTx>>;
@@ -32,8 +38,15 @@ export interface SessionKeyState {
   sessionAddress: Address | null;
   /** The delegate registered on-chain for the connected wallet (address(0) → none). */
   registeredDelegate: Address | null;
-  /** True when the local session key is the on-chain delegate — trades can skip the wallet popup. */
+  /** True when the local session key is the on-chain delegate (the badge shows "On"). */
   active: boolean;
+  /**
+   * True when trades should actually go through the session key: it is the delegate AND it
+   * holds gas. The delegate is registered one transaction before the key is funded, and a
+   * trade signed in between failed with the node's raw "total cost exceeds the balance".
+   * Until then — or once the key runs dry — trades fall back to the wallet.
+   */
+  ready: boolean;
   enabling: boolean;
   disabling: boolean;
   funding: boolean;
@@ -114,6 +127,7 @@ export function useSessionKey(): SessionKeyState {
 
   const gas = useBalance({ address: sessionAddress ?? undefined, query: { enabled: Boolean(sessionAddress) } });
   const gasWei = gas.data ? gas.data.value : null;
+  const ready = active && gasWei !== null && gasWei > 0n;
   const lowGas = active && gasWei !== null && gasWei < SESSION_KEY_LOW_GAS_WEI;
 
   const sendGasTopUp = useCallback(
@@ -212,7 +226,16 @@ export function useSessionKey(): SessionKeyState {
         functionName: 'delegatedAction',
         args: delegatedActionArgs(address, functionName, args),
       });
-      const hash = await client.writeContract(await padGas(publicClient, request as never));
+      let hash: `0x${string}`;
+      try {
+        hash = await client.writeContract(await padGas(publicClient, request as never));
+      } catch (err) {
+        if (isOutOfGas(err)) {
+          void gas.refetch();
+          throw new Error('One-click trading is out of gas. Use “Fund gas”, or turn it off to sign with your wallet.');
+        }
+        throw err;
+      }
       const receipt = await confirmTx(publicClient, hash, describe);
       void gas.refetch();
       return { hash, receipt };
@@ -225,6 +248,7 @@ export function useSessionKey(): SessionKeyState {
       sessionAddress,
       registeredDelegate,
       active,
+      ready,
       enabling,
       disabling,
       funding,
@@ -236,6 +260,6 @@ export function useSessionKey(): SessionKeyState {
       fundGas,
       send,
     }),
-    [sessionAddress, registeredDelegate, active, enabling, disabling, funding, error, gasWei, lowGas, enable, disable, fundGas, send],
+    [sessionAddress, registeredDelegate, active, ready, enabling, disabling, funding, error, gasWei, lowGas, enable, disable, fundGas, send],
   );
 }

@@ -51,7 +51,7 @@ export function useCloseTrade() {
 
     // With one-click trading on, the session key signs the close locally (no popup) — its own
     // send() simulates delegatedAction first, so the revert-reason benefit below is preserved.
-    if (session.active) {
+    if (session.ready) {
       const sent = await session.send('closeTradeMarket', args, 'close the position');
       return { ...sent, orderId: closeOrderId(sent.receipt) };
     }

@@ -50,7 +50,7 @@ export function useTradingActions() {
     try {
       // With one-click trading on, sign locally through the session key (no popup); its send()
       // simulates delegatedAction first, keeping the same before-you-sign revert reasons.
-      if (session.active) {
+      if (session.ready) {
         const { receipt } = await session.send(call.functionName, call.args, ACTION_LABEL[call.functionName]);
         return receipt;
       }

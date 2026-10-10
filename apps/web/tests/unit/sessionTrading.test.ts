@@ -32,7 +32,7 @@ vi.mock('wagmi', () => ({
 }));
 
 vi.mock('@/hooks/useSessionKey', () => ({
-  useSessionKey: () => ({ active: state.active, send: state.sessionSend }),
+  useSessionKey: () => ({ active: state.active, ready: state.active, send: state.sessionSend }),
 }));
 
 import { useCloseTrade } from '@/hooks/useCloseTrade';
