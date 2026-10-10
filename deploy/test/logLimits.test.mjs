@@ -24,3 +24,16 @@ test('the indexer does not log at info on the box', () => {
   const unit = read('deploy/systemd/whitespace-indexer.service');
   assert.match(unit, /^ExecStart=.*ponder start .*--log-level warn/m);
 });
+
+// The raised RPC rate limit is keyed on the host's IPv4 address; over IPv6 every service was
+// still on the shared 50 rps limit, and the keeper's polls kept coming back rate-limited.
+test('every Node unit resolves IPv4 first', async () => {
+  const { readdirSync } = await import('node:fs');
+  const dir = new URL('../systemd/', import.meta.url);
+  const units = readdirSync(dir).filter((f) => f.endsWith('.service'));
+  const node = units.filter((f) => /NODE_OPTIONS=/.test(readFileSync(new URL(f, dir), 'utf8')));
+  assert.ok(node.length >= 6, `expected the six Node units, found ${node.join(', ')}`);
+  for (const f of node) {
+    assert.match(readFileSync(new URL(f, dir), 'utf8'), /^Environment=NODE_OPTIONS=.*--dns-result-order=ipv4first/m, f);
+  }
+});
