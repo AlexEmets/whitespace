@@ -34,6 +34,9 @@ test('every Node unit resolves IPv4 first', async () => {
   const node = units.filter((f) => /NODE_OPTIONS=/.test(readFileSync(new URL(f, dir), 'utf8')));
   assert.ok(node.length >= 6, `expected the six Node units, found ${node.join(', ')}`);
   for (const f of node) {
-    assert.match(readFileSync(new URL(f, dir), 'utf8'), /^Environment=NODE_OPTIONS=.*--dns-result-order=ipv4first/m, f);
+    // Quoted as a whole: systemd splits an unquoted Environment= value on spaces, so
+    // `Environment=NODE_OPTIONS=--max-old-space-size=64 --dns-result-order=ipv4first` set
+    // NODE_OPTIONS to the heap flag alone and dropped the IPv4 flag — which is what shipped.
+    assert.match(readFileSync(new URL(f, dir), 'utf8'), /^Environment="NODE_OPTIONS=[^"]*--dns-result-order=ipv4first[^"]*"$/m, f);
   }
 });

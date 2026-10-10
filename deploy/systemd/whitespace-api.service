@@ -24,7 +24,7 @@ MemoryHigh=136M
 MemoryMax=176M
 # IPv4 first: the RPC provider raised its rate limit for 65.21.53.147, and Node otherwise
 # reaches rpc.testnet.whitechain.io over this host\'s IPv6, which the raised limit does not cover.
-Environment=NODE_OPTIONS=--max-old-space-size=104 --dns-result-order=ipv4first
+Environment="NODE_OPTIONS=--max-old-space-size=104 --dns-result-order=ipv4first"
 
 [Install]
 WantedBy=multi-user.target
