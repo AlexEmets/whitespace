@@ -127,7 +127,8 @@ test('the clients connection pools fit inside max_connections', () => {
   const maxConnections = Number(/- max_connections=(\d+)/.exec(composeService('postgres'))[1]);
   const ponder = Number(/const DEFAULT_DB_POOL_MAX = (\d+);/.exec(read('services/indexer/ponder.config.ts'))[1]);
   const api = Number(/positiveIntEnv\(env, 'PG_POOL_MAX', (\d+)\)/.exec(read('services/api/src/db.ts'))[1]);
-  const bot = Number(/new pg\.Pool\(\{[^}]*max: (\d+)/.exec(read('services/liquidator/src/main.mjs'))[1]);
+  // pgPoolOptions() in candidateSource.mjs is what main.mjs hands to new pg.Pool.
+  const bot = Number(/export function pgPoolOptions[\s\S]*?max: (\d+)/.exec(read('services/liquidator/src/candidateSource.mjs'))[1]);
   const reserved = 3 + 2; // superuser_reserved_connections + psql / backup sessions
   const total = ponder + api + bot * LONG_RUNNING['whitespace-bot@.service'] + reserved;
   assert.ok(total <= maxConnections, `pools need ${total} connections, max_connections is ${maxConnections}`);
