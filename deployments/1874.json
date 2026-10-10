@@ -1,7 +1,7 @@
 {
   "chainId": 1874,
-  "deployedAt": "2026-09-28T10:01:50Z",
-  "commit": "c86708da5fa69cf545f659b04072af8d4f6940ed",
+  "deployedAt": "2026-10-10T09:33:44Z",
+  "commit": "80a6401daeda0a73bf385b2054cce8e03db6cd58",
   "startBlock": 8993094,
   "contracts": {
     "registry": "0x86d4EC32F8ed6e07D6176b71De05c9866A30c357",
@@ -16,7 +16,10 @@
     "tradesUpKeep": "0x97162dD1FE0e34Cf6ca712a227f4cE4284B2fe65",
     "collateral": "0x2E652a62314c4b51480E54fC55954f51bf20D2B7",
     "verifier": "0x233A5F2d8c66dBd88eB43E4A9C7f7A9BF2F6b1Cf",
-    "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE"
+    "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
+    "previousPriceUpKeeps": [
+      "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE"
+    ]
   },
   "roles": {
     "gov": "0xFB042739DaA0946E9e6658CA6603Ff5EcEa60Dd8",
@@ -30,7 +33,7 @@
   },
   "oracle": {
     "verifier": "0x233A5F2d8c66dBd88eB43E4A9C7f7A9BF2F6b1Cf",
-    "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+    "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
     "threshold": 3,
     "signerCount": 5,
     "maxAge": 10,
@@ -51,7 +54,7 @@
       "feedId": "BTC/USD",
       "oracle": "BTC/USD",
       "registryKey": "BTC/USDPriceUpkeep",
-      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
       "groupIndex": 0,
       "feeIndex": 0,
       "maxLeverage": 10000,
@@ -64,7 +67,7 @@
       "feedId": "ETH/USD",
       "oracle": "ETH/USD",
       "registryKey": "ETH/USDPriceUpkeep",
-      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
       "groupIndex": 0,
       "feeIndex": 0,
       "maxLeverage": 10000,
@@ -77,7 +80,7 @@
       "feedId": "SOL/USD",
       "oracle": "SOL/USD",
       "registryKey": "SOL/USDPriceUpkeep",
-      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
       "groupIndex": 0,
       "feeIndex": 0,
       "maxLeverage": 10000,
@@ -90,7 +93,7 @@
       "feedId": "WBT/USD",
       "oracle": "WBT/USD",
       "registryKey": "WBT/USDPriceUpkeep",
-      "priceUpKeep": "0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE",
+      "priceUpKeep": "0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99",
       "groupIndex": 0,
       "feeIndex": 0,
       "maxLeverage": 2500,

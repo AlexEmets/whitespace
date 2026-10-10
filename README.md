@@ -173,7 +173,7 @@ by `tools/deploy/manifest.mjs`, never written by hand.
 | Trading | `0x2379Bc62d7213604175fEfA21b584Ce51A8a01c6` |
 | Vault | `0x0aC538e15e4C7a27E6E38025Bed911B8975044F0` |
 | Verifier (3-of-5) | `0x233A5F2d8c66dBd88eB43E4A9C7f7A9BF2F6b1Cf` |
-| Price upkeep | `0xBb1dB8F7c38E3729e623D8E711a56613F821a9FE` |
+| Price upkeep | `0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99` |
 | Trades upkeep | `0x97162dD1FE0e34Cf6ca712a227f4cE4284B2fe65` |
 
 - **Deploy from scratch:** [`docs/runbooks/redeploy-testnet-1874.md`](docs/runbooks/redeploy-testnet-1874.md), using one
