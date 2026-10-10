@@ -37,6 +37,8 @@ const ROLLOVER_OWED = 250_000n;
 const minLevPos = vi.hoisted(() => ({ value: 1_500_000000n }));
 
 vi.mock('wagmi', () => ({
+  useReadContracts: () => ({ data: [] }),
+  useBlockNumber: () => ({ data: 1n }),
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
   // PositionsList reads the liquidation price straight off OstiumPairInfos via
   // useLiquidationPrice. Mocked at the wagmi boundary rather than at the hook, so the
@@ -48,6 +50,8 @@ vi.mock('wagmi', () => ({
     if (functionName === 'openTradesInfo') return { data: [7n, 0n, 1000, 0, 0, 0, false], isLoading: false };
     if (functionName === 'maxSl_P') return { data: 75, isLoading: false };
     if (functionName === 'pairMinLevPos') return { data: minLevPos.value, isLoading: false };
+    if (functionName === 'getPendingOrderIds') return { data: [], isLoading: false };
+    if (functionName === 'marketOrdersTimeout') return { data: 30, isLoading: false };
     return { data: LIQ_PRICE_RAW, isLoading: false };
   },
 }));

@@ -7,7 +7,7 @@ import { useCloseTrade } from '@/hooks/useCloseTrade';
 import { useErc20 } from '@/hooks/useErc20';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
 import { useMarketFees } from '@/hooks/useMarketFees';
-import { useOrders } from '@/hooks/useOrders';
+import { useOrdersWithChain } from '@/hooks/useChainPendingOrders';
 import { useMarkets } from '@/hooks/useMarkets';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
@@ -213,7 +213,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   // was set and never cleared, so after a partial close, or a close cancelled for SLIPPAGE, the
   // row said "pending keeper execution" forever and never said that the close had failed.
   const [closeRequested, setCloseRequested] = useState<{ orderId: string | null } | null>(null);
-  const { orders } = useOrders(address);
+  const { orders } = useOrdersWithChain(address);
   const closeOrder = closeRequested?.orderId ? orders.find((o) => o.orderId === closeRequested.orderId) : undefined;
   const closeNote: { text: string; failed: boolean } | null =
     closeRequested === null

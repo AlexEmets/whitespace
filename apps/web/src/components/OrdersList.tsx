@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
-import { useOrders } from '@/hooks/useOrders';
+import { useOrdersWithChain } from '@/hooks/useChainPendingOrders';
 import { useIsReclaimable, useReclaimOrder } from '@/hooks/useReclaimOrder';
 import { explainCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
@@ -97,11 +97,13 @@ function ReclaimCell({ order }: { order: OrderSummary }) {
  */
 export function OrdersList() {
   const { address } = useAccount();
-  const { orders, loading, error, stale } = useOrders(address);
+  const { orders, loading, error, stale } = useOrdersWithChain(address);
 
   if (!address) return <p>Connect your wallet to see orders.</p>;
-  if (loading) return <p>Loading orders…</p>;
-  if (error) return <p className="error-text">Failed to load orders: {error.message}</p>;
+  // Orders still pending on chain are shown even when the API has nothing (down, or behind):
+  // their Reclaim / Release is the one control that must always be reachable.
+  if (loading && orders.length === 0) return <p>Loading orders…</p>;
+  if (error && orders.length === 0) return <p className="error-text">Failed to load orders: {error.message}</p>;
   if (orders.length === 0) return <p data-testid="no-orders">No orders.</p>;
 
   return (

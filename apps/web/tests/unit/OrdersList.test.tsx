@@ -8,6 +8,8 @@ import type { OrderSummary } from '@/lib/types';
 // PRECISION_2), never the raw scaled integers the contract stores.
 let ordersState: OrderSummary[] = [];
 let staleState = false;
+/** What TradingStorage reports as still pending, for orders the API has not indexed. */
+const chainState: { ids: bigint[]; details: { status: string; result: unknown }[] } = { ids: [], details: [] };
 
 /** Chain head the reclaim countdown compares against. `marketOrdersTimeout` is 30 blocks
  * on 1874, so a request at 7437171 unlocks at 7437201. */
@@ -17,7 +19,9 @@ const reclaimMock = vi.fn(async (_config: { functionName: string; args: unknown[
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
   useBlockNumber: () => ({ data: headBlock }),
-  useReadContract: () => ({ data: 30 }), // marketOrdersTimeout
+  useReadContract: ({ functionName }: { functionName: string }) =>
+    functionName === 'getPendingOrderIds' ? { data: chainState.ids } : { data: 30 }, // marketOrdersTimeout
+  useReadContracts: () => ({ data: chainState.details }),
   usePublicClient: () => ({ waitForTransactionReceipt: vi.fn(async () => ({ status: 'success' })) }),
   useWriteContract: () => ({ writeContractAsync: reclaimMock, isPending: false }),
 }));
@@ -331,6 +335,36 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(screen.getByTestId('orders-stale')).toBeInTheDocument();
     expect(screen.getByTestId('order-reclaim-50')).toBeInTheDocument();
     staleState = false;
+  });
+
+  // The 2026-10-10 case: the indexer was two days behind, the API listed nothing, and two closes
+  // the keeper had missed showed no Release anywhere.
+  it('offers the release for a close that is pending on chain but missing from the API', () => {
+    ordersState = [];
+    chainState.ids = [505n];
+    chainState.details = [
+      {
+        status: 'success',
+        result: [7437000n, 0n, 0, { collateral: 0n, trader: '0xTraderAddress000000000000000000000000', leverage: 0, pairIndex: 0, buy: true }, 10000],
+      },
+    ];
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-row-505')).toBeInTheDocument();
+    expect(screen.getByTestId('order-reclaim-505')).toHaveTextContent('Release position');
+    chainState.ids = [];
+    chainState.details = [];
+  });
+
+  it('does not duplicate an order the API already lists', () => {
+    ordersState = [{ ...base, orderId: '505', kind: 'close' }];
+    chainState.ids = [505n];
+    chainState.details = [
+      { status: 'success', result: [7437000n, 0n, 0, { collateral: 0n, trader: '0xTraderAddress000000000000000000000000', leverage: 0, pairIndex: 0, buy: true }, 10000] },
+    ];
+    render(<OrdersList />);
+    expect(screen.getAllByTestId('order-row-505')).toHaveLength(1);
+    chainState.ids = [];
+    chainState.details = [];
   });
 
   it('renders a no-orders message when there are none', () => {

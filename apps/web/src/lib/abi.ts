@@ -130,6 +130,10 @@ export const TRADING_STORAGE_ABI = parseAbi([
   'function openTradesInfo(address trader, uint16 pairIndex, uint8 index) view returns (uint256 tradeId, uint256 oiNotional, uint32 initialLeverage, uint32 tpLastUpdated, uint32 slLastUpdated, uint32 createdAt, bool deprecatedBeingMarketClosed)',
   // _type 0 = long OI, 1 = short OI (both in notional/fillPrice units, 1e18 x 1e12), 2 = the cap (PRECISION_6 USDW).
   'function openInterest(uint16 pairIndex, uint256 _type) view returns (uint256)',
+  // The trader's market orders still waiting on a keeper, straight from storage — the escape
+  // hatch must not depend on the indexer being caught up.
+  'function getPendingOrderIds(address trader) view returns (uint256[])',
+  'function reqID_pendingMarketOrder(uint256 orderId) view returns (uint256 block, uint192 wantedPrice, uint32 slippageP, (uint256 collateral, uint192 openPrice, uint192 tp, uint192 sl, address trader, uint32 leverage, uint16 pairIndex, uint8 index, bool buy, bool isDayTrade) trade, uint16 percentage)',
 ]);
 
 export const PAIRS_STORAGE_ABI = parseAbi([
