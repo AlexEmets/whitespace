@@ -1,5 +1,5 @@
 import { defineChain } from 'viem';
-import { CHAIN_ID, CHAIN_INFO } from './config';
+import { CHAIN_ID, RPC_URL } from './config';
 
 /**
  * Whitechain testnet 1874, defined from @whitespace/shared's chain registry (rpc URL)
@@ -15,7 +15,11 @@ export const whitechainTestnet1874 = defineChain({
   name: 'Whitechain Testnet (1874)',
   nativeCurrency: { name: 'Whitechain', symbol: 'WBT', decimals: 18 },
   rpcUrls: {
-    default: { http: [CHAIN_INFO.rpc] },
+    // RPC_URL, not the registry's public endpoint: wagmi's http() transport and every client
+    // built over this chain read from here. It used to be CHAIN_INFO.rpc, so
+    // NEXT_PUBLIC_RPC_URL (the eRPC cache behind /rpc) was ignored for every read the app
+    // made and the browser hit the rate-limited public RPC directly.
+    default: { http: [RPC_URL] },
   },
   testnet: true,
 });

@@ -7,6 +7,7 @@
 // connector. The single `injected()` connector is all a MetaMask-style wallet needs.
 import { createConfig, http, injected } from 'wagmi';
 import { whitechainTestnet1874 } from './chain';
+import { RPC_URL } from './config';
 
 export { whitechainTestnet1874 };
 
@@ -14,7 +15,7 @@ export const wagmiConfig = createConfig({
   chains: [whitechainTestnet1874],
   connectors: [injected()],
   transports: {
-    [whitechainTestnet1874.id]: http(),
+    [whitechainTestnet1874.id]: http(RPC_URL),
   },
   ssr: true,
 });
