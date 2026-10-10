@@ -2,11 +2,13 @@
   "name": "whitespace",
   "private": true,
   "packageManager": "pnpm@9.12.0",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build:contracts": "cd contracts && forge build --sizes",
     "test:contracts": "cd contracts && forge test",
-    "test:tools": "node --test tools/",
+    "test:tools": "node --test 'tools/**/*.test.mjs' 'deploy/test/*.test.mjs'",
     "test:packages": "pnpm -r --filter './packages/**' test",
     "test:services": "pnpm -r --filter './services/**' test",
     "stack": "node tools/stack/run.mjs",
