@@ -40,6 +40,9 @@ export function createTxSender({ tradesUpKeepAddress, metricsPrefix = 'liquidato
     metricsPrefix,
     retryOnRevert: false,
     pipeline: true,
+    // Same reason as the keeper: a pipelined batch is estimated before the ones ahead of it
+    // have mined, and an exact estimate then runs out of gas.
+    gasHeadroomPercent: 30,
     receiptTimeoutMs: DEFAULT_RECEIPT_TIMEOUT_MS,
     maxBumps: DEFAULT_MAX_GAS_BUMPS,
     ...senderOpts,

@@ -68,6 +68,9 @@ export function createKeeper({
     // Orders expire maxAge seconds after their request, so sends must overlap: see
     // @whitespace/txsender's pipeline mode.
     pipeline: true,
+    // Pipelined deliveries are estimated before the ones ahead of them have mined; without
+    // headroom a burst ran out of gas (ReentrancySentryOOG) once those landed first.
+    gasHeadroomPercent: 30,
     now,
     ...(config.receiptTimeoutMs ? { receiptTimeoutMs: config.receiptTimeoutMs } : {}),
     ...(config.maxGasBumps !== undefined ? { maxBumps: config.maxGasBumps } : {}),

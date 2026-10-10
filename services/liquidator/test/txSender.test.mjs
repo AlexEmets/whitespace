@@ -22,6 +22,7 @@ function clients(t, statuses) {
   const publicClient = {
     getTransactionCount: t.mock.fn(async () => 5),
     getGasPrice: t.mock.fn(async () => 1_000_000_000n),
+    estimateGas: t.mock.fn(async () => 300_000n),
     waitForTransactionReceipt: t.mock.fn(async () => ({ status: statuses[Math.min(sent - 1, statuses.length - 1)] })),
     getTransactionReceipt: t.mock.fn(async () => ({ status: statuses[Math.min(sent - 1, statuses.length - 1)] })),
   };
@@ -45,6 +46,7 @@ test('a batch goes out as one legacy performUpkeep to the trades upkeep', async 
   assert.equal(tx.to, TRADES_UPKEEP);
   assert.equal(tx.type, 'legacy');
   assert.equal(tx.nonce, 5);
+  assert.equal(tx.gas, 390_000n, '30% over the 300,000 estimate: a pipelined batch is estimated before the ones ahead of it mine');
   const { functionName, args } = decodeFunctionData({ abi: TRADES_UPKEEP_ABI, data: tx.data });
   assert.equal(functionName, 'performUpkeep');
   const [trades, timestamp] = decodeAbiParameters(TUPLE, args[0]);

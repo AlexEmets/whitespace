@@ -41,6 +41,7 @@ function clients(status = 'success') {
     publicClient: {
       getTransactionCount: async () => 0,
       getGasPrice: async () => 1n,
+      estimateGas: async () => 100_000n,
       getTransactionReceipt: async ({ hash }) => ({ status, transactionHash: hash }),
     },
     walletClient: { sendTransaction: async () => `0x${'ab'.repeat(32)}` },
@@ -265,4 +266,23 @@ test('GET /metrics serves the Prometheus text; anything else is 404', async () =
     assert.equal((await fetch(`${base}/nope`)).status, 404);
     assert.equal((await fetch(`${base}/metrics`, { method: 'POST' })).status, 404);
   });
+});
+
+test('a delivery is sent with 30% headroom over its gas estimate', async (t) => {
+  const sent = [];
+  const w = fakeWatch();
+  const c = clients();
+  const keeper = createKeeper({
+    config: config(),
+    ...c,
+    walletClient: { sendTransaction: async (tx) => (sent.push(tx), `0x${'ab'.repeat(32)}`) },
+    reportSource: { getSignedReport: async () => ({ ok: true, signedReport: '0xdeadbeef' }) },
+    watch: w.watch,
+    logger: quiet,
+    now: () => TS * 1000,
+  });
+  t.after(() => keeper.stop());
+  keeper.start();
+  await w.calls[0][2](event());
+  assert.equal(sent[0].gas, 130_000n);
 });

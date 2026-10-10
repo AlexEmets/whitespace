@@ -65,7 +65,10 @@ export function loadConfig(env = process.env) {
   const deadLetterFilePath = env.KEEPER_DEAD_LETTER_PATH ?? null;
   const cursorPath = env.KEEPER_CURSOR_PATH ?? null;
   const maxLookbackBlocks = Number(env.KEEPER_MAX_LOOKBACK_BLOCKS ?? DEFAULT_MAX_LOOKBACK_BLOCKS);
-  const concurrency = Number(env.KEEPER_CONCURRENCY ?? 4);
+  // Each order in flight waits for its own receipt, so this caps deliveries per block, not
+  // report fetches. Four held the fifth order of a burst back until one of the first four had
+  // mined; sixteen covers a burst inside the 10 s window.
+  const concurrency = Number(env.KEEPER_CONCURRENCY ?? 16);
   const receiptTimeoutMs = Number(env.KEEPER_RECEIPT_TIMEOUT_MS ?? 30_000);
   const maxGasBumps = Number(env.KEEPER_MAX_GAS_BUMPS ?? 3);
   // Loopback by default: /metrics names the forwarder's nonce and backlog, which is
