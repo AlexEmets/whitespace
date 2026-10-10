@@ -17,6 +17,7 @@ test('syslog rotation is bounded by size, not only by time', () => {
   assert.match(conf, /\/var\/log\/syslog/);
   assert.match(conf, /^\s*maxsize \d+M$/m);
   assert.match(conf, /^\s*daily$/m);
+  assert.match(conf, /^\s*su root syslog$/m, 'without su, logrotate skips every file under a group-writable /var/log');
 });
 
 test('the indexer does not log at info on the box', () => {
