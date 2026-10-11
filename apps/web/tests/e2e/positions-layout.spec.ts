@@ -105,7 +105,7 @@ test('Close opens a dialog in the middle of the screen, and a partial close goes
 
   await dialog.getByTestId('close-quick-25').click();
   await dialog.getByTestId('close-confirm').click();
-  await expect(page.getByTestId('close-pending')).toContainText('pending keeper execution');
+  await expect(page.getByTestId('close-pending')).toContainText('Closing…');
   const close = [...state.sentTrading].reverse().find((c) => c.functionName === 'closeTradeMarket');
   expect(close?.args[2]).toBe(2500);
 });

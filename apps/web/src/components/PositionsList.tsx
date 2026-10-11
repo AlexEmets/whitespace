@@ -13,7 +13,7 @@ import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
 import { useQuoteInputs } from '@/hooks/useQuote';
 import { useTradingActions } from '@/hooks/useTradingActions';
-import { CALLBACKS_ABI, PAIR_INFOS_ABI, TRADING_STORAGE_ABI, explainCancelReason } from '@/lib/abi';
+import { CALLBACKS_ABI, PAIR_INFOS_ABI, TRADING_STORAGE_ABI, explainCancelReason, humanizeCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { CALLBACKS_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { closeSlippageBps } from '@/lib/closeTicket';
@@ -27,6 +27,7 @@ import { openPositionShareCard } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
 import { ClosePositionDialog, type CloseOutcome } from './ClosePositionDialog';
 import { ShareTradeButton } from './share/ShareTradeButton';
+import { Spinner } from './Spinner';
 
 function parseOptional(text: string, decimals: number): bigint | null {
   if (!text.trim()) return 0n;
@@ -215,19 +216,22 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   const [closeRequested, setCloseRequested] = useState<{ orderId: string | null } | null>(null);
   const { orders } = useOrdersWithChain(address);
   const closeOrder = closeRequested?.orderId ? orders.find((o) => o.orderId === closeRequested.orderId) : undefined;
-  const closeNote: { text: string; failed: boolean } | null =
+  // While a close is in flight the row shows a spinner, not an explanation of the oracle
+  // pipeline. Only a close that will not happen gets words, and few of them.
+  const closeNote: { state: 'pending' } | { state: 'failed'; text: string; detail: string } | null =
     closeRequested === null
       ? null
       : closeOrder?.status === 'cancelled'
         ? {
-            text: `Close cancelled (${closeOrder.cancelReason ?? 'unknown reason'}): ${explainCancelReason(closeOrder.cancelReason ?? '')}`,
-            failed: true,
+            state: 'failed',
+            text: `Close cancelled: ${humanizeCancelReason(closeOrder.cancelReason)}`,
+            detail: explainCancelReason(closeOrder.cancelReason ?? ''),
           }
         : closeOrder?.status === 'executed' || closeOrder?.status === 'timeout'
           ? null
           : closeOrder?.expired
-            ? { text: 'No keeper report arrived for this close — release the position from Orders.', failed: true }
-            : { text: 'Close requested — pending keeper execution.', failed: false };
+            ? { state: 'failed', text: 'Close did not fill — release it in Orders', detail: 'No price report arrived in time.' }
+            : { state: 'pending' };
 
   const collateralRaw = collateralToRaw(position.collateral);
   const leverageRaw = leverageToRaw(position.leverage);
@@ -372,9 +376,13 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
               testId={`position-share-${position.pairIndex}-${position.index}`}
             />
           ) : null}
-          {closeNote ? (
-            <span data-testid="close-pending" role="status" className={closeNote.failed ? 'error-text' : undefined}>
-              {' '}
+          {closeNote?.state === 'pending' ? (
+            <span data-testid="close-pending" className="close-note">
+              <Spinner label="Closing" />
+              Closing…
+            </span>
+          ) : closeNote?.state === 'failed' ? (
+            <span data-testid="close-pending" role="alert" className="close-note error-text" title={closeNote.detail}>
               {closeNote.text}
             </span>
           ) : null}

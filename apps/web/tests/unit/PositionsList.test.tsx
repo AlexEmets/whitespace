@@ -337,7 +337,11 @@ describe('<PositionsList>', () => {
       marketPriceRaw: 110000000000000000000n,
       slippageBps: 50n,
     });
-    expect(await screen.findByTestId('close-pending')).toHaveTextContent(/pending keeper execution/i);
+    // A spinner and one word while the close waits for its report — no keeper prose.
+    const note = await screen.findByTestId('close-pending');
+    expect(note).toHaveTextContent(/^Closing…$/);
+    expect(note.querySelector('.spinner')).not.toBeNull();
+    expect(note).not.toHaveTextContent(/keeper/i);
     expect(screen.queryByTestId('close-dialog')).not.toBeInTheDocument();
   });
 
@@ -375,7 +379,9 @@ describe('<PositionsList>', () => {
     const { rerender } = await requestFullClose();
     ordersMock = [closeOrder({ status: 'cancelled', cancelReason: 'SLIPPAGE' })];
     rerender(<PositionsList />);
-    expect(screen.getByTestId('close-pending')).toHaveTextContent(/Close cancelled \(SLIPPAGE\)/);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent('Close cancelled: slippage');
+    expect(screen.getByTestId('close-pending')).toHaveAttribute('title', expect.stringMatching(/./));
+    expect(screen.getByTestId('close-pending').querySelector('.spinner')).toBeNull();
   });
 
   it('clears the pending note once the close has executed', async () => {
@@ -389,7 +395,8 @@ describe('<PositionsList>', () => {
     const { rerender } = await requestFullClose();
     ordersMock = [closeOrder({ expired: true })];
     rerender(<PositionsList />);
-    expect(screen.getByTestId('close-pending')).toHaveTextContent(/release the position from Orders/);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent('Close did not fill — release it in Orders');
+    expect(screen.getByTestId('close-pending')).not.toHaveTextContent(/keeper/i);
   });
 
   it('closes the quick size picked in the dialog', async () => {

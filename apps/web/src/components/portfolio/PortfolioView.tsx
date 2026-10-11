@@ -22,6 +22,7 @@ import { PnlSparkline } from './PnlSparkline';
 import { TradeHistoryTable, marketLabel } from './TradeHistoryTable';
 import { formatDuration, formatUtcMinute } from './formatTime';
 import styles from './portfolio.module.css';
+import { Spinner } from '../Spinner';
 
 /**
  * Total unrealised PnL across every open position, or `null` if any one of them has no
@@ -179,7 +180,7 @@ export function PortfolioView() {
 
   const tabNotes: Record<PortfolioTab, ReactNode> = {
     positions: 'Marks refresh every 5s. Close a position from the terminal.',
-    orders: 'An order is a request: it fills, or refunds minus the oracle fee, once a keeper reports a price.',
+    orders: 'Market orders fill within a few seconds; a cancelled order is refunded minus the oracle fee.',
     history:
       stats.firstClosedAt !== null && stats.lastClosedAt !== null
         ? `${formatUtcMinute(stats.firstClosedAt)} → ${formatUtcMinute(stats.lastClosedAt)}`
@@ -354,9 +355,7 @@ export function PortfolioView() {
               </AccountState>
             ) : positions.length === 0 ? (
               <AccountState kind="empty" title="No open positions">
-                This address holds no open position on any market. <Link href="/trade">Open one from the terminal</Link> —
-                the order is a request first: it fills, or it cancels and refunds, only once a keeper delivers a signed
-                price report.
+                This address holds no open position on any market. <Link href="/trade">Open one from the terminal</Link>.
               </AccountState>
             ) : (
               <OpenPositionsTable positions={positions} markets={markets} prices={prices} />
@@ -398,20 +397,21 @@ export function PortfolioView() {
                         </td>
                         <td className={accountStyles.rowTime}>{formatUtcMinute(order.requestedAt)}</td>
                         <td>
-                          {order.status === 'pending'
-                            ? 'Pending — waiting for keeper'
-                            : order.status === 'executed'
-                              ? 'Executed'
-                              : 'Cancelled'}
+                          {order.status === 'pending' ? (
+                            <>
+                              <Spinner label="Waiting for the price report" />
+                              Pending
+                            </>
+                          ) : order.status === 'executed' ? (
+                            'Filled'
+                          ) : (
+                            'Cancelled'
+                          )}
                         </td>
                         <td className={accountStyles.subtle}>
                           {order.status === 'cancelled' ? (
                             <span className="error-text">{explainCancelReason(order.cancelReason ?? '')}</span>
-                          ) : order.status === 'executed' ? (
-                            'Position opened.'
-                          ) : (
-                            'No price report has arrived yet.'
-                          )}
+                          ) : null}
                         </td>
                       </tr>
                     ))}

@@ -203,6 +203,13 @@ const CANCEL_REASON_EXPLANATIONS: Record<string, string> = {
 export function explainCancelReason(reason: string): string {
   return (
     CANCEL_REASON_EXPLANATIONS[reason] ??
-    'The order was cancelled by the keeper report. Your collateral was refunded, minus the oracle fee.'
+    'The order was cancelled. Your collateral was refunded, minus the oracle fee.'
   );
+}
+
+/** A cancel reason as a short label ("PRICE_IMPACT" -> "price impact"), for places with room
+ * for a few words; the full sentence from explainCancelReason goes in a tooltip. */
+export function humanizeCancelReason(reason: string | null | undefined): string {
+  if (!reason) return 'unknown reason';
+  return reason.toLowerCase().replace(/_/g, ' ');
 }

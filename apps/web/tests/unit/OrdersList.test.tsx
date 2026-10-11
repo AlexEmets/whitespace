@@ -26,6 +26,14 @@ vi.mock('wagmi', () => ({
   useWriteContract: () => ({ writeContractAsync: reclaimMock, isPending: false }),
 }));
 
+vi.mock('@/hooks/useMarkets', () => ({
+  useMarkets: () => ({
+    markets: [{ pairIndex: 0, from: 'BTC', to: 'USD', feedId: '0x', maxLeverage: '100.00', maxOpenInterest: '0', openInterest: { long: '0', short: '0' } }],
+    loading: false,
+    error: null,
+  }),
+}));
+
 vi.mock('@/hooks/useOrders', () => ({
   useOrders: () => ({ orders: ordersState, error: null, stale: staleState, loading: false, refetch: vi.fn() }),
 }));
@@ -112,7 +120,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
       },
     ];
     render(<OrdersList />);
-    expect(screen.getByTestId('order-status-2')).toHaveTextContent(/executed/i);
+    expect(screen.getByTestId('order-status-2')).toHaveTextContent('Filled');
   });
 
   it('shows a cancelled order with its CancelReason explained, not just "cancelled"', () => {
@@ -134,9 +142,9 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
       },
     ];
     render(<OrdersList />);
-    expect(screen.getByTestId('order-status-3')).toHaveTextContent(/cancelled/i);
-    expect(screen.getByTestId('order-row-3')).toHaveTextContent(/SLIPPAGE/);
-    expect(screen.getByTestId('order-row-3')).toHaveTextContent(/refunded/i);
+    // The reason in two words on the row; the full explanation in its tooltip.
+    expect(screen.getByTestId('order-status-3')).toHaveTextContent('Cancelled · slippage');
+    expect(screen.getByTestId('order-status-3').firstElementChild).toHaveAttribute('title', expect.stringMatching(/refunded/i));
   });
 
   /**
@@ -188,7 +196,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         requestedAt: 1789033539,
         requestedAtBlock: '7437171',
         status: 'pending',
-        expired: false,
+        expired: true,
         resolvedAt: null,
         cancelReason: null,
         tradeId: null,
@@ -229,7 +237,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
         expect.objectContaining({ functionName: 'closeTradeMarketTimeout', args: [10n, false] }),
       ),
     );
-    expect(await screen.findByTestId('order-reclaimed-10')).toHaveTextContent(/close it again/);
+    expect(await screen.findByTestId('order-reclaimed-10')).toHaveTextContent('Released');
   });
 
   /**
@@ -304,28 +312,28 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
   it('labels a reclaimed (timeout) open order and says the collateral came back in full', () => {
     ordersState = [{ ...base, status: 'timeout', expired: false }];
     render(<OrdersList />);
-    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Reclaimed — no keeper report');
-    expect(screen.getByTestId('order-row-50')).toHaveTextContent('Collateral returned in full.');
+    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Reclaimed');
   });
 
   it('says a reclaimed close released the position, still open', () => {
     ordersState = [{ ...base, kind: 'close', status: 'timeout' }];
     render(<OrdersList />);
-    expect(screen.getByTestId('order-row-50')).toHaveTextContent('Position released, still open.');
+    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Released');
   });
 
   it('says an expired remove-margin request lapsed instead of waiting forever', () => {
     ordersState = [{ ...base, kind: 'remove_collateral', expired: true }];
     render(<OrdersList />);
     expect(screen.getByTestId('order-lapsed-50')).toHaveTextContent(/Lapsed/);
-    expect(screen.getByTestId('order-row-50')).not.toHaveTextContent(/Waiting for a keeper report/);
+    expect(screen.getByTestId('order-row-50')).not.toHaveTextContent(/Pending/);
   });
 
   it('still says waiting for a remove-margin request inside its window', () => {
     ordersState = [{ ...base, kind: 'remove_collateral', expired: false }];
     render(<OrdersList />);
     expect(screen.queryByTestId('order-lapsed-50')).toBeNull();
-    expect(screen.getByTestId('order-row-50')).toHaveTextContent(/Waiting for a keeper report/);
+    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Pending');
+    expect(screen.getByTestId('order-status-50').querySelector('.spinner')).not.toBeNull();
   });
 
   it('keeps the orders and their reclaim control on screen when a refresh fails', () => {
@@ -371,5 +379,55 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     ordersState = [];
     render(<OrdersList />);
     expect(screen.getByTestId('no-orders')).toBeInTheDocument();
+  });
+});
+
+describe('<OrdersList> — order details, not keeper prose', () => {
+  const pending: OrderSummary = {
+    orderId: '60',
+    pairIndex: 0,
+    kind: 'close',
+    buy: false,
+    collateral: '250.000000',
+    leverage: '20.00',
+    requestedAt: 1791724552,
+    requestedAtBlock: '7437390',
+    status: 'pending',
+    expired: false,
+    resolvedAt: null,
+    cancelReason: null,
+    tradeId: null,
+  };
+
+  it('shows market, type, side, collateral and leverage for an order', () => {
+    headBlock = 7_437_400n;
+    ordersState = [pending];
+    render(<OrdersList />);
+    const row = screen.getByTestId('order-row-60');
+    for (const text of ['BTC-PERP', 'Market close', 'Short', '250.00', '20.00x']) expect(row).toHaveTextContent(text);
+  });
+
+  it('shows a pending order as a spinner and one word, with no reclaim countdown while it can still fill', () => {
+    headBlock = 7_437_400n;
+    ordersState = [pending];
+    render(<OrdersList />);
+    const status = screen.getByTestId('order-status-60');
+    expect(status).toHaveTextContent(/^Pending$/);
+    expect(status.querySelector('.spinner')).not.toBeNull();
+    expect(screen.queryByTestId('order-reclaim-wait-60')).toBeNull();
+    expect(screen.getByTestId('order-row-60')).not.toHaveTextContent(/keeper/i);
+  });
+
+  it('never mentions the keeper on any row', () => {
+    headBlock = 7_437_400n;
+    ordersState = [
+      pending,
+      { ...pending, orderId: '61', expired: true },
+      { ...pending, orderId: '62', status: 'timeout' },
+      { ...pending, orderId: '63', status: 'cancelled', cancelReason: 'SLIPPAGE' },
+      { ...pending, orderId: '64', kind: 'remove_collateral', expired: true },
+    ];
+    render(<OrdersList />);
+    expect(screen.getByTestId('orders-table')).not.toHaveTextContent(/keeper/i);
   });
 });

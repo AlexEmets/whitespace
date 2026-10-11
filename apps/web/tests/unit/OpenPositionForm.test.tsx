@@ -302,7 +302,7 @@ describe('<OpenPositionForm>', () => {
 
     ordersMockState = [order42({ status: 'timeout' })];
     rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    expect(screen.getByTestId('order-reclaimed')).toHaveTextContent(/reclaimed in full/);
+    expect(screen.getByTestId('order-reclaimed')).toHaveTextContent(/returned in full/);
     expect(screen.queryByTestId('order-cancelled')).toBeNull();
   });
 
@@ -314,7 +314,8 @@ describe('<OpenPositionForm>', () => {
 
     ordersMockState = [order42({ expired: true })];
     rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} />);
-    expect(screen.getByTestId('order-pending-banner')).toHaveTextContent(/reclaim the collateral in full from Orders/);
+    expect(screen.getByTestId('order-expired')).toHaveTextContent('Order did not fill — reclaim the collateral in Orders.');
+    expect(screen.queryByTestId('order-opening')).toBeNull();
   });
 
   it('clears the outcome when the side is flipped, not just when the size changes', async () => {
@@ -456,9 +457,11 @@ describe('<OpenPositionForm>', () => {
     });
 
     // Two-phase honesty: after the tx confirms, the UI must not claim the position is
-    // open — only that the request was submitted and is pending a keeper report.
+    // open — it shows the order in progress, as a spinner rather than keeper prose.
     const banner = await screen.findByTestId('order-pending-banner');
-    expect(banner).toHaveTextContent(/Nothing has happened yet/i);
+    expect(screen.getByTestId('order-opening')).toHaveTextContent(/^Opening…$/);
+    expect(screen.getByTestId('order-opening').querySelector('.spinner')).not.toBeNull();
+    expect(banner).not.toHaveTextContent(/keeper/i);
     expect(banner).not.toHaveTextContent(/position is now open/i);
   });
 

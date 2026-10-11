@@ -97,7 +97,7 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
 
     const pendingBanner = page.getByTestId('order-pending-banner');
     await expect(pendingBanner).toBeVisible();
-    await expect(pendingBanner).toContainText('Nothing has happened yet');
+    await expect(pendingBanner).toContainText('Opening…');
     await expect(pendingBanner).not.toContainText('position is now open');
 
     await page.getByTestId('tab-orders').click();
@@ -125,7 +125,7 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
       tradeId: order.tradeId,
     });
 
-    await expect(page.getByTestId(`order-status-${order.orderId}`)).toContainText('Executed');
+    await expect(page.getByTestId(`order-status-${order.orderId}`)).toContainText('Filled');
     await expect(page.getByTestId('order-filled')).toContainText('Filled');
 
     await page.getByTestId('tab-positions').click();
@@ -148,7 +148,7 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     await expect(dialog.getByTestId('close-share')).toHaveText('100%');
     await dialog.getByTestId('close-confirm').click();
     await expect(dialog).toBeHidden();
-    await expect(positionRow.getByTestId('close-pending')).toContainText('pending keeper execution');
+    await expect(positionRow.getByTestId('close-pending')).toContainText('Closing…');
 
     // The mock chain removes the position from shared state as soon as the
     // closeTradeMarket transaction lands (see mockChain.ts) — the next positions poll

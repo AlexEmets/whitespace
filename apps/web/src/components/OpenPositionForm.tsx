@@ -14,7 +14,7 @@ import { useOrders } from '@/hooks/useOrders';
 import { usePositions } from '@/hooks/usePositions';
 import { usePrice } from '@/hooks/usePrice';
 import { useQuote } from '@/hooks/useQuote';
-import { explainCancelReason, type OpenOrderKind } from '@/lib/abi';
+import { explainCancelReason, humanizeCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
@@ -39,6 +39,7 @@ import { slippageBpsToCover } from '@/lib/quote';
 import type { MarketSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
 import { RiskPreview } from './RiskPreview';
+import { Spinner } from './Spinner';
 import styles from './OrderPanel.module.css';
 
 const PERCENT_MARKS = [0, 25, 50, 75, 100] as const;
@@ -642,23 +643,24 @@ export function OpenPositionForm({
 
       {state.phase === 'submitted' ? (
         <div className={styles.status} data-testid="order-pending-banner" role="status">
-          {!submittedOrder || submittedOrder.status === 'pending' ? (
-            <p className={styles.status}>
-              Order requested (id {state.orderId || '—'}). Nothing has happened yet — the position opens, or the order
-              is cancelled, once a keeper delivers the signed price report.
-              {submittedOrder?.expired
-                ? ' No report arrived in time: reclaim the collateral in full from Orders.'
-                : null}
+          {/* A spinner while the order waits for its price report — the trader needs to see
+              it is in progress, not read how the oracle pipeline works. */}
+          {submittedOrder?.status === 'pending' && submittedOrder.expired ? (
+            <p className="error-text" data-testid="order-expired">Order did not fill — reclaim the collateral in Orders.</p>
+          ) : !submittedOrder || submittedOrder.status === 'pending' ? (
+            <p className={styles.status} data-testid="order-opening">
+              <Spinner label="Opening position" />
+              Opening…
             </p>
           ) : submittedOrder.status === 'executed' ? (
             <p className={`${styles.status} ${styles.long}`} data-testid="order-filled">Filled — your position is now open.</p>
           ) : submittedOrder.status === 'timeout' ? (
             <p className={styles.status} data-testid="order-reclaimed">
-              No keeper report arrived, and the collateral was reclaimed in full.
+              The order did not fill; the collateral was returned in full.
             </p>
           ) : (
             <p data-testid="order-cancelled" className="error-text">
-              Cancelled ({submittedOrder.cancelReason ?? 'unknown reason'}): {explainCancelReason(submittedOrder.cancelReason ?? '')}
+              Cancelled: {humanizeCancelReason(submittedOrder.cancelReason)}. {explainCancelReason(submittedOrder.cancelReason ?? '')}
             </p>
           )}
         </div>
