@@ -1,12 +1,14 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TerminalTabs } from '@/components/terminal/TerminalTabs';
+import type { PositionSummary } from '@/lib/types';
 
 let ordersState: { status: string }[] = [];
 let limitState: unknown[] = [];
+let positionsState: PositionSummary[] = [];
 
 vi.mock('wagmi', () => ({ useAccount: () => ({ address: '0xTraderAddress000000000000000000000000' }) }));
-vi.mock('@/hooks/usePositions', () => ({ usePositions: () => ({ positions: [] }) }));
+vi.mock('@/hooks/usePositions', () => ({ usePositions: () => ({ positions: positionsState }) }));
 vi.mock('@/hooks/useChainPendingOrders', () => ({ useOrdersWithChain: () => ({ orders: ordersState }) }));
 vi.mock('@/hooks/useAccountHistory', () => ({ useLimitOrders: () => ({ limitOrders: limitState }) }));
 vi.mock('@/components/OrdersList', () => ({ OrdersList: () => <div data-testid="market-orders" /> }));
@@ -54,5 +56,19 @@ describe('<TerminalTabs> — Open orders', () => {
     openOrdersTab();
     expect(screen.getByTestId('limit-orders')).toBeInTheDocument();
     expect(screen.getByTestId('tab-count-orders')).toHaveTextContent('3');
+  });
+});
+
+describe('<TerminalTabs> — Positions count', () => {
+  const trade = (index: number, pairIndex: number, buy: boolean): PositionSummary => ({
+    pairIndex, index, buy, collateral: '100', leverage: '10.00', openPrice: '100', tp: '0', sl: '0', openedAt: index, tradeId: String(index),
+  });
+
+  it('counts trades on one market and side as one position', () => {
+    ordersState = [];
+    limitState = [];
+    positionsState = [trade(0, 0, true), trade(1, 0, true), trade(2, 0, false), trade(3, 1, true)];
+    render(<TerminalTabs />);
+    expect(screen.getByTestId('tab-count-positions')).toHaveTextContent('3');
   });
 });

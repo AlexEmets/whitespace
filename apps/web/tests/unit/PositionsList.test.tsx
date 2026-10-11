@@ -36,8 +36,27 @@ const ROLLOVER_OWED = 250_000n;
 /** The pair's minimum collateral × leverage (PRECISION_6); tests raise it to hit the floor. */
 const minLevPos = vi.hoisted(() => ({ value: 1_500_000000n }));
 
+/** Per-trade liquidation levels a stacked position's batched reads return, by trade index. */
+let legLiqRaw: Record<number, bigint> = {};
+const PER_TRADE_READS = new Set(['getTradeLiquidationPrice', 'getTradeFundingFee', 'getTradeRolloverFee']);
+
 vi.mock('wagmi', () => ({
-  useReadContracts: () => ({ data: [] }),
+  // A stacked position reads every trade's liquidation level and fees in one batch; anything
+  // else batched here (pending order ids) has nothing to report in these tests.
+  useReadContracts: ({ contracts }: { contracts?: { functionName: string; args?: readonly unknown[] }[] }) => {
+    if (!contracts?.length || !contracts.every((c) => PER_TRADE_READS.has(c.functionName))) return { data: [] };
+    return {
+      data: contracts.map((c) => ({
+        status: 'success',
+        result:
+          c.functionName === 'getTradeFundingFee'
+            ? [FUNDING_OWED, 0n]
+            : c.functionName === 'getTradeRolloverFee'
+              ? ROLLOVER_OWED
+              : (legLiqRaw[c.args![2] as number] ?? LIQ_PRICE_RAW),
+      })),
+    };
+  },
   useBlockNumber: () => ({ data: 1n }),
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
   // PositionsList reads the liquidation price straight off OstiumPairInfos via
@@ -84,8 +103,9 @@ vi.mock('@/hooks/useMarketFees', () => ({ useMarketFees: () => ({ oracleFeeRaw, 
 
 vi.mock('@/hooks/useOrders', () => ({ useOrders: () => ({ orders: ordersMock, error: null, loading: false }) }));
 
+let positionsMock: PositionSummary[] = [openPosition];
 vi.mock('@/hooks/usePositions', () => ({
-  usePositions: () => ({ positions: [openPosition], error: null, loading: false, refetch: vi.fn() }),
+  usePositions: () => ({ positions: positionsMock, error: null, loading: false, refetch: vi.fn() }),
 }));
 
 vi.mock('@/hooks/useMarkets', () => ({
@@ -125,6 +145,8 @@ beforeEach(() => {
   oracleFeeRaw = 1_000_000n;
   openPosition.sl = '0';
   ordersMock = [];
+  positionsMock = [openPosition];
+  legLiqRaw = {};
 });
 
 describe('<PositionsList>', () => {
@@ -483,5 +505,147 @@ describe('<PositionsList>', () => {
   it('offers a share button on an open position once it has a mark', () => {
     render(<PositionsList />);
     expect(screen.getByTestId('position-share-0-0')).toHaveAttribute('aria-label', 'Share this BTC-PERP trade');
+  });
+});
+
+describe('<PositionsList> stacked positions', () => {
+  // A second long on the same market: 500 USDW at 20x from 125.00 (size 80), next to the
+  // 1,000 at 10x from 100.00 (size 100). Mark is 110.00.
+  const second: PositionSummary = {
+    ...openPosition,
+    index: 1,
+    collateral: '500.000000',
+    leverage: '20.00',
+    openPrice: '125.000000000000000000',
+    openedAt: 10,
+    tradeId: '8',
+  };
+  const short: PositionSummary = { ...openPosition, index: 2, buy: false, tradeId: '9' };
+
+  it('shows two longs on one market as one position', () => {
+    positionsMock = [openPosition, second];
+    render(<PositionsList />);
+    const row = screen.getByTestId('position-stack-0-long');
+    expect(screen.queryByTestId('position-row-0-0')).toBeNull();
+    expect(screen.queryByTestId('position-row-0-1')).toBeNull();
+    expect(row).toHaveTextContent('+180.0000'); // 100 + 80 units
+    expect(row).toHaveTextContent('13.33x'); // 20,000 notional / 1,500 margin
+    expect(row).toHaveTextContent('111.11'); // size-weighted entry, not the mean 112.50
+    expect(screen.getByTestId('position-value')).toHaveTextContent('19,800.00'); // 180 × 110
+    expect(screen.getByTestId('position-margin')).toHaveTextContent('1,500.00');
+    // +1,000 on the first, −1,200 on the second.
+    expect(screen.getByTestId('unrealized-pnl')).toHaveTextContent('-200.00');
+  });
+
+  it('keeps a short on the same market out of the longs’ position', () => {
+    positionsMock = [openPosition, short, second];
+    render(<PositionsList />);
+    expect(screen.getByTestId('position-stack-0-long')).toBeInTheDocument();
+    expect(screen.getByTestId('position-row-0-2')).toBeInTheDocument();
+    expect(screen.getAllByTestId('close-position-button')).toHaveLength(2);
+  });
+
+  it('shows the nearest liquidation of its trades — the highest, for a long', () => {
+    positionsMock = [openPosition, second];
+    legLiqRaw = { 0: 90n * 10n ** 18n, 1: 112n * 10n ** 18n + 5n * 10n ** 17n };
+    render(<PositionsList />);
+    expect(screen.getByTestId('liq-price')).toHaveTextContent('112.50');
+  });
+
+  it('adds up the trades’ funding and rollover', () => {
+    positionsMock = [openPosition];
+    const { unmount } = render(<PositionsList />);
+    const one = screen.getByTestId('position-funding').textContent!;
+    unmount();
+    positionsMock = [openPosition, { ...openPosition, index: 1, tradeId: '8' }];
+    render(<PositionsList />);
+    const parse = (t: string) => Number(t.replace(/[^0-9.-]/g, ''));
+    expect(parse(screen.getByTestId('position-funding').textContent!)).toBeCloseTo(2 * parse(one), 6);
+  });
+
+  it('closes every trade by the share picked, and follows all of them', async () => {
+    positionsMock = [openPosition, second];
+    closeTradeMock.mockResolvedValueOnce({ hash: '0xclose', receipt: {}, orderId: 77n }).mockResolvedValueOnce({ hash: '0xclose', receipt: {}, orderId: 78n });
+    const { rerender } = render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    expect(screen.getByTestId('close-amount-input')).toHaveValue('180');
+    fireEvent.click(screen.getByTestId('close-confirm'));
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(2));
+    expect(closeTradeMock.mock.calls.map((c) => [c[0].index, c[0].closePercentage])).toEqual([
+      [0, 10000],
+      [1, 10000],
+    ]);
+    expect(await screen.findByTestId('close-pending')).toHaveTextContent(/^Closing…$/);
+
+    // One filled, one still waiting: still closing.
+    ordersMock = [
+      { orderId: '77', status: 'executed', expired: false, cancelReason: null },
+      { orderId: '78', status: 'pending', expired: false, cancelReason: null },
+    ];
+    rerender(<PositionsList />);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent('Closing…');
+
+    // The other cancelled: the row says so.
+    ordersMock = [ordersMock[0]!, { orderId: '78', status: 'cancelled', expired: false, cancelReason: 'SLIPPAGE' }];
+    rerender(<PositionsList />);
+    expect(screen.getByTestId('close-pending')).toHaveTextContent('Close cancelled: slippage');
+
+    // Both filled: the note goes.
+    ordersMock = [ordersMock[0]!, { orderId: '78', status: 'executed', expired: false, cancelReason: null }];
+    rerender(<PositionsList />);
+    expect(screen.queryByTestId('close-pending')).toBeNull();
+  });
+
+  it('closes the same share of every trade on a partial close', async () => {
+    positionsMock = [openPosition, second];
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-quick-25'));
+    fireEvent.click(screen.getByTestId('close-confirm'));
+    await waitFor(() => expect(closeTradeMock).toHaveBeenCalledTimes(2));
+    expect(closeTradeMock.mock.calls.map((c) => c[0].closePercentage)).toEqual([2500, 2500]);
+  });
+
+  it('says how many trades were closed when one close fails part way', async () => {
+    positionsMock = [openPosition, second];
+    closeTradeMock.mockResolvedValueOnce({ hash: '0xclose', receipt: {}, orderId: 77n }).mockRejectedValueOnce(new Error('execution reverted'));
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('close-position-button'));
+    fireEvent.click(screen.getByTestId('close-confirm'));
+    expect(await screen.findByTestId('close-error')).toHaveTextContent(/^Close sent for 1 of 2 trades\./);
+    expect(screen.getByTestId('close-dialog')).toBeInTheDocument();
+    expect(screen.getByTestId('close-pending')).toHaveTextContent('Closing…');
+  });
+
+  it('opens the individual trades and sets a take profit on all of them', async () => {
+    positionsMock = [openPosition, second];
+    render(<PositionsList />);
+    expect(screen.getByTestId('stack-toggle')).toHaveTextContent('2 trades');
+    fireEvent.click(screen.getByTestId('stack-toggle'));
+    expect(screen.getByTestId('position-row-0-0')).toHaveClass('leg-row');
+    expect(screen.getByTestId('position-row-0-1')).toHaveClass('leg-row');
+
+    fireEvent.change(screen.getByTestId('stack-tp-input'), { target: { value: '150' } });
+    fireEvent.click(screen.getByTestId('stack-tp-save'));
+    await waitFor(() => expect(actions.updateTp).toHaveBeenCalledTimes(2));
+    expect(actions.updateTp).toHaveBeenNthCalledWith(1, 0, 0, 150n * 10n ** 18n);
+    expect(actions.updateTp).toHaveBeenNthCalledWith(2, 0, 1, 150n * 10n ** 18n);
+    expect(await screen.findByTestId('stack-message')).toHaveTextContent('Take profit updated.');
+  });
+
+  it('refuses a take profit any one trade cannot take', () => {
+    positionsMock = [openPosition, second];
+    render(<PositionsList />);
+    fireEvent.click(screen.getByTestId('stack-toggle'));
+    // Inside the 10x trade's +900% cap (190.00), past the 20x trade's (181.25).
+    fireEvent.change(screen.getByTestId('stack-tp-input'), { target: { value: '185' } });
+    expect(screen.getByTestId('stack-tp-error')).toHaveTextContent('beyond the +900% cap');
+    expect(screen.getByTestId('stack-tp-save')).toBeDisabled();
+  });
+
+  it('marks a stop loss the trades do not share', () => {
+    positionsMock = [{ ...openPosition, sl: '95' }, { ...second, sl: '90' }];
+    render(<PositionsList />);
+    expect(screen.getByTestId('position-tpsl')).toHaveTextContent('— / mixed');
   });
 });

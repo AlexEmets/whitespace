@@ -14,6 +14,7 @@ import {
 import { useLimitOrders } from '@/hooks/useAccountHistory';
 import { useOrdersWithChain } from '@/hooks/useChainPendingOrders';
 import { usePositions } from '@/hooks/usePositions';
+import { stackPositions } from '@/lib/positionStack';
 
 const TABS = ['positions', 'orders', 'fills', 'history', 'funding', 'pnl'] as const;
 type Tab = (typeof TABS)[number];
@@ -47,7 +48,8 @@ export function TerminalTabs() {
   const pendingMarket = orders.filter((o) => o.status === 'pending').length;
   const counts: Partial<Record<Tab, number>> = address
     ? {
-        positions: positions.length,
+        // Trades on one market and side are one position (lib/positionStack.ts).
+        positions: stackPositions(positions).length,
         orders: pendingMarket + limitOrders.length,
       }
     : {};

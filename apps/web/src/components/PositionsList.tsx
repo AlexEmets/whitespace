@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { maxUint256 } from 'viem';
-import { useAccount, useReadContract } from 'wagmi';
+import { useAccount, useReadContract, useReadContracts } from 'wagmi';
 import { useCloseTrade } from '@/hooks/useCloseTrade';
 import { useErc20 } from '@/hooks/useErc20';
 import { useLiquidationPrice } from '@/hooks/useLiquidationPrice';
@@ -22,6 +22,7 @@ import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, parseHuman
 import { updateSlError, updateTpError } from '@/lib/orderRules';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import { leverageAfterRemoval, marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
+import { nearestLiquidation, stackPositions, type PositionStack } from '@/lib/positionStack';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
 import { openPositionShareCard } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
@@ -204,7 +205,7 @@ function PositionManager({ position }: { position: PositionSummary }) {
   );
 }
 
-function PositionRow({ position, market }: { position: PositionSummary; market: MarketSummary | undefined }) {
+function PositionRow({ position, market, nested = false }: { position: PositionSummary; market: MarketSummary | undefined; nested?: boolean }) {
   const { address } = useAccount();
   const { data: price } = usePrice(position.pairIndex);
   const { closeTrade } = useCloseTrade();
@@ -319,7 +320,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
 
   return (
     <>
-      <tr data-testid={`position-row-${position.pairIndex}-${position.index}`}>
+      <tr data-testid={`position-row-${position.pairIndex}-${position.index}`} className={nested ? 'leg-row' : undefined}>
         <td>
           <span className={`side-bar ${position.buy ? 'long' : 'short'}`} aria-hidden="true" />
           {marketLabel(market, position.pairIndex)} <span className="row-leverage">{formatLeverage(position.leverage)}</span>
@@ -411,6 +412,307 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   );
 }
 
+/** Take profit and stop loss for every trade of a stacked position at once. Margin stays a
+ * per-trade edit (in each trade's own row): adding or removing it changes that trade's
+ * liquidation level only, which a combined figure would hide. */
+function StackTpSl({ stack }: { stack: PositionStack }) {
+  const actions = useTradingActions();
+  const maxSl = useReadContract({ address: CALLBACKS_ADDRESS, abi: CALLBACKS_ABI, functionName: 'maxSl_P' });
+  const [tpInput, setTpInput] = useState(stack.tpMixed || priceToRaw(stack.summary.tp) === 0n ? '' : stack.summary.tp);
+  const [slInput, setSlInput] = useState(stack.slMixed || priceToRaw(stack.summary.sl) === 0n ? '' : stack.summary.sl);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const tpRaw = parseOptional(tpInput, PRICE_DECIMALS_NUM);
+  const slRaw = parseOptional(slInput, PRICE_DECIMALS_NUM);
+
+  // The first trade the level is invalid for decides the message: each one is checked
+  // against its own entry and leverage, exactly as the contract will check it.
+  const firstError = (check: (leg: PositionSummary) => string | null) => {
+    for (const leg of stack.legs) {
+      const e = check(leg);
+      if (e) return e;
+    }
+    return null;
+  };
+  const tpError =
+    tpRaw === null
+      ? 'Not a price.'
+      : firstError((leg) =>
+          updateTpError({ buy: leg.buy, openPrice: priceToRaw(leg.openPrice), leverage: leverageToRaw(leg.leverage), initialLeverage: leverageToRaw(leg.leverage), newTp: tpRaw }),
+        );
+  const slError =
+    slRaw === null
+      ? 'Not a price.'
+      : maxSl.data === undefined
+        ? null
+        : firstError((leg) =>
+            updateSlError({ buy: leg.buy, openPrice: priceToRaw(leg.openPrice), leverage: leverageToRaw(leg.leverage), maxSlP: BigInt(maxSl.data), newSl: slRaw }),
+          );
+
+  async function applyToAll(label: string, write: (leg: PositionSummary) => Promise<unknown>) {
+    setMessage(null);
+    let done = 0;
+    try {
+      for (const leg of stack.legs) {
+        await write(leg);
+        done++;
+      }
+      setMessage({ ok: true, text: label });
+    } catch (err) {
+      const text = describeTxError(err);
+      if (text !== null) setMessage({ ok: false, text: done > 0 ? `Applied to ${done} of ${stack.legs.length} trades. ${text}` : text });
+    }
+  }
+
+  const busy = actions.pending !== null;
+  return (
+    <div className="position-manager" data-testid={`stack-manager-${stack.key}`}>
+      <div className="manager-field">
+        <label>
+          Take profit
+          <input data-testid="stack-tp-input" inputMode="decimal" value={tpInput} placeholder={stack.tpMixed ? 'mixed' : undefined} onChange={(e) => setTpInput(e.target.value)} />
+        </label>
+        <button
+          type="button"
+          data-testid="stack-tp-save"
+          disabled={busy || tpError !== null}
+          onClick={() => applyToAll('Take profit updated.', (leg) => actions.updateTp(leg.pairIndex, leg.index, tpRaw!))}
+        >
+          Set TP
+        </button>
+        {tpError && tpInput ? <span className="error-text" data-testid="stack-tp-error">{tpError}</span> : null}
+      </div>
+      <div className="manager-field">
+        <label>
+          Stop loss
+          <input data-testid="stack-sl-input" inputMode="decimal" value={slInput} placeholder={stack.slMixed ? 'mixed' : 'none'} onChange={(e) => setSlInput(e.target.value)} />
+        </label>
+        <button
+          type="button"
+          data-testid="stack-sl-save"
+          disabled={busy || slError !== null}
+          onClick={() => applyToAll(slRaw === 0n ? 'Stop loss removed.' : 'Stop loss updated.', (leg) => actions.updateSl(leg.pairIndex, leg.index, slRaw!))}
+        >
+          {slRaw === 0n ? 'Remove SL' : 'Set SL'}
+        </button>
+        {slError ? <span className="error-text" data-testid="stack-sl-error">{slError}</span> : null}
+      </div>
+      <p className="dash">Applies to all {stack.legs.length} trades. Margin is managed per trade below.</p>
+      {message ? (
+        <p className={message.ok ? 'ok-text' : 'error-text'} role={message.ok ? 'status' : 'alert'} data-testid="stack-message">
+          {message.text}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Several trades on one market and side, shown as one position (see lib/positionStack.ts).
+ * Every figure is the combination of the trades' own on-chain figures: size, margin, PnL and
+ * funding add up; entry is the size-weighted average; liquidation is the nearest of the
+ * trades' levels, because each trade is liquidated on its own. Close closes the same share of
+ * every trade; the individual trades open underneath for per-trade margin and closes.
+ */
+function StackedPositionRow({ stack, market }: { stack: PositionStack; market: MarketSummary | undefined }) {
+  const { address } = useAccount();
+  const { data: price } = usePrice(stack.pairIndex);
+  const { closeTrade } = useCloseTrade();
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [closing, setClosing] = useState<string[] | null>(null);
+  const { orders } = useOrdersWithChain(address);
+  const position = stack.summary;
+  const markRaw = price ? priceToRaw(price.mark) : null;
+  const maxLeverageRaw = market ? leverageToRaw(market.maxLeverage) : 0n;
+
+  const liqReads = useReadContracts({
+    contracts: address
+      ? stack.legs.map((leg) => ({
+          address: PAIR_INFOS_ADDRESS,
+          abi: PAIR_INFOS_ABI,
+          functionName: 'getTradeLiquidationPrice' as const,
+          args: [
+            address,
+            leg.pairIndex,
+            leg.index,
+            priceToRaw(leg.openPrice),
+            leg.buy,
+            collateralToRaw(leg.collateral),
+            Number(leverageToRaw(leg.leverage)),
+            Number(maxLeverageRaw),
+          ] as const,
+        }))
+      : [],
+    query: { enabled: Boolean(address) && maxLeverageRaw > 0n },
+  });
+  const feeReads = useReadContracts({
+    contracts: address
+      ? stack.legs.flatMap((leg) => {
+          const args = [address, leg.pairIndex, leg.index, leg.buy, collateralToRaw(leg.collateral), Number(leverageToRaw(leg.leverage))] as const;
+          return [
+            { address: PAIR_INFOS_ADDRESS, abi: PAIR_INFOS_ABI, functionName: 'getTradeFundingFee' as const, args },
+            { address: PAIR_INFOS_ADDRESS, abi: PAIR_INFOS_ABI, functionName: 'getTradeRolloverFee' as const, args },
+          ];
+        })
+      : [],
+    query: { enabled: Boolean(address), refetchInterval: 30_000 },
+  });
+
+  const liqLevels = stack.legs.map((_, i) => {
+    const r = liqReads.data?.[i];
+    return r?.status === 'success' ? (r.result as bigint) : null;
+  });
+  const liqPrice = maxLeverageRaw > 0n ? nearestLiquidation(stack.buy, liqLevels) : null;
+
+  let netFunding: bigint | null = 0n;
+  for (let i = 0; i < stack.legs.length; i++) {
+    const f = feeReads.data?.[2 * i];
+    const r = feeReads.data?.[2 * i + 1];
+    if (f?.status !== 'success' || r?.status !== 'success' || netFunding === null) {
+      netFunding = null;
+      break;
+    }
+    netFunding += netFundingForDisplay((f.result as readonly [bigint, bigint])[0], r.result as bigint);
+  }
+
+  const pnl =
+    price === undefined || price === null
+      ? null
+      : stack.legs.reduce(
+          (sum, leg) =>
+            sum + estimateUnrealisedPnl({ collateral: leg.collateral, leverage: leg.leverage, openPrice: leg.openPrice, markPrice: price.mark, buy: leg.buy }),
+          0n,
+        );
+  const signedSize = stack.buy ? stack.sizeBaseRaw : -stack.sizeBaseRaw;
+  const usage =
+    liqPrice !== null && markRaw !== null
+      ? marginUsagePercent({ buy: stack.buy, entry: priceToRaw(position.openPrice), mark: markRaw, liq: liqPrice })
+      : null;
+
+  const { inputs: quoteInputs } = useQuoteInputs(stack.pairIndex);
+  const slippageFor = (leg: PositionSummary, share: number) =>
+    closeSlippageBps(quoteInputs, { buy: leg.buy, collateralRaw: collateralToRaw(leg.collateral), leverageRaw: leverageToRaw(leg.leverage), share }, DEFAULT_SLIPPAGE_BPS);
+
+  // Followed until every close request has resolved; the first cancellation or expiry is
+  // what the row reports.
+  const tracked = (closing ?? []).map((id) => orders.find((o) => o.orderId === id));
+  const cancelled = tracked.find((o) => o?.status === 'cancelled');
+  const expired = tracked.find((o) => o?.status === 'pending' && o.expired);
+  const allDone = closing !== null && tracked.every((o) => o?.status === 'executed' || o?.status === 'timeout');
+  const closeNote: { state: 'pending' } | { state: 'failed'; text: string; detail: string } | null =
+    closing === null || allDone
+      ? null
+      : cancelled
+        ? { state: 'failed', text: `Close cancelled: ${humanizeCancelReason(cancelled.cancelReason)}`, detail: explainCancelReason(cancelled.cancelReason ?? '') }
+        : expired
+          ? { state: 'failed', text: 'Close did not fill — release it in Orders', detail: 'No price report arrived in time.' }
+          : { state: 'pending' };
+
+  async function submitClose(share: number): Promise<CloseOutcome> {
+    if (!price) return { done: false, error: 'There is no live price to close against right now.' };
+    const sent: string[] = [];
+    try {
+      for (const leg of stack.legs) {
+        const r = await closeTrade({
+          pairIndex: leg.pairIndex,
+          index: leg.index,
+          closePercentage: share,
+          marketPriceRaw: priceToRaw(price.mark),
+          slippageBps: slippageFor(leg, share),
+        });
+        if (r.orderId !== undefined) sent.push(r.orderId.toString());
+      }
+      setClosing(sent);
+      return { done: true };
+    } catch (err) {
+      if (sent.length) setClosing(sent);
+      const text = describeTxError(err);
+      return { done: false, error: sent.length ? `Close sent for ${sent.length} of ${stack.legs.length} trades. ${text ?? ''}`.trim() : text };
+    }
+  }
+
+  const tp = priceToRaw(position.tp);
+  const sl = priceToRaw(position.sl);
+  const level = (raw: bigint, mixed: boolean) => (mixed ? 'mixed' : raw > 0n ? formatMoney(raw, PRICE_DECIMALS_NUM) : '—');
+
+  return (
+    <>
+      <tr data-testid={`position-stack-${stack.key}`}>
+        <td>
+          <span className={`side-bar ${stack.buy ? 'long' : 'short'}`} aria-hidden="true" />
+          {marketLabel(market, stack.pairIndex)} <span className="row-leverage">{formatLeverage(position.leverage)}</span>
+        </td>
+        <td className={stack.buy ? 'pos' : 'neg'}>
+          {formatMoney(signedSize, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false, signDisplay: true })}
+        </td>
+        <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</td>
+        <td data-testid="position-value">{markRaw !== null ? formatMoney(valueAt(stack.sizeBaseRaw, markRaw), COLLATERAL_DECIMALS) : '—'}</td>
+        <td title="Size-weighted average entry">{formatMoney(position.openPrice, PRICE_DECIMALS_NUM)}</td>
+        <td className={liqPrice !== null ? undefined : 'dash'} data-testid="liq-price" title="The nearest liquidation level of the trades in this position">
+          {liqPrice !== null ? formatMoney(liqPrice, PRICE_DECIMALS_NUM) : '—'}
+        </td>
+        <td data-testid="position-margin">
+          {formatMoney(position.collateral, COLLATERAL_DECIMALS)}
+          {usage !== null ? <span className="usage"> ({usage.toFixed(2)}%)</span> : null}
+        </td>
+        <td data-testid="position-funding" className={netFunding === null ? 'dash' : netFunding >= 0n ? 'pos' : 'neg'}>
+          {netFunding === null ? '—' : formatMoney(netFunding, COLLATERAL_DECIMALS, { signDisplay: true })}
+        </td>
+        <td data-testid="unrealized-pnl" className={pnl !== null && pnl >= 0n ? 'pos' : 'neg'}>
+          {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}
+        </td>
+        <td data-testid="position-tpsl">
+          {level(tp, stack.tpMixed)} / {level(sl, stack.slMixed)}
+        </td>
+        <td>
+          <div className="close-control">
+            <button type="button" data-testid="close-position-button" aria-haspopup="dialog" disabled={!price} onClick={() => setCloseOpen(true)}>
+              Close
+            </button>
+            <button type="button" className="close-more" aria-expanded={expanded} data-testid="stack-toggle" onClick={() => setExpanded((v) => !v)}>
+              TP/SL · {stack.legs.length} trades
+            </button>
+          </div>
+          {closeNote?.state === 'pending' ? (
+            <span data-testid="close-pending" className="close-note">
+              <Spinner label="Closing" />
+              Closing…
+            </span>
+          ) : closeNote?.state === 'failed' ? (
+            <span data-testid="close-pending" role="alert" className="close-note error-text" title={closeNote.detail}>
+              {closeNote.text}
+            </span>
+          ) : null}
+          <ClosePositionDialog
+            open={closeOpen}
+            onClose={() => setCloseOpen(false)}
+            position={position}
+            marketName={marketLabel(market, stack.pairIndex)}
+            baseAsset={market?.from ?? 'BASE'}
+            sizeBaseRaw={stack.sizeBaseRaw}
+            pnlRaw={pnl}
+            canClose={Boolean(price)}
+            onConfirm={submitClose}
+            slippageBpsForShare={(share) => slippageFor(position, share)}
+          />
+        </td>
+      </tr>
+      {expanded ? (
+        <>
+          <tr className="manager-row">
+            <td colSpan={11}>
+              <StackTpSl stack={stack} />
+            </td>
+          </tr>
+          {stack.legs.map((leg) => (
+            <PositionRow key={`${leg.pairIndex}-${leg.index}`} position={leg} market={market} nested />
+          ))}
+        </>
+      ) : null}
+    </>
+  );
+}
+
 export function PositionsList() {
   const { address } = useAccount();
   const { positions, loading, error, stale } = usePositions(address);
@@ -445,9 +747,14 @@ export function PositionsList() {
           </tr>
         </thead>
         <tbody>
-          {positions.map((p) => (
-            <PositionRow key={`${p.pairIndex}-${p.index}`} position={p} market={markets.find((m) => m.pairIndex === p.pairIndex)} />
-          ))}
+          {stackPositions(positions).map((s) => {
+            const market = markets.find((m) => m.pairIndex === s.pairIndex);
+            return s.legs.length === 1 ? (
+              <PositionRow key={s.key} position={s.summary} market={market} />
+            ) : (
+              <StackedPositionRow key={s.key} stack={s} market={market} />
+            );
+          })}
         </tbody>
       </table>
     </>

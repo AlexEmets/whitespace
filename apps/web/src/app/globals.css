@@ -1711,6 +1711,16 @@ table.data-table[data-testid='positions-table'] th:last-child {
   color: var(--fg);
 }
 
+/* The individual trades of a stacked position, listed under it: indented and quieter, so the
+   combined row reads as the position and these as its parts. */
+.leg-row td {
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 0.92em;
+}
+.leg-row td:first-child {
+  padding-left: 1.8rem;
+}
+
 /* Per-position management row: TP/SL and isolated-margin edits, opened from the row. */
 .manager-row td {
   height: auto;
