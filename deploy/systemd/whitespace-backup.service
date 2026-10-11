@@ -7,4 +7,9 @@ After=docker.service
 Type=oneshot
 User=whitespace
 Group=whitespace
+# The destination belongs to the user that writes it. It was created root-owned, the script's
+# own `mkdir -p` cannot fix that as `whitespace`, and every nightly run since failed with
+# "Permission denied" while the timer reported active. `+` runs this one step as root;
+# `install -d` creates the directory or takes over an existing one.
+ExecStartPre=+/usr/bin/install -d -o whitespace -g whitespace -m 0750 /var/backups/whitespace
 ExecStart=/home/whitespace/whitespace/deploy/backup-api-series.sh
