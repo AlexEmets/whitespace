@@ -466,6 +466,37 @@ a {
   color: var(--fg-dim);
 }
 
+/* An order's outcome: a dot and its words. Filled reads calm, with a teal dot; cancelled
+   reads coral; pending and timed out read amber, because both still want something —
+   a keeper's report, or the trader's reclaim. */
+.order-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.order-status::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.order-status[data-status='executed']::before {
+  background: var(--long);
+}
+
+.order-status[data-status='cancelled'] {
+  color: var(--short);
+}
+
+.order-status[data-status='pending'],
+.order-status[data-status='timeout'] {
+  color: var(--warning);
+}
+
 .badge {
   display: inline-block;
   border: 1px solid var(--border-strong);
