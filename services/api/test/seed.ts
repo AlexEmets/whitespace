@@ -190,12 +190,12 @@ export async function seedLimitOrder(
 
 export async function seedOrder(
   orderId: number,
-  over: { kind?: string; status?: string; requestedAt?: number; trader?: string; cancelReason?: string | null } = {},
+  over: { kind?: string; status?: string; requestedAt?: number; trader?: string; cancelReason?: string | null; tradeId?: number | null } = {},
 ): Promise<void> {
   await getPool().query(
     `INSERT INTO "order" (order_id, trader, pair_index, kind, trade_id, index, buy, collateral, leverage, status, requested_at, requested_at_block, request_tx_hash, resolved_at, cancel_reason)
-     VALUES ($1, $2, 0, $3, NULL, NULL, NULL, NULL, NULL, $4, $5, 7285600, $6, NULL, $7)`,
-    [orderId, over.trader ?? TRADER, over.kind ?? 'open', over.status ?? 'pending', over.requestedAt ?? 1000, TX_B, over.cancelReason ?? null],
+     VALUES ($1, $2, 0, $3, $8, NULL, NULL, NULL, NULL, $4, $5, 7285600, $6, NULL, $7)`,
+    [orderId, over.trader ?? TRADER, over.kind ?? 'open', over.status ?? 'pending', over.requestedAt ?? 1000, TX_B, over.cancelReason ?? null, over.tradeId ?? null],
   );
 }
 

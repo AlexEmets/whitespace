@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
-import { truncateAll, seedOrder, seedOrderEvent, TRADER, TX_A, TX_B } from './seed.js';
+import { truncateAll, seedOrder, seedOrderEvent, seedOpenPosition, seedClosedPosition, seedPartialClose, TRADER, TX_A, TX_B } from './seed.js';
 
 const OTHER = `0x${'00'.repeat(19)}bb`;
 
@@ -115,5 +115,57 @@ describe('GET /orders/:address/history', () => {
 
   it('400 on a malformed address', async () => {
     expect((await get('/orders/0xabc/history')).status).toBe(400);
+  });
+
+  // A close request names only the trade, and an open has no Trade payload until it fills,
+  // so the row was "Market close — — —". The details come from what the order produced.
+  describe('fills in side, margin, leverage and fill price from what the order produced', () => {
+    const row = async (id: string) => ((await get(`/orders/${TRADER}/history`)).body as any[]).find((r) => r.id === id);
+
+    it('an executed market open: the position it opened, at its open price', async () => {
+      await seedOrder(2, { kind: 'open', status: 'executed' });
+      await seedOpenPosition(); // trade 2, open_order_id 2
+      expect(await row('2')).toMatchObject({ buy: true, collateral: '999.000000', leverage: '10.00', price: '65001.000000000000000000' });
+    });
+
+    it('an executed open whose position has since closed', async () => {
+      await seedOrder(2, { kind: 'open', status: 'executed' });
+      await seedClosedPosition(); // open_order_id 2, close_order_id 3
+      expect(await row('2')).toMatchObject({ buy: true, collateral: '999.000000', leverage: '10.00', price: '65001.000000000000000000' });
+    });
+
+    it('an executed full close: the close price and the margin it closed', async () => {
+      await seedOrder(3, { kind: 'close', status: 'executed', tradeId: 2 });
+      await seedClosedPosition();
+      expect(await row('3')).toMatchObject({ buy: true, collateral: '999.000000', leverage: '10.00', price: '64999.000000000000000000' });
+    });
+
+    it('an executed partial close: the part it closed, at its price', async () => {
+      await seedOrder(5, { kind: 'close', status: 'executed', tradeId: 2 });
+      await seedOpenPosition();
+      await seedPartialClose({ orderId: 5 });
+      expect(await row('5')).toMatchObject({ buy: true, collateral: '249.750000', leverage: '10.00', price: '65700.000000000000000000' });
+    });
+
+    it('a close still pending: side and leverage of its position, no margin or price yet', async () => {
+      await seedOrder(7, { kind: 'close', status: 'pending', tradeId: 2 });
+      await seedOpenPosition();
+      expect(await row('7')).toMatchObject({ buy: true, collateral: null, leverage: '10.00', price: null });
+    });
+
+    it('a cancelled open borrows nothing from an unrelated position', async () => {
+      await seedOrder(2, { kind: 'open', status: 'cancelled', cancelReason: 'SLIPPAGE' });
+      await seedOpenPosition(); // open_order_id 2, but the order never filled
+      expect(await row('2')).toMatchObject({ buy: null, collateral: null, leverage: null, price: null });
+    });
+
+    it('still returns each order exactly once', async () => {
+      await seedOrder(2, { kind: 'open', status: 'executed' });
+      await seedOrder(5, { kind: 'close', status: 'executed', tradeId: 2 });
+      await seedOpenPosition();
+      await seedPartialClose({ orderId: 5 });
+      const ids = ((await get(`/orders/${TRADER}/history`)).body as any[]).map((r) => r.id);
+      expect(ids.sort()).toEqual(['2', '5']);
+    });
   });
 });

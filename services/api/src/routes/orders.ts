@@ -156,13 +156,30 @@ export const handleOrdersHistory: Handler = async (_req, params, searchParams): 
   if (limit === null) return badRequest(`limit must be an integer between 1 and ${HISTORY_MAX_LIMIT}`);
 
   const rows = await query<HistoryRow>(
-    `(SELECT 'order' AS source, order_id::text AS id, order_id::text AS order_id, kind,
-             CASE WHEN kind IN ('open', 'close') THEN 'MARKET' END AS order_type,
-             pair_index, trade_id::text AS trade_id, index, buy, collateral::text AS collateral, leverage,
-             NULL::text AS price, NULL::text AS tp, NULL::text AS sl,
-             status, cancel_reason, requested_at, resolved_at, request_tx_hash AS tx_hash
-        FROM "order" WHERE trader = $1
-        ORDER BY requested_at DESC LIMIT $2)
+    // An "order" row only carries what its request event did: a market open has no Trade
+    // payload until it fills, and a close request names the trade and nothing else. So the
+    // side, margin, leverage and fill price come from what the order produced — the position
+    // it opened (still open or since closed), or the partial / full close it executed — and,
+    // for a close still waiting, side and leverage from the position it targets. Its margin
+    // stays null there: how much of the position the close takes is only known once it fills.
+    `(SELECT 'order' AS source, o.order_id::text AS id, o.order_id::text AS order_id, o.kind,
+             CASE WHEN o.kind IN ('open', 'close') THEN 'MARKET' END AS order_type,
+             o.pair_index, o.trade_id::text AS trade_id, o.index,
+             COALESCE(o.buy, pc.buy, cc.buy, po.buy, co.buy, pt.buy) AS buy,
+             COALESCE(o.collateral, pc.collateral, cc.collateral, po.collateral, co.collateral)::text AS collateral,
+             COALESCE(o.leverage, pc.leverage, cc.leverage, po.leverage, co.leverage, pt.leverage) AS leverage,
+             (CASE WHEN o.kind IN ('close', 'automation_close') THEN COALESCE(pc.close_price, cc.close_price)
+                   WHEN o.kind IN ('open', 'automation_open') THEN COALESCE(po.open_price, co.open_price) END)::text AS price,
+             NULL::text AS tp, NULL::text AS sl,
+             o.status, o.cancel_reason, o.requested_at, o.resolved_at, o.request_tx_hash AS tx_hash
+        FROM "order" o
+        LEFT JOIN partial_close pc ON o.status = 'executed' AND pc.order_id = o.order_id
+        LEFT JOIN closed_position cc ON o.status = 'executed' AND o.kind IN ('close', 'automation_close') AND cc.close_order_id = o.order_id
+        LEFT JOIN "position" po ON o.status = 'executed' AND o.kind IN ('open', 'automation_open') AND po.open_order_id = o.order_id
+        LEFT JOIN closed_position co ON o.status = 'executed' AND o.kind IN ('open', 'automation_open') AND co.open_order_id = o.order_id
+        LEFT JOIN "position" pt ON o.kind IN ('close', 'automation_close', 'remove_collateral') AND pt.trade_id = o.trade_id
+       WHERE o.trader = $1
+       ORDER BY o.requested_at DESC LIMIT $2)
      UNION ALL
      (SELECT 'limit', id, order_id::text, kind, order_type,
              pair_index, trade_id::text, index, buy, collateral::text, leverage,
