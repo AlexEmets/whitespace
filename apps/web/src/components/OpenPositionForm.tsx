@@ -117,6 +117,11 @@ export function OpenPositionForm({
   const [leverageX, setLeverageX] = useState(Math.min(10, Math.max(1, maxLeverageX)));
   const [leverageTouched, setLeverageTouched] = useState(false);
   const [state, setState] = useState<SubmitState>({ phase: 'idle' });
+  // True from a successful submit until the trader next touches the ticket. The size stays in
+  // the field so the order can be repeated, but the balance it is checked against has just
+  // been spent on it: opening at Max put "Insufficient USDW balance" and the faucet up the
+  // moment the order went through, as if it had failed. They come back on the next edit.
+  const [justSent, setJustSent] = useState(false);
 
   // `maxLeverage` is 0n until /markets resolves; re-derive the default then unless the trader
   // already chose one, or the default stays clamped at 1x forever. A chosen leverage is kept
@@ -203,7 +208,7 @@ export function OpenPositionForm({
   // Rounded UP to the cent: a minimum rounded down is an order value that is still refused.
   const minOrderValue =
     sizeRules && sizeError ? (((minOpenCollateral(sizeRules) * leverageRaw) / 100n + 9_999n) / 10_000n) * 10_000n : null;
-  const needsFunds = isConnected && (erc20.balance === 0n || insufficientBalance);
+  const needsFunds = isConnected && !justSent && (erc20.balance === 0n || insufficientBalance);
 
   // Everything else this wallet holds on this market, summed as a signed base quantity.
   const currentPosition = useMemo(() => {
@@ -227,6 +232,7 @@ export function OpenPositionForm({
   // The outcome banner describes one submitted order; editing composes a new one.
   useEffect(() => {
     setState((c) => (c.phase === 'submitted' || c.phase === 'placed' || c.phase === 'error' ? { phase: 'idle' } : c));
+    setJustSent(false);
   }, [sizeInput, buy, leverageX, pairIndex, kind, triggerInput]);
 
   // Market orders sent from here, followed to their fill apart from the banner: the banner
@@ -276,6 +282,7 @@ export function OpenPositionForm({
   const percentUsed = collateralRaw ? percentOfBalance(collateralRaw, erc20.balance) : 0;
 
   function setPercent(percent: number) {
+    setJustSent(false);
     setSizeInput(
       sizeForPercentOfBalance({ percent, balanceRaw: erc20.balance, leverageRaw, entryPrice, unit }),
     );
@@ -317,6 +324,7 @@ export function OpenPositionForm({
         sl: slRaw ?? 0n,
         kind,
       });
+      setJustSent(true);
       if (kind === 'MARKET') {
         if (result.orderId !== undefined) {
           watching.current.set(
@@ -541,7 +549,7 @@ export function OpenPositionForm({
           {kind === 'MARKET' ? null : ' It is checked again when the order triggers.'}
         </p>
       ) : null}
-      {insufficientBalance ? <p className="error-text">Insufficient USDW balance.</p> : null}
+      {insufficientBalance && !justSent ? <p className="error-text" data-testid="insufficient-balance">Insufficient USDW balance.</p> : null}
       {minOrderValue !== null ? (
         <p className="error-text" data-testid="size-too-small">
           Order too small: at {leverageX}× the minimum order value is {formatMoney(minOrderValue, COLLATERAL_DECIMALS)} USDW —

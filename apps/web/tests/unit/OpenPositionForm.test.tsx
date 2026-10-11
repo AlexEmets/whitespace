@@ -295,6 +295,39 @@ describe('<OpenPositionForm>', () => {
     ...over,
   });
 
+  describe('right after an order goes through', () => {
+    /** Submits SIZE_0_01_BTC (65.00 USDW at 10x), then the wallet is left holding 1 USDW. */
+    async function spendAlmostAll() {
+      const view = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+      fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+      fireEvent.click(screen.getByTestId('submit-open-button'));
+      await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+      balanceState = 1_000_000n;
+      view.rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+      return view;
+    }
+
+    it('does not call the balance it was just spent from insufficient', async () => {
+      await spendAlmostAll();
+      expect(screen.queryByTestId('insufficient-balance')).toBeNull();
+      expect(screen.queryByTestId('faucet-row')).toBeNull();
+      expect(screen.getByTestId('size-input')).toHaveValue(SIZE_0_01_BTC);
+    });
+
+    it('says so again as soon as the trader composes the next order', async () => {
+      await spendAlmostAll();
+      fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.02' } });
+      expect(screen.getByTestId('insufficient-balance')).toHaveTextContent('Insufficient USDW balance.');
+      expect(screen.getByTestId('faucet-row')).toBeInTheDocument();
+    });
+
+    it('says so again when only the side changes', async () => {
+      await spendAlmostAll();
+      fireEvent.click(screen.getByTestId('direction-short'));
+      expect(screen.getByTestId('insufficient-balance')).toBeInTheDocument();
+    });
+  });
+
   describe('the "position opened" note', () => {
     async function submitMarket() {
       const view = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
@@ -329,7 +362,7 @@ describe('<OpenPositionForm>', () => {
       rerenderForm(rerender);
       expect(screen.queryByTestId('fill-toast')).toBeNull();
 
-      openTradeMock.mockResolvedValueOnce({ hash: '0xabd', receipt: {}, orderId: 43n });
+      openTradeMock.mockResolvedValueOnce({ hash: '0xabc', receipt: {}, orderId: 43n });
       fireEvent.click(screen.getByTestId('submit-open-button'));
       await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(2));
       ordersMockState = [...ordersMockState, order42({ orderId: '43', status: 'executed', tradeId: '9' })];
