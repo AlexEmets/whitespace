@@ -12,7 +12,7 @@ import { TestState } from './testState';
  *
  * Layout only exists in a real browser, which is why this is an e2e check.
  */
-for (const width of [1280, 1440, 1920]) {
+for (const width of [1280, 1366, 1440, 1920]) {
   test(`every positions cell holds its own content at ${width}px`, async ({ page, baseURL }) => {
     await page.setViewportSize({ width, height: 900 });
     const state = new TestState();
@@ -36,8 +36,17 @@ for (const width of [1280, 1440, 1920]) {
     );
     expect(overflowing).toEqual([]);
 
-    // Close is in reach without scrolling, however wide the table grows.
+    // UPnL — the figure the tab is opened for — is in view without scrolling at any width,
+    // and from 1366px the whole row is.
     const content = page.locator('.terminal-tabs .tab-content');
+    const upnl = await row.getByTestId('unrealized-pnl').boundingBox();
+    const panel = await content.boundingBox();
+    expect(upnl!.x + upnl!.width).toBeLessThanOrEqual(panel!.x + panel!.width);
+    if (width >= 1366) {
+      expect(await content.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+    }
+
+    // Close is in reach without scrolling, however wide the table grows.
     const viewport = await content.boundingBox();
     const controls = await row.locator('.close-control').boundingBox();
     expect(controls!.x).toBeGreaterThanOrEqual(viewport!.x);
@@ -60,7 +69,7 @@ for (const width of [1280, 1440, 1920]) {
   });
 }
 
-test('the TP/SL · Margin button reads left to right', async ({ page, baseURL }) => {
+test('the TP/SL and margin control is upright and named', async ({ page, baseURL }) => {
   const state = new TestState();
   state.positions.push({
     pairIndex: 0, index: 0, buy: true, collateral: '1000000000', leverage: '1000',
@@ -76,9 +85,53 @@ test('the TP/SL · Margin button reads left to right', async ({ page, baseURL })
   const manage = page.getByTestId('manage-toggle');
   await expect(manage).toBeVisible();
   expect(await manage.evaluate((el) => getComputedStyle(el).transform)).toBe('none');
-  const box = await manage.boundingBox();
-  // One line of text: wider than it is tall.
-  expect(box!.width).toBeGreaterThan(box!.height);
+  await expect(manage).toHaveAccessibleName('TP/SL and margin');
+});
+
+async function openPositionAt(page: import('@playwright/test').Page, baseURL: string | undefined, width: number, height: number) {
+  await page.setViewportSize({ width, height });
+  const state = new TestState();
+  state.positions.push({
+    pairIndex: 0, index: 0, buy: true, collateral: '1000000000', leverage: '1000',
+    openPrice: state.markPrice, tp: String(70_000n * 10n ** 18n), sl: '0', openedAt: 1_790_000_000, tradeId: '900',
+  });
+  await installMockWallet(page, state);
+  await installMockBackend(page, state, `${baseURL}/__api`);
+  await page.goto('/trade');
+  await page.getByTestId('connect-wallet-button').click();
+  await page.getByTestId('tab-positions').click();
+  const row = page.getByTestId('position-row-0-0');
+  await expect(row).toBeVisible();
+  return row;
+}
+
+/** A phone gets each position as a card: nothing scrolls sideways, every figure is named. */
+test('on a phone each position is a card that needs no sideways scroll', async ({ page, baseURL }) => {
+  const row = await openPositionAt(page, baseURL, 390, 844);
+  const content = page.locator('.terminal-tabs .tab-content');
+
+  await expect(page.locator('[data-testid=positions-table] thead')).toBeHidden();
+  expect(await content.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  for (const label of ['UPnL', 'Size / Value', 'Entry / Mark', 'Liq. price', 'Margin', 'TP / SL', 'Funding']) {
+    await expect(row.locator(`td[data-label="${label}"]`)).toBeVisible();
+  }
+  const panel = await content.boundingBox();
+  const close = await row.getByTestId('close-position-button').boundingBox();
+  expect(close!.x + close!.width).toBeLessThanOrEqual(panel!.x + panel!.width);
+
+  // Its TP/SL and margin panel opens at full width, not squeezed into a sliver.
+  await row.getByTestId('manage-toggle').click();
+  const field = await page.getByTestId('manage-tp-input').boundingBox();
+  expect(field!.width).toBeGreaterThan(60);
+  expect(field!.x + field!.width).toBeLessThanOrEqual(panel!.x + panel!.width + 1);
+});
+
+/** A landscape tablet stacks the terminal, so the table has the full width to itself. */
+test('on a landscape tablet the terminal is one column and the row fits', async ({ page, baseURL }) => {
+  await openPositionAt(page, baseURL, 1024, 768);
+  expect(await page.locator('.terminal-grid').evaluate((el) => getComputedStyle(el).display)).toBe('flex');
+  const content = page.locator('.terminal-tabs .tab-content');
+  expect(await content.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
 });
 
 /** The close dialog is a centred sheet, not a strip that unrolls at the table's right edge. */

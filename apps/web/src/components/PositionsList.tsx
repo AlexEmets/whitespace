@@ -18,12 +18,12 @@ import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@
 import { CALLBACKS_ADDRESS, PAIR_INFOS_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { closeSlippageBps } from '@/lib/closeTicket';
 import { marketLabel } from '@/lib/markets';
-import { collateralToRaw, formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
+import { collateralToRaw, formatBps, formatLeverage, formatMoney, leverageToRaw, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import { updateSlError, updateTpError } from '@/lib/orderRules';
 import { estimatePositionSizeBase, estimateUnrealisedPnl } from '@/lib/pnl';
 import { leverageAfterRemoval, marginUsagePercent, netFundingForDisplay, valueAt } from '@/lib/positionMath';
 import type { MarketSummary, PositionSummary } from '@/lib/types';
-import { openPositionShareCard } from '@/lib/shareCard';
+import { openPositionShareCard, roeBps } from '@/lib/shareCard';
 import { describeTxError } from '@/lib/tx';
 import { ClosePositionDialog, type CloseOutcome } from './ClosePositionDialog';
 import { ShareTradeButton } from './share/ShareTradeButton';
@@ -316,34 +316,56 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
   return (
     <>
       <tr data-testid={`position-row-${position.pairIndex}-${position.index}`}>
-        <td>
-          <span className={`side-bar ${position.buy ? 'long' : 'short'}`} aria-hidden="true" />
-          {marketLabel(market, position.pairIndex)} <span className="row-leverage">{formatLeverage(position.leverage)}</span>
+        {/* Two-line cells, columns by importance: what a narrow screen hides is what is
+            least needed, and UPnL — the figure the tab is opened for — comes second. Each
+            figure carries its name in data-label for the card layout on phones. */}
+        <td className="cell-instrument">
+          <span className="cell-main">
+            <span className={`side-bar ${position.buy ? 'long' : 'short'}`} aria-hidden="true" />
+            {marketLabel(market, position.pairIndex)}
+          </span>
+          <span className={`cell-sub ${position.buy ? 'pos' : 'neg'}`}>
+            {position.buy ? 'Long' : 'Short'} {formatLeverage(position.leverage)}
+          </span>
         </td>
-        <td className={position.buy ? 'pos' : 'neg'}>
-          {formatMoney(signedSize, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false, signDisplay: true })}
+        <td data-label="UPnL" data-testid="unrealized-pnl" className={pnl !== null && pnl >= 0n ? 'pos' : 'neg'}>
+          <span className="cell-main">{pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}</span>
+          {pnl !== null ? (
+            <span className="cell-sub">
+              {pnl >= 0n ? '+' : ''}
+              {formatBps(roeBps(pnl, collateralRaw))}
+            </span>
+          ) : null}
         </td>
-        <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</td>
-        <td data-testid="position-value">{markRaw !== null ? formatMoney(valueAt(sizeBase, markRaw), COLLATERAL_DECIMALS) : '—'}</td>
-        <td>{formatMoney(position.openPrice, PRICE_DECIMALS_NUM)}</td>
+        <td data-label="Size / Value">
+          <span className={`cell-main ${position.buy ? 'pos' : 'neg'}`}>
+            {formatMoney(signedSize, PRICE_DECIMALS_NUM, { fractionDigits: 4, grouping: false, signDisplay: true })}{' '}
+            {market?.from ?? ''}
+          </span>
+          <span className="cell-sub" data-testid="position-value">
+            {markRaw !== null ? formatMoney(valueAt(sizeBase, markRaw), COLLATERAL_DECIMALS) : '—'}
+          </span>
+        </td>
+        <td data-label="Entry / Mark">
+          <span className="cell-main">{formatMoney(position.openPrice, PRICE_DECIMALS_NUM)}</span>
+          <span className="cell-sub">{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}</span>
+        </td>
         {/* Neutral, not red: a liquidation price is a level, not a loss. */}
-        <td className={liqPrice !== null ? undefined : 'dash'} data-testid="liq-price">
+        <td data-label="Liq. price" className={liqPrice !== null ? undefined : 'dash'} data-testid="liq-price">
           {liqPrice !== null ? formatMoney(liqPrice, PRICE_DECIMALS_NUM) : '—'}
         </td>
-        <td data-testid="position-margin">
-          {formatMoney(position.collateral, COLLATERAL_DECIMALS)}
-          {usage !== null ? <span className="usage"> ({usage.toFixed(2)}%)</span> : null}
+        <td data-label="Margin" data-testid="position-margin">
+          <span className="cell-main">{formatMoney(position.collateral, COLLATERAL_DECIMALS)}</span>
+          {usage !== null ? <span className="cell-sub usage">{usage.toFixed(2)}% used</span> : null}
         </td>
-        <td data-testid="position-funding" className={netFunding === null ? 'dash' : netFunding >= 0n ? 'pos' : 'neg'}>
+        <td data-label="TP / SL" data-testid="position-tpsl">
+          <span className="cell-main">TP {tp > 0n ? formatMoney(tp, PRICE_DECIMALS_NUM) : '—'}</span>
+          <span className="cell-sub">SL {sl > 0n ? formatMoney(sl, PRICE_DECIMALS_NUM) : '—'}</span>
+        </td>
+        <td data-label="Funding" data-testid="position-funding" className={netFunding === null ? 'dash' : netFunding >= 0n ? 'pos' : 'neg'}>
           {netFunding === null ? '—' : formatMoney(netFunding, COLLATERAL_DECIMALS, { signDisplay: true })}
         </td>
-        <td data-testid="unrealized-pnl" className={pnl !== null && pnl >= 0n ? 'pos' : 'neg'}>
-          {pnl === null ? '—' : formatMoney(pnl, COLLATERAL_DECIMALS, { signDisplay: true })}
-        </td>
-        <td data-testid="position-tpsl">
-          {tp > 0n ? formatMoney(tp, PRICE_DECIMALS_NUM) : '—'} / {sl > 0n ? formatMoney(sl, PRICE_DECIMALS_NUM) : '—'}
-        </td>
-        <td>
+        <td className="cell-actions">
           <div className="close-control">
             <button
               type="button"
@@ -358,10 +380,12 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
               type="button"
               className="close-more"
               aria-expanded={manageOpen}
+              aria-label="TP/SL and margin"
+              title="TP/SL and margin"
               data-testid="manage-toggle"
               onClick={() => setManageOpen((v) => !v)}
             >
-              TP/SL · Margin
+              ⋯
             </button>
           </div>
           {address && market && price ? (
@@ -394,7 +418,7 @@ function PositionRow({ position, market }: { position: PositionSummary; market: 
       </tr>
       {manageOpen ? (
         <tr className="manager-row">
-          <td colSpan={11}>
+          <td colSpan={9}>
             <PositionManager position={position} />
           </td>
         </tr>
@@ -424,15 +448,13 @@ export function PositionsList() {
         <thead>
           <tr>
             <th>Instrument</th>
-            <th>Quantity</th>
-            <th>Mark</th>
-            <th>Value</th>
-            <th>Entry</th>
-            <th>Liq. price</th>
-            <th>Margin (usage)</th>
-            <th>Funding</th>
             <th>UPnL</th>
+            <th>Size / Value</th>
+            <th>Entry / Mark</th>
+            <th>Liq. price</th>
+            <th>Margin</th>
             <th>TP / SL</th>
+            <th>Funding</th>
             <th />
           </tr>
         </thead>

@@ -136,14 +136,47 @@ describe('<PositionsList>', () => {
     expect(screen.getByTestId('liq-price')).toHaveTextContent('90.91');
   });
 
-  it('lays out the columns like the reference terminal', () => {
+  /**
+   * Eleven single-figure columns made the table ~1,150px wide, so on the laptops most
+   * traders use (1280–1536px) UPnL — the figure they open the tab for — sat behind a
+   * horizontal scroll. Pairs now share a two-line cell and the columns run by importance,
+   * so what a narrow screen hides is the least needed: funding, last.
+   */
+  it('runs the columns by importance, UPnL straight after the instrument', () => {
     render(<PositionsList />);
     const headers = Array.from(screen.getByTestId('positions-table').querySelectorAll('th')).map(
       (th) => th.textContent,
     );
     expect(headers).toEqual([
-      'Instrument', 'Quantity', 'Mark', 'Value', 'Entry', 'Liq. price', 'Margin (usage)', 'Funding', 'UPnL', 'TP / SL', '',
+      'Instrument', 'UPnL', 'Size / Value', 'Entry / Mark', 'Liq. price', 'Margin', 'TP / SL', 'Funding', '',
     ]);
+  });
+
+  it('shows UPnL with its return on the margin beneath it', () => {
+    render(<PositionsList />);
+    const cell = screen.getByTestId('unrealized-pnl');
+    // +1,000.00 on 1,000.00 of margin.
+    expect(cell).toHaveTextContent('+1,000.00');
+    expect(cell).toHaveTextContent('+100.00%');
+  });
+
+  it('names the side and leverage under the instrument', () => {
+    render(<PositionsList />);
+    const row = screen.getByTestId('position-row-0-0');
+    expect(row.querySelector('td')).toHaveTextContent(/BTC-PERP\s*Long 10\.00x/);
+  });
+
+  /** On a phone the rows become cards, and a figure without its column header needs a name. */
+  it('labels every figure for the card layout on narrow screens', () => {
+    render(<PositionsList />);
+    const cells = Array.from(screen.getByTestId('position-row-0-0').querySelectorAll('td'));
+    const labels = cells.slice(1, -1).map((td) => td.getAttribute('data-label'));
+    expect(labels).toEqual(['UPnL', 'Size / Value', 'Entry / Mark', 'Liq. price', 'Margin', 'TP / SL', 'Funding']);
+  });
+
+  it('keeps TP/SL and margin behind a compact control with a spoken name', () => {
+    render(<PositionsList />);
+    expect(screen.getByTestId('manage-toggle')).toHaveAccessibleName('TP/SL and margin');
   });
 
   it('values the position at the mark: 100 base units x 110 = 11,000 USDW', () => {
@@ -153,7 +186,9 @@ describe('<PositionsList>', () => {
 
   it('shows margin with its usage toward liquidation — zero while in profit', () => {
     render(<PositionsList />);
-    expect(screen.getByTestId('position-margin')).toHaveTextContent('1,000.00 (0.00%)');
+    const margin = screen.getByTestId('position-margin');
+    expect(margin).toHaveTextContent('1,000.00');
+    expect(margin).toHaveTextContent('0.00% used');
   });
 
   it('shows accrued funding plus rollover as a cost, negative and red', () => {
@@ -165,7 +200,9 @@ describe('<PositionsList>', () => {
 
   it('shows a dash for absent TP and SL', () => {
     render(<PositionsList />);
-    expect(screen.getByTestId('position-tpsl')).toHaveTextContent('— / —');
+    const tpsl = screen.getByTestId('position-tpsl');
+    expect(tpsl).toHaveTextContent('TP —');
+    expect(tpsl).toHaveTextContent('SL —');
   });
 
   // ---------------------------------------------------------------------------------------

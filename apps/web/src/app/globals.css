@@ -974,7 +974,9 @@ table.markets-table td a:hover {
   padding: 0 0.77rem 0.77rem;
 }
 
-@media (max-width: 1200px) {
+/* Laptops up to 1366px take the narrower rail and ticket, so the centre column holds the
+   whole positions table at 1366px and all but its last column (funding) at 1280px. */
+@media (max-width: 1366px) {
   .terminal-grid {
     grid-template-columns: 13.85rem minmax(0, 1fr) 24.62rem;
   }
@@ -1625,7 +1627,7 @@ table.data-table td button {
    column shrinks to its controls and sticks to the right edge, so Close is never scrolled
    out of reach; the figures pass beneath it on an opaque ground rather than through it. */
 table.data-table[data-testid='positions-table'] th:last-child,
-table.data-table[data-testid='positions-table'] td:last-child {
+table.data-table[data-testid='positions-table'] td.cell-actions {
   position: sticky;
   right: 0;
   width: 1%;
@@ -1636,6 +1638,114 @@ table.data-table[data-testid='positions-table'] td:last-child {
 
 table.data-table[data-testid='positions-table'] th:last-child {
   z-index: 2;
+}
+
+/* Tighter gutters and two-line cells — the figure, then its companion beneath — keep the
+   whole row inside a 1366–1440px laptop's centre column. */
+table.data-table[data-testid='positions-table'] th,
+table.data-table[data-testid='positions-table'] td {
+  padding-left: 0.62rem;
+  padding-right: 0.62rem;
+}
+
+table.data-table[data-testid='positions-table'] .cell-main,
+table.data-table[data-testid='positions-table'] .cell-sub {
+  display: block;
+}
+
+table.data-table[data-testid='positions-table'] .cell-sub {
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+
+/* A coloured figure keeps its colour on the line beneath, a shade quieter. */
+table.data-table[data-testid='positions-table'] td.pos .cell-sub,
+table.data-table[data-testid='positions-table'] td.neg .cell-sub {
+  color: inherit;
+  opacity: 0.75;
+}
+
+table.data-table[data-testid='positions-table'] .cell-sub.pos {
+  color: var(--long);
+}
+
+table.data-table[data-testid='positions-table'] .cell-sub.neg {
+  color: var(--short);
+}
+
+/* Phones and portrait tablets: each position is a card — the instrument across the top,
+   the figures two to a row under their names, the controls along the foot. Same markup as
+   the table; every figure carries its name in data-label. */
+@media (max-width: 820px) {
+  table.data-table[data-testid='positions-table'],
+  table.data-table[data-testid='positions-table'] tbody {
+    display: block;
+  }
+
+  table.data-table[data-testid='positions-table'] thead {
+    display: none;
+  }
+
+  table.data-table[data-testid='positions-table'] tr[data-testid^='position-row-'] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1rem;
+    margin: 0.5rem 0.3rem;
+    padding: 0.95rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  table.data-table[data-testid='positions-table'] tr[data-testid^='position-row-'] td {
+    display: block;
+    height: auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  table.data-table[data-testid='positions-table'] td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.2rem;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+  }
+
+  table.data-table[data-testid='positions-table'] td.cell-instrument {
+    grid-column: 1 / -1;
+    font-size: 1rem;
+  }
+
+  table.data-table[data-testid='positions-table'] tr[data-testid^='position-row-'] td.cell-actions {
+    grid-column: 1 / -1;
+    position: static;
+    width: auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    text-align: left;
+    background: none;
+    border-top: 1px solid var(--border);
+    box-shadow: none;
+  }
+
+  table.data-table[data-testid='positions-table'] .manager-row,
+  table.data-table[data-testid='positions-table'] .manager-row td {
+    display: block;
+  }
+
+  table.data-table[data-testid='positions-table'] .manager-row .position-manager {
+    position: static;
+    max-width: none;
+  }
 }
 
 /* The side marker before each position's symbol. */
@@ -2145,8 +2255,9 @@ table.data-table[data-testid='positions-table'] th:last-child {
 /* Tablets and phones: one scrolling column. The terminal's centre column dissolves
    (`display: contents`) so its header, chart and tables can interleave with the ticket:
    markets, header, chart, ticket, then the account tables — the order a trader on a small
-   screen needs them in. */
-@media (max-width: 900px) {
+   screen needs them in. From 1100px rather than 900px: a landscape tablet (1024px) kept
+   three columns and left the positions table 486px of centre to live in. */
+@media (max-width: 1100px) {
   .terminal-grid {
     display: flex;
     flex-direction: column;
@@ -2223,7 +2334,10 @@ table.data-table[data-testid='positions-table'] th:last-child {
     min-height: 220px;
     max-height: 520px;
   }
+}
 
+/* Phones and portrait tablets: the nav folds away. */
+@media (max-width: 900px) {
   /* The nav folds behind the menu button into a sheet under the header. */
   .menu-button {
     display: flex;
