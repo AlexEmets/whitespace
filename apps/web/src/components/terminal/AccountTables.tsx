@@ -223,12 +223,18 @@ export function OrderHistoryList() {
                 {o.source === 'limit' ? `${o.orderType === 'STOP' ? 'Stop' : 'Limit'} · ` : ''}
                 {KIND_LABEL[o.kind] ?? o.kind}
               </td>
-              <td>{o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}</td>
+              <td className={o.buy === null ? 'dash' : o.buy ? 'pos' : 'neg'} data-testid={`order-history-side-${o.id}`}>
+                {o.buy === null ? '—' : o.buy ? 'Long' : 'Short'}
+              </td>
               <td>{o.price === null ? '—' : formatMoney(o.price, PRICE_DECIMALS_NUM)}</td>
               <td>{o.collateral === null ? '—' : `${formatMoney(o.collateral, COLLATERAL_DECIMALS)} USDW`}</td>
               <td title={o.status === 'cancelled' && o.cancelReason ? explainCancelReason(o.cancelReason) : undefined}>
-                {STATUS_LABEL[o.status] ?? o.status}
-                {o.status === 'cancelled' && o.cancelReason ? ` · ${o.cancelReason}` : ''}
+                {/* The outcome in colour, as a dot and its words: a cancelled order should not
+                    read like a filled one until the label is read. */}
+                <span className="order-status" data-status={o.status} data-testid={`order-history-status-${o.id}`}>
+                  {STATUS_LABEL[o.status] ?? o.status}
+                  {o.status === 'cancelled' && o.cancelReason ? ` · ${o.cancelReason}` : ''}
+                </span>
               </td>
             </tr>
           ))}

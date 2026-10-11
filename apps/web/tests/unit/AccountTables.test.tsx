@@ -187,6 +187,28 @@ describe('<OrderHistoryList>', () => {
     expect(screen.getByTestId('order-history-row-4')).toHaveTextContent('Timed out');
   });
 
+  /** Every other table colours the side; this one printed Long and Short in plain white,
+   *  and a cancelled order looked exactly like a filled one until its words were read. */
+  it('colours the side and the outcome like the rest of the terminal', () => {
+    const base = {
+      source: 'order' as const, orderId: null, orderType: null, pairIndex: 0, tradeId: null, index: null, buy: null,
+      collateral: null, leverage: null, price: null, tp: null, sl: null, cancelReason: null, resolvedAt: null, txHash: '0x1',
+    };
+    orderHistory = [
+      { ...base, id: '1', orderId: '1', kind: 'open', orderType: 'MARKET', buy: true, status: 'executed', requestedAt: 1_790_000_000 },
+      { ...base, id: '2', orderId: '2', kind: 'close', buy: false, status: 'cancelled', cancelReason: 'SLIPPAGE', requestedAt: 1_790_000_100 },
+      { ...base, id: '3', orderId: '3', kind: 'open', buy: true, status: 'pending', requestedAt: 1_790_000_200 },
+      { ...base, id: '4', orderId: '4', kind: 'close', status: 'timeout', requestedAt: 1_790_000_300 },
+    ];
+    render(<OrderHistoryList />);
+    expect(screen.getByTestId('order-history-side-1')).toHaveClass('pos');
+    expect(screen.getByTestId('order-history-side-2')).toHaveClass('neg');
+    expect(screen.getByTestId('order-history-side-4')).toHaveClass('dash');
+    for (const [id, status] of [['1', 'executed'], ['2', 'cancelled'], ['3', 'pending'], ['4', 'timeout']] as const) {
+      expect(screen.getByTestId(`order-history-status-${id}`)).toHaveAttribute('data-status', status);
+    }
+  });
+
   it('says so when there is no history', () => {
     render(<OrderHistoryList />);
     expect(screen.getByTestId('no-order-history')).toBeInTheDocument();
