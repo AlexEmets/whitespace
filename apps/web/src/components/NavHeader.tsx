@@ -52,7 +52,13 @@ export function NavHeader() {
       <header className="nav-header">
         <Link href="/" className="wordmark" data-testid="wordmark">
           <BrandMark className="wordmark-mark" />
-          whitespace
+          <span className="wordmark-text">
+            whitespace
+            {/* The testnet is a beta: said once, where the name is, on every page. */}
+            <span className="beta-tag" data-testid="beta-tag">
+              beta
+            </span>
+          </span>
         </Link>
         <nav id="site-nav" className={`nav-links${menuOpen ? ' open' : ''}`} data-testid="site-nav">
           {NAV_LINKS.map((link) => (

@@ -43,11 +43,21 @@ describe('<NavHeader>', () => {
     expect(screen.getByTestId('chain-health')).toHaveTextContent('9,004,269');
   });
 
-  it('leads the home link with the brand mark and names it by the wordmark alone', () => {
+  it('leads the home link with the brand mark and names it by the wordmark', () => {
     render(<NavHeader />);
     const home = screen.getByTestId('wordmark');
-    expect(home).toHaveAccessibleName('whitespace');
+    expect(home).toHaveAccessibleName('whitespace beta');
     expect(home.querySelector('svg.wordmark-mark[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it('marks the product as a beta beside its name, on every page', () => {
+    for (const path of ['/', '/trade', '/portfolio']) {
+      pathname = path;
+      const { unmount } = render(<NavHeader />);
+      expect(screen.getByTestId('wordmark')).toContainElement(screen.getByTestId('beta-tag'));
+      expect(screen.getByTestId('beta-tag')).toHaveTextContent('beta');
+      unmount();
+    }
   });
 
   it('draws the header eclipse everywhere but the landing page', () => {
