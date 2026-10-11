@@ -101,52 +101,6 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     expect(row).toHaveTextContent('—');
   });
 
-  it('shows an executed order as executed', () => {
-    ordersState = [
-      {
-        orderId: '2',
-        pairIndex: 0,
-        kind: 'open',
-        buy: true,
-        collateral: '100.000000',
-        leverage: '10.00',
-        requestedAt: 0,
-        requestedAtBlock: '7437171',
-        status: 'executed',
-        expired: false,
-        resolvedAt: 10,
-        cancelReason: null,
-        tradeId: '7',
-      },
-    ];
-    render(<OrdersList />);
-    expect(screen.getByTestId('order-status-2')).toHaveTextContent('Filled');
-  });
-
-  it('shows a cancelled order with its CancelReason explained, not just "cancelled"', () => {
-    ordersState = [
-      {
-        orderId: '3',
-        pairIndex: 0,
-        kind: 'open',
-        buy: true,
-        collateral: '100.000000',
-        leverage: '10.00',
-        requestedAt: 0,
-        requestedAtBlock: '7437171',
-        status: 'cancelled',
-        expired: false,
-        resolvedAt: 10,
-        cancelReason: 'SLIPPAGE',
-        tradeId: null,
-      },
-    ];
-    render(<OrdersList />);
-    // The reason in two words on the row; the full explanation in its tooltip.
-    expect(screen.getByTestId('order-status-3')).toHaveTextContent('Cancelled · slippage');
-    expect(screen.getByTestId('order-status-3').firstElementChild).toHaveAttribute('title', expect.stringMatching(/refunded/i));
-  });
-
   /**
    * `openTrade` takes the collateral up front. When a keeper never delivers a report the
    * order stays pending and that money is locked in TradingStorage — and only the trader
@@ -309,18 +263,6 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     tradeId: null,
   };
 
-  it('labels a reclaimed (timeout) open order and says the collateral came back in full', () => {
-    ordersState = [{ ...base, status: 'timeout', expired: false }];
-    render(<OrdersList />);
-    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Reclaimed');
-  });
-
-  it('says a reclaimed close released the position, still open', () => {
-    ordersState = [{ ...base, kind: 'close', status: 'timeout' }];
-    render(<OrdersList />);
-    expect(screen.getByTestId('order-status-50')).toHaveTextContent('Released');
-  });
-
   it('says an expired remove-margin request lapsed instead of waiting forever', () => {
     ordersState = [{ ...base, kind: 'remove_collateral', expired: true }];
     render(<OrdersList />);
@@ -375,10 +317,86 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     chainState.details = [];
   });
 
-  it('renders a no-orders message when there are none', () => {
+  it('renders nothing when there are no orders, so the tab can say "No open orders" once', () => {
     ordersState = [];
+    const { container } = render(<OrdersList />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  // Filled, cancelled and reclaimed orders are not open orders: they are in Order history, and
+  // a close's outcome shows on its position row. Listing them here put "Filled" rows under the
+  // resting limit orders, as a second table in the Open orders tab.
+  it('lists only orders still in flight, never resolved ones', () => {
+    const resolved = (orderId: string, status: OrderSummary['status'], cancelReason: string | null = null): OrderSummary => ({
+      orderId,
+      pairIndex: 0,
+      kind: 'close',
+      buy: true,
+      collateral: '100.000000',
+      leverage: '10.00',
+      requestedAt: 0,
+      requestedAtBlock: '7437171',
+      status,
+      expired: false,
+      resolvedAt: 10,
+      cancelReason,
+      tradeId: '7',
+    });
+    ordersState = [
+      { ...resolved('70', 'pending'), resolvedAt: null },
+      resolved('71', 'executed'),
+      resolved('72', 'cancelled', 'SLIPPAGE'),
+      resolved('73', 'timeout'),
+    ];
     render(<OrdersList />);
-    expect(screen.getByTestId('no-orders')).toBeInTheDocument();
+    expect(screen.getByTestId('order-row-70')).toBeInTheDocument();
+    for (const id of ['71', '72', '73']) expect(screen.queryByTestId(`order-row-${id}`)).toBeNull();
+  });
+
+  it('renders nothing when every order has resolved', () => {
+    ordersState = [
+      {
+        orderId: '74',
+        pairIndex: 0,
+        kind: 'open',
+        buy: true,
+        collateral: '100.000000',
+        leverage: '10.00',
+        requestedAt: 0,
+        requestedAtBlock: '7437171',
+        status: 'executed',
+        expired: false,
+        resolvedAt: 10,
+        cancelReason: null,
+        tradeId: '7',
+      },
+    ];
+    const { container } = render(<OrdersList />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('labels a limit/stop fill in words, not as automation_open', () => {
+    ordersState = [
+      {
+        orderId: '75',
+        pairIndex: 0,
+        kind: 'automation_open',
+        buy: true,
+        collateral: '448.640000',
+        leverage: '10.00',
+        requestedAt: 0,
+        requestedAtBlock: '7437390',
+        status: 'pending',
+        expired: false,
+        resolvedAt: null,
+        cancelReason: null,
+        tradeId: null,
+      },
+    ];
+    headBlock = 7_437_400n;
+    render(<OrdersList />);
+    expect(screen.getByTestId('order-row-75')).toHaveTextContent('Limit / stop fill');
+    expect(screen.getByTestId('order-row-75')).not.toHaveTextContent('automation_open');
   });
 });
 

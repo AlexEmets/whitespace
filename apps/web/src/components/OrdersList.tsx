@@ -5,7 +5,6 @@ import { useAccount } from 'wagmi';
 import { useOrdersWithChain } from '@/hooks/useChainPendingOrders';
 import { useMarkets } from '@/hooks/useMarkets';
 import { useIsReclaimable, useReclaimOrder } from '@/hooks/useReclaimOrder';
-import { explainCancelReason, humanizeCancelReason } from '@/lib/abi';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
 import { marketLabelByIndex } from '@/lib/markets';
 import { formatLeverage } from '@/lib/money';
@@ -17,6 +16,8 @@ import { describeTxError } from '@/lib/tx';
 const KIND_LABEL: Record<string, string> = {
   open: 'Market open',
   close: 'Market close',
+  automation_open: 'Limit / stop fill',
+  automation_close: 'TP / SL / liquidation',
   remove_collateral: 'Remove margin',
 };
 
@@ -25,7 +26,7 @@ function formatTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-/** The order's state in a word or two; any explanation lives in the tooltip. */
+/** A pending order's state in a word; any explanation lives in the tooltip. */
 function StatusCell({ order }: { order: OrderSummary }) {
   if (order.status === 'pending') {
     if (order.kind === 'remove_collateral' && order.expired) {
@@ -42,15 +43,6 @@ function StatusCell({ order }: { order: OrderSummary }) {
       <span>
         <Spinner label="Waiting for the price report" />
         Pending
-      </span>
-    );
-  }
-  if (order.status === 'executed') return <span className="ok-text">Filled</span>;
-  if (order.status === 'timeout') return <span>{order.kind === 'close' ? 'Released' : 'Reclaimed'}</span>;
-  if (order.status === 'cancelled') {
-    return (
-      <span className="error-text" title={explainCancelReason(order.cancelReason ?? '')}>
-        Cancelled · {humanizeCancelReason(order.cancelReason)}
       </span>
     );
   }
@@ -112,21 +104,24 @@ function ActionCell({ order }: { order: OrderSummary }) {
 }
 
 /**
- * The trader's market orders (design §5.1/§7: a trade is not done when the transaction
- * confirms). A pending order's request is on chain and its price report has not landed yet;
- * it resolves to a fill or to a cancellation with a refund (minus the oracle fee).
+ * The trader's market orders still in flight (design §5.1/§7: a trade is not done when the
+ * transaction confirms): the request is on chain and its price report has not landed yet, or
+ * it never will and the collateral / position waits to be reclaimed. Resolved orders are not
+ * open orders — they live in Order history, and a close's outcome shows on its position row.
+ * Renders nothing when there are none, so the Open orders tab can say "No open orders" once.
  */
 export function OrdersList() {
   const { address } = useAccount();
-  const { orders, loading, error, stale } = useOrdersWithChain(address);
+  const { orders: all, loading, error, stale } = useOrdersWithChain(address);
   const { markets } = useMarkets();
+  const orders = all.filter((o) => o.status === 'pending');
 
   if (!address) return <p>Connect your wallet to see orders.</p>;
   // Orders still pending on chain are shown even when the API has nothing (down, or behind):
   // their Reclaim / Release is the one control that must always be reachable.
-  if (loading && orders.length === 0) return <p>Loading orders…</p>;
+  if (loading && orders.length === 0) return null;
   if (error && orders.length === 0) return <p className="error-text">Failed to load orders: {error.message}</p>;
-  if (orders.length === 0) return <p data-testid="no-orders">No orders.</p>;
+  if (orders.length === 0) return null;
 
   return (
     <>
