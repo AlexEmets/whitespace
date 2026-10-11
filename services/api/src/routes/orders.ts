@@ -75,13 +75,19 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
   // never fill and has no recovery action, so it is dropped rather than shown forever. A
   // market order past the window is kept (it is reclaimable) and merely flagged `expired`.
   const rows = await query<OrderRow>(
-    `SELECT * FROM "order"
-      WHERE trader = $1
+    // A close request names only its trade, so its side and leverage come from the position
+    // it targets (the margin stays null: how much a close takes is known once it fills).
+    `SELECT o.order_id, o.kind, o.pair_index, o.trade_id, o.index, COALESCE(o.buy, p.buy) AS buy, o.collateral,
+            COALESCE(o.leverage, p.leverage) AS leverage, o.status, o.requested_at, o.requested_at_block,
+            o.resolved_at, o.cancel_reason
+       FROM "order" o
+       LEFT JOIN "position" p ON o.kind IN ('close', 'automation_close', 'remove_collateral') AND p.trade_id = o.trade_id
+      WHERE o.trader = $1
         AND (
-          (status = 'pending' AND NOT (kind = ANY($3) AND requested_at < $4))
-          OR COALESCE(resolved_at, requested_at) >= $2
+          (o.status = 'pending' AND NOT (o.kind = ANY($3) AND o.requested_at < $4))
+          OR COALESCE(o.resolved_at, o.requested_at) >= $2
         )
-      ORDER BY requested_at DESC
+      ORDER BY o.requested_at DESC
       LIMIT $5`,
     [trader, resolvedCutoff, AUTOMATION_KINDS, expiryCutoff, MAX_ORDERS],
   );

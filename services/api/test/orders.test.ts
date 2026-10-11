@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startTestServer, type TestServer } from './testServer.js';
-import { truncateAll, seedMarket, seedPendingOrder, TRADER, OTHER_TRADER } from './seed.js';
+import { truncateAll, seedMarket, seedPendingOrder, seedOrder, seedOpenPosition, TRADER, OTHER_TRADER } from './seed.js';
 import { getPool } from '../src/db.js';
 
 describe('GET /orders/:address', () => {
@@ -158,5 +158,20 @@ describe('GET /orders/:address', () => {
     const theirs = await (await fetch(`${server.baseUrl}/orders/${OTHER_TRADER}`)).json();
     expect(mine).toHaveLength(1);
     expect(theirs).toHaveLength(0);
+  });
+
+  // A close request names only its trade; without the position its row read "— — —".
+  it('gives a pending close the side and leverage of the position it targets, and no margin', async () => {
+    await seedOpenPosition(); // trade 2: long, 10x
+    await seedOrder(7, { kind: 'close', status: 'pending', tradeId: 2, requestedAt: Math.floor(Date.now() / 1000) });
+    const body = (await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json()) as any[];
+    expect(body.find((o) => o.orderId === '7')).toMatchObject({ kind: 'close', buy: true, leverage: '10.00', collateral: null });
+  });
+
+  it('borrows nothing for an open order, whatever position shares its trade id', async () => {
+    await seedOpenPosition();
+    await seedOrder(8, { kind: 'open', status: 'pending', tradeId: 2, requestedAt: Math.floor(Date.now() / 1000) });
+    const body = (await (await fetch(`${server.baseUrl}/orders/${TRADER}`)).json()) as any[];
+    expect(body.find((o) => o.orderId === '8')).toMatchObject({ buy: null, leverage: null, collateral: null });
   });
 });
