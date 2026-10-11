@@ -91,7 +91,8 @@ test('a limit buy rests in Open Orders and can be cancelled', async ({ page, bas
 
   await page.getByTestId('limit-cancel-0-0').click();
   await expect.poll(() => state.sentTrading.some((c) => c.functionName === 'cancelOpenLimitOrder')).toBe(true);
-  await expect(page.getByTestId('no-limit-orders')).toBeVisible({ timeout: 10_000 });
+  // Nothing resting and nothing in flight: the tab says so once.
+  await expect(page.getByTestId('no-open-orders')).toBeVisible({ timeout: 10_000 });
   expect(errors).toEqual([]);
 });
 

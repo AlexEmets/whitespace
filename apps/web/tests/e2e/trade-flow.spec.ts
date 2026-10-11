@@ -125,7 +125,9 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
       tradeId: order.tradeId,
     });
 
-    await expect(page.getByTestId(`order-status-${order.orderId}`)).toContainText('Filled');
+    // A filled order is no longer open: it leaves Open orders (it is in Order history), and
+    // the order panel reports the fill.
+    await expect(page.getByTestId(`order-row-${order.orderId}`)).toHaveCount(0);
     await expect(page.getByTestId('order-filled')).toContainText('Filled');
 
     await page.getByTestId('tab-positions').click();
