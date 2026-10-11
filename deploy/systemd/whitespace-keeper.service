@@ -23,9 +23,12 @@ RestartSec=5
 # so under load the kernel OOM killer chose for us, and it chose Postgres.
 MemoryHigh=88M
 MemoryMax=104M
-# IPv4 first: the RPC provider raised its rate limit for 65.21.53.147, and Node otherwise
-# reaches rpc.testnet.whitechain.io over this host\'s IPv6, which the raised limit does not cover.
-Environment="NODE_OPTIONS=--max-old-space-size=64 --dns-result-order=ipv4first"
+# IPv6 first, unlike every other unit: the public RPC limits per source address, and the
+# bots and the indexer share the host's IPv4 one. When their bursts emptied it, the keeper's
+# polls came back "rate limit exceeded", it saw orders after their 10 s window and gave them
+# up, and closes hung until the timeout. On its own address the keeper (1-2 req/s) is not
+# competing with anyone. (Measured 2026-10-11: IPv4 0/30 answered, IPv6 30/30.)
+Environment="NODE_OPTIONS=--max-old-space-size=64 --dns-result-order=ipv6first"
 
 [Install]
 WantedBy=multi-user.target
