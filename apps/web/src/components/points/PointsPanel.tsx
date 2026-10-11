@@ -8,9 +8,10 @@ import { usePoints } from '@/hooks/usePoints';
 import { usePositions } from '@/hooks/usePositions';
 import { useMarkets } from '@/hooks/useMarkets';
 import { formatMoney, toRawUnits } from '@/lib/money';
-import { pendingTimePointsRaw, pendingLpPointsRaw } from '@/lib/livePoints';
+import { liveDecimals, pendingTimePointsRaw, pendingLpPointsRaw, ratePerSecond } from '@/lib/livePoints';
 import { marketLabel } from '@/components/portfolio/TradeHistoryTable';
 import { AccountState, Dash, accountStyles as shell } from '@/components/portfolio/AccountPage';
+import { LiveNumber } from './LiveNumber';
 import styles from './points.module.css';
 
 /**
@@ -36,18 +37,6 @@ const MAX_MISSION_POINTS = MISSIONS.reduce((sum, m) => sum + m.points, 0);
 const fmt = (raw: bigint, dp = 2) => formatMoney(raw, PD, { fractionDigits: dp });
 const capRaw = (cap: number) => toRawUnits(String(cap), PD);
 const pctOf = (raw: bigint, cap: number) => Math.min(100, (Number(fmt(raw, 2).replace(/,/g, '')) / cap) * 100);
-
-function LiveNumber({ raw, dp }: { raw: bigint; dp: number }) {
-  const s = fmt(raw, dp);
-  const dot = s.indexOf('.');
-  if (dot === -1) return <span>{s}</span>;
-  return (
-    <span>
-      {s.slice(0, dot)}
-      <span className={styles.frac}>{s.slice(dot)}</span>
-    </span>
-  );
-}
 
 const Check = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
@@ -163,11 +152,20 @@ export function PointsPanel() {
   const { positions } = usePositions(address);
   const { markets } = useMarkets();
 
-  // The live clock: one tick a second drives both accrual counters.
+  // The live clock: one tick on each whole second drives the accrual counters, and each
+  // LiveNumber glides through the second in between. Aligned to the second, not an interval
+  // from mount, so the glide spans the whole second rather than whatever part of it was left.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
-    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(id);
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      timer = setTimeout(() => {
+        setNow(Math.floor(Date.now() / 1000));
+        schedule();
+      }, 1000 - (Date.now() % 1000));
+    };
+    schedule();
+    return () => clearTimeout(timer);
   }, []);
 
   if (!isConnected || !address) {
@@ -222,6 +220,14 @@ export function PointsPanel() {
   const liveLp = confirmed.lp + pendingLp;
   const liveTotal = confirmed.total + pendingTime + pendingLp;
 
+  // A second ago, where each counter glides from; and how fast each moves, which sets how
+  // many decimals it needs to be seen moving.
+  const prevTime = pendingTimePointsRaw(positions, now - 1);
+  const prevLp = pendingLpPointsRaw(lpBalanceRaw, points?.lpSince ?? null, now - 1);
+  const timeRate = ratePerSecond(pendingTimePointsRaw(positions, now + 86_400) - pendingTime);
+  const lpRate = ratePerSecond(pendingLpPointsRaw(lpBalanceRaw, 0, 86_400));
+  const startMs = now * 1000;
+
   const completed = new Set(points?.completedMissions ?? []);
   const doneCount = MISSIONS.filter((m) => completed.has(m.id)).length;
 
@@ -250,7 +256,13 @@ export function PointsPanel() {
           <span className={styles.label}>Your points</span>
           <div data-testid="points-total">
             <div className={styles.total}>
-              <LiveNumber raw={liveTotal} dp={2} />
+              <LiveNumber
+                from={confirmed.total + prevTime + prevLp}
+                to={liveTotal}
+                startMs={startMs}
+                dp={liveDecimals(timeRate + lpRate, 2)}
+                fracClassName={styles.frac}
+              />
             </div>
             <span className={styles.totalSub}>
               <span className={styles.fig}>{fmt(confirmed.total, 2)}</span> confirmed ·{' '}
@@ -336,7 +348,13 @@ export function PointsPanel() {
           pct={pctOf(timeCapped, TIME_DAILY_CAP)}
           value={
             <span data-testid="time-live">
-              <LiveNumber raw={liveTime} dp={3} />
+              <LiveNumber
+                from={confirmed.time + prevTime}
+                to={liveTime}
+                startMs={startMs}
+                dp={liveDecimals(timeRate, 3)}
+                fracClassName={styles.frac}
+              />
             </span>
           }
         />
@@ -370,7 +388,13 @@ export function PointsPanel() {
           pct={pctOf(lpCapped, LP_DAILY_CAP)}
           value={
             <span data-testid="lp-live">
-              <LiveNumber raw={liveLp} dp={3} />
+              <LiveNumber
+                from={confirmed.lp + prevLp}
+                to={liveLp}
+                startMs={startMs}
+                dp={liveDecimals(lpRate, 3)}
+                fracClassName={styles.frac}
+              />
             </span>
           }
         />

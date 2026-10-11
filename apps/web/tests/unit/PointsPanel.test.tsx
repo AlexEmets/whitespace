@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PointsPanel } from '@/components/points/PointsPanel';
 import type { PointsSummary } from '@/lib/types';
@@ -142,5 +142,30 @@ describe('<PointsPanel>', () => {
     expect(screen.getByTestId('account-state-disconnected')).toHaveTextContent(/connect a wallet/i);
     expect(screen.getByTestId('card-missions')).toHaveTextContent('First market trade');
     connected.value = true;
+  });
+
+  it('shows each live counter to as many places as it needs to be seen moving', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    // 8,500 USDW: 8.5 pts a day — six places; 12,400 notional: 29.76 a day — five.
+    expect(screen.getByTestId('lp-live')).toHaveTextContent(/^96\.4\d{5}$/);
+    expect(screen.getByTestId('time-live')).toHaveTextContent(/^214\.6\d{4}$/);
+  });
+
+  it('climbs on screen with no refetch and no reload', () => {
+    connected.value = true;
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] });
+    try {
+      vi.setSystemTime((nowSec + 100) * 1000);
+      render(<PointsPanel />);
+      const before = screen.getByTestId('lp-live').textContent;
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      const after = screen.getByTestId('lp-live').textContent;
+      expect(Number(after)).toBeGreaterThan(Number(before));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -33,3 +33,20 @@ export function pendingLpPointsRaw(
   const heldSeconds = Math.max(0, Math.floor(nowSeconds - sinceSeconds));
   return lpPointsRaw({ balanceRaw, heldSeconds });
 }
+
+/**
+ * Decimal places that keep a live counter visibly moving: enough that its last digit turns
+ * over about ten times a second at `ratePerSecond`, but never past the ledger's six and never
+ * under `minDp`. 100 USDW in the pool earns 0.1 pt a day — at a fixed three places that
+ * counter changed once every 2.4 hours and looked frozen.
+ */
+export function liveDecimals(ratePerSecond: number, minDp: number, maxDp = 6): number {
+  if (!(ratePerSecond > 0) || !Number.isFinite(ratePerSecond)) return minDp;
+  const dp = Math.ceil(-Math.log10(ratePerSecond / 10));
+  return Math.min(maxDp, Math.max(minDp, dp));
+}
+
+/** Points per second from the raw (6-decimal) points a counter gains over a day. */
+export function ratePerSecond(rawPerDay: bigint): number {
+  return Number(rawPerDay) / 1e6 / 86_400;
+}
