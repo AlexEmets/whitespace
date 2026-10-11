@@ -87,7 +87,32 @@
 }
 
 .fillLive {
+  position: relative;
+  overflow: hidden;
   background: var(--long);
+}
+
+/* A light passing along a live bar: it reads as moving even while the width creeps. A
+   transform on a pseudo-element — composited, no layout, no script. */
+.fillLive::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: translateX(-100%);
+  animation: liveShimmer 2.4s ease-in-out infinite;
+}
+
+@keyframes liveShimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fillLive::after {
+    animation: none;
+  }
 }
 
 .panel,

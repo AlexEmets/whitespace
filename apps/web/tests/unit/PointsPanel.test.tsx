@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PointsPanel } from '@/components/points/PointsPanel';
 import type { PointsSummary } from '@/lib/types';
 
@@ -40,11 +40,26 @@ vi.mock('@/hooks/usePoints', () => ({
   usePoints: () => ({ points: connected.value ? points : undefined, loading: false, error: null, refetch: vi.fn() }),
 }));
 
+const positionsState = vi.hoisted(() => ({ list: null as unknown[] | null }));
+const underFloor = (held: number) => ({
+  pairIndex: 0,
+  index: 0,
+  buy: true,
+  collateral: '1240.000000',
+  leverage: '10.00',
+  openPrice: '60000.000000000000000000',
+  tp: '0',
+  sl: '0',
+  openedAt: nowSec - held,
+  tradeId: '2',
+});
+
 vi.mock('@/hooks/usePositions', () => ({
   usePositions: () => ({
-    // Held under the 5-minute floor, so the live time delta is exactly zero.
-    positions: connected.value
-      ? [
+    // By default held under the 5-minute floor, so the live time delta is exactly zero.
+    positions: !connected.value
+      ? []
+      : positionsState.list ?? [
           {
             pairIndex: 0,
             index: 0,
@@ -57,8 +72,7 @@ vi.mock('@/hooks/usePositions', () => ({
             openedAt: nowSec - 60,
             tradeId: '2',
           },
-        ]
-      : [],
+        ],
     error: null,
     loading: false,
     refetch: vi.fn(),
@@ -76,6 +90,10 @@ vi.mock('@/hooks/useMarkets', () => ({
 }));
 
 describe('<PointsPanel>', () => {
+  afterEach(() => {
+    positionsState.list = null;
+  });
+
   it('shows the season total, rank and streak multiplier', () => {
     connected.value = true;
     render(<PointsPanel />);
@@ -122,7 +140,8 @@ describe('<PointsPanel>', () => {
     connected.value = true;
     render(<PointsPanel />);
     expect(screen.getByTestId('earn-missions')).toHaveTextContent('2 of 12 done · up to 850');
-    expect(screen.getByTestId('card-time')).toHaveTextContent(/Accruing [\d.]+ · max 100 \/ day/);
+    // The fixture position is a minute old: four minutes to the floor, 1.24 pts an hour after.
+    expect(screen.getByTestId('card-time')).toHaveTextContent('Starts counting in 4:00 · then +1.24 / hr');
     expect(screen.getByTestId('card-streak')).toHaveTextContent('Day 5 of 7 · ×1.33');
     expect(screen.getByTestId('card-lp')).toHaveTextContent(/Accruing [\d.]+ · max 50 \/ day/);
   });
@@ -146,10 +165,41 @@ describe('<PointsPanel>', () => {
 
   it('shows each live counter to as many places as it needs to be seen moving', () => {
     connected.value = true;
+    positionsState.list = [underFloor(600)];
     render(<PointsPanel />);
     // 8,500 USDW: 8.5 pts a day — six places; 12,400 notional: 29.76 a day — five.
     expect(screen.getByTestId('lp-live')).toHaveTextContent(/^96\.4\d{5}$/);
-    expect(screen.getByTestId('time-live')).toHaveTextContent(/^214\.6\d{4}$/);
+    expect(screen.getByTestId('time-live')).toHaveTextContent(/^2\d\d\.\d{5}$/);
+  });
+
+  it('sizes the total for what is accruing now, not for a position still under the floor', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    // Only the pool is moving (8.5 a day): six places, or the total sits still for minutes.
+    expect(screen.getByTestId('points-total').querySelector('div')).toHaveTextContent(/^939\.\d{6}$/);
+    expect(screen.getByTestId('time-live')).toHaveTextContent(/^214\.600$/);
+  });
+
+  it('fills the time bar with the wait while a new position is under the floor', () => {
+    connected.value = true;
+    positionsState.list = [underFloor(60)];
+    render(<PointsPanel />);
+    const bar = screen.getByTestId('card-time').querySelector<HTMLElement>('[style]');
+    expect(bar!.style.width).toBe('20%');
+  });
+
+  it('counts down to the next position once one is already accruing', () => {
+    connected.value = true;
+    positionsState.list = [underFloor(600), { ...underFloor(240), index: 1 }];
+    render(<PointsPanel />);
+    expect(screen.getByTestId('card-time')).toHaveTextContent(/Accruing [\d.]+ · 1 more counts in 1:00 · max 100 \/ day/);
+  });
+
+  it('keeps a visible sliver on a live bar however small today’s share of the cap', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    const bar = screen.getByTestId('card-lp').querySelector<HTMLElement>('[style]');
+    expect(bar!.style.width).toBe('2%');
   });
 
   it('climbs on screen with no refetch and no reload', () => {

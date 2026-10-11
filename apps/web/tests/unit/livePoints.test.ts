@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { liveDecimals, pendingTimePointsRaw, pendingLpPointsRaw, ratePerSecond } from '@/lib/livePoints';
+import {
+  liveDecimals,
+  pendingLpPointsRaw,
+  pendingTimePointsRaw,
+  ratePerSecond,
+  timePointsPerDayRaw,
+  timeWarmup,
+} from '@/lib/livePoints';
 import type { PositionSummary } from '@/lib/types';
 
 function position(over: Partial<PositionSummary>): PositionSummary {
@@ -85,5 +92,38 @@ describe('ratePerSecond', () => {
   it('turns raw points a day into points a second', () => {
     expect(ratePerSecond(86_400_000_000n)).toBe(1);
     expect(ratePerSecond(0n)).toBe(0);
+  });
+});
+
+describe('timePointsPerDayRaw', () => {
+  it('is the pace of positions past the floor: 12,400 notional earns 29.76 a day', () => {
+    expect(timePointsPerDayRaw([position({ openedAt: 1000 })], 1000 + 300)).toBe(29_760_000n);
+  });
+
+  it('leaves out a position still under the floor', () => {
+    const positions = [position({ openedAt: 1000 }), position({ openedAt: 1200, index: 1 })];
+    expect(timePointsPerDayRaw(positions, 1000 + 400)).toBe(29_760_000n);
+    expect(timePointsPerDayRaw([position({ openedAt: 1000 })], 1000 + 299)).toBe(0n);
+  });
+
+  it('applies the per-position notional cap', () => {
+    // 10,000 x 100 = 1,000,000 notional, capped at 50,000: 120 a day.
+    expect(timePointsPerDayRaw([position({ collateral: '10000.000000', leverage: '100.00', openedAt: 0 })], 600)).toBe(120_000_000n);
+  });
+});
+
+describe('timeWarmup', () => {
+  it('is null when nothing is waiting', () => {
+    expect(timeWarmup([], 1000)).toBeNull();
+    expect(timeWarmup([position({ openedAt: 0 })], 300)).toBeNull();
+  });
+
+  it('counts down to the first waiting position to cross, and how far through it is', () => {
+    const positions = [position({ openedAt: 1000 }), position({ openedAt: 1100, index: 1 }), position({ openedAt: 0, index: 2 })];
+    expect(timeWarmup(positions, 1060)).toEqual({ secondsLeft: 240, progress: 0.2, waiting: 2 });
+  });
+
+  it('treats a clock behind the open time as a wait just started', () => {
+    expect(timeWarmup([position({ openedAt: 1000 })], 990)).toEqual({ secondsLeft: 300, progress: 0, waiting: 1 });
   });
 });

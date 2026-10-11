@@ -8,7 +8,15 @@ import { usePoints } from '@/hooks/usePoints';
 import { usePositions } from '@/hooks/usePositions';
 import { useMarkets } from '@/hooks/useMarkets';
 import { formatMoney, toRawUnits } from '@/lib/money';
-import { liveDecimals, pendingTimePointsRaw, pendingLpPointsRaw, ratePerSecond } from '@/lib/livePoints';
+import { MIN_HELD_SECONDS } from '@whitespace/shared/points';
+import {
+  liveDecimals,
+  pendingLpPointsRaw,
+  pendingTimePointsRaw,
+  ratePerSecond,
+  timePointsPerDayRaw,
+  timeWarmup,
+} from '@/lib/livePoints';
 import { marketLabel } from '@/components/portfolio/TradeHistoryTable';
 import { AccountState, Dash, accountStyles as shell } from '@/components/portfolio/AccountPage';
 import { LiveNumber } from './LiveNumber';
@@ -36,7 +44,14 @@ const MAX_MISSION_POINTS = MISSIONS.reduce((sum, m) => sum + m.points, 0);
 
 const fmt = (raw: bigint, dp = 2) => formatMoney(raw, PD, { fractionDigits: dp });
 const capRaw = (cap: number) => toRawUnits(String(cap), PD);
-const pctOf = (raw: bigint, cap: number) => Math.min(100, (Number(fmt(raw, 2).replace(/,/g, '')) / cap) * 100);
+/** A counter that is moving keeps a visible sliver: 6 pts an hour against a 100-a-day cap
+ * filled 0.1% of the bar a minute and read as an empty bar. */
+const LIVE_MIN_PCT = 2;
+const livePct = (raw: bigint, cap: number, moving: boolean) => {
+  const pct = Math.min(100, (Number(raw) / Number(capRaw(cap))) * 100);
+  return moving ? Math.max(LIVE_MIN_PCT, pct) : pct;
+};
+const mmss = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 
 const Check = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden="true">
@@ -224,7 +239,8 @@ export function PointsPanel() {
   // many decimals it needs to be seen moving.
   const prevTime = pendingTimePointsRaw(positions, now - 1);
   const prevLp = pendingLpPointsRaw(lpBalanceRaw, points?.lpSince ?? null, now - 1);
-  const timeRate = ratePerSecond(pendingTimePointsRaw(positions, now + 86_400) - pendingTime);
+  const timeRate = ratePerSecond(timePointsPerDayRaw(positions, now));
+  const warmup = timeWarmup(positions, now);
   const lpRate = ratePerSecond(pendingLpPointsRaw(lpBalanceRaw, 0, 86_400));
   const startMs = now * 1000;
 
@@ -240,7 +256,8 @@ export function PointsPanel() {
   const tierPct =
     tier.ceil > tier.floor ? Math.min(100, ((totalHuman - tier.floor) / (tier.ceil - tier.floor)) * 100) : 100;
 
-  const timeRatePerHour = pendingTimePointsRaw(positions, now + 3600) - pendingTime; // points/hr at current size
+  // Points an hour once every open position is past the floor.
+  const timeRatePerHour = timePointsPerDayRaw(positions, now + MIN_HELD_SECONDS) / 24n;
   const lpRatePerDay = pendingLpPointsRaw(lpBalanceRaw, 0, 86_400);
   const timeCapped = pendingTime < capRaw(TIME_DAILY_CAP) ? pendingTime : capRaw(TIME_DAILY_CAP);
   const lpCapped = pendingLp < capRaw(LP_DAILY_CAP) ? pendingLp : capRaw(LP_DAILY_CAP);
@@ -344,8 +361,15 @@ export function PointsPanel() {
               </>
             )
           }
-          status={`Accruing ${fmt(pendingTime, 2)} · max ${TIME_DAILY_CAP} / day`}
-          pct={pctOf(timeCapped, TIME_DAILY_CAP)}
+          status={
+            warmup && pendingTime === 0n
+              ? `Starts counting in ${mmss(warmup.secondsLeft)} · then +${fmt(timeRatePerHour, 2)} / hr`
+              : warmup
+                ? `Accruing ${fmt(pendingTime, 2)} · ${warmup.waiting} more counts in ${mmss(warmup.secondsLeft)} · max ${TIME_DAILY_CAP} / day`
+                : `Accruing ${fmt(pendingTime, 2)} · max ${TIME_DAILY_CAP} / day`
+          }
+          // Under the floor the bar is the wait itself, so a new position shows progress at once.
+          pct={warmup && pendingTime === 0n ? warmup.progress * 100 : livePct(timeCapped, TIME_DAILY_CAP, timeRate > 0)}
           value={
             <span data-testid="time-live">
               <LiveNumber
@@ -385,7 +409,7 @@ export function PointsPanel() {
             )
           }
           status={`Accruing ${fmt(pendingLp, 2)} · max ${LP_DAILY_CAP} / day`}
-          pct={pctOf(lpCapped, LP_DAILY_CAP)}
+          pct={livePct(lpCapped, LP_DAILY_CAP, lpRate > 0)}
           value={
             <span data-testid="lp-live">
               <LiveNumber
