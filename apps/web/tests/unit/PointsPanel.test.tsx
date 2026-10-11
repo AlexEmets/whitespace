@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PointsPanel } from '@/components/points/PointsPanel';
 import type { PointsSummary } from '@/lib/types';
 
@@ -90,7 +90,13 @@ vi.mock('@/hooks/useMarkets', () => ({
 }));
 
 describe('<PointsPanel>', () => {
+  // The fixtures are pinned to `nowSec`; a slow run crossing a second moved the countdowns.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(nowSec * 1000);
+  });
   afterEach(() => {
+    vi.useRealTimers();
     positionsState.list = null;
   });
 
@@ -204,6 +210,7 @@ describe('<PointsPanel>', () => {
 
   it('climbs on screen with no refetch and no reload', () => {
     connected.value = true;
+    vi.useRealTimers(); // swap the Date-only fake from beforeEach for one that runs the clock
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'requestAnimationFrame', 'cancelAnimationFrame'] });
     try {
       vi.setSystemTime((nowSec + 100) * 1000);
