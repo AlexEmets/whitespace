@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { maxUint256 } from 'viem';
 import { useAccount } from 'wagmi';
 import { useErc20 } from '@/hooks/useErc20';
@@ -17,6 +17,7 @@ import { useQuote } from '@/hooks/useQuote';
 import { explainCancelReason, humanizeCancelReason, type OpenOrderKind } from '@/lib/abi';
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
+import { marketLabel } from '@/lib/markets';
 import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
 import {
   exposureError,
@@ -38,6 +39,7 @@ import { estimatePositionSizeBase } from '@/lib/pnl';
 import { slippageBpsToCover } from '@/lib/quote';
 import type { MarketSummary } from '@/lib/types';
 import { describeTxError } from '@/lib/tx';
+import { FillToast, type FillNotice } from './FillToast';
 import { RiskPreview } from './RiskPreview';
 import { Spinner } from './Spinner';
 import styles from './OrderPanel.module.css';
@@ -227,6 +229,19 @@ export function OpenPositionForm({
     setState((c) => (c.phase === 'submitted' || c.phase === 'placed' || c.phase === 'error' ? { phase: 'idle' } : c));
   }, [sizeInput, buy, leverageX, pairIndex, kind, triggerInput]);
 
+  // Market orders sent from here, followed to their fill apart from the banner: the banner
+  // goes when the form is edited, and the trader still wants to know the position opened.
+  const watching = useRef(new Map<string, string>());
+  const [fillNotice, setFillNotice] = useState<FillNotice | null>(null);
+  useEffect(() => {
+    for (const [id, text] of watching.current) {
+      const order = orders.find((o) => o.orderId === id);
+      if (!order || order.status === 'pending') continue;
+      watching.current.delete(id);
+      if (order.status === 'executed') setFillNotice({ id, text });
+    }
+  }, [orders]);
+
   const submittedOrder = state.phase === 'submitted' ? orders.find((o) => o.orderId === state.orderId) : undefined;
 
   // An order past the open-interest or group-collateral cap is cancelled EXPOSURE_LIMITS at fill,
@@ -303,6 +318,12 @@ export function OpenPositionForm({
         kind,
       });
       if (kind === 'MARKET') {
+        if (result.orderId !== undefined) {
+          watching.current.set(
+            result.orderId.toString(),
+            `${marketLabel(market, pairIndex)} ${buy ? 'Long' : 'Short'} ${leverageX}x · ${formatMoney(collateralRaw, COLLATERAL_DECIMALS)} USDW`,
+          );
+        }
         setState({ phase: 'submitted', orderId: result.orderId !== undefined ? result.orderId.toString() : '' });
       } else {
         setState({ phase: 'placed', kind });
@@ -665,6 +686,7 @@ export function OpenPositionForm({
           )}
         </div>
       ) : null}
+      <FillToast notice={fillNotice} onDismiss={() => setFillNotice(null)} />
     </form>
   );
 }

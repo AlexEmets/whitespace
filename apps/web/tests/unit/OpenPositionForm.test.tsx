@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { maxUint256 } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OpenPositionForm } from '@/components/OpenPositionForm';
+import { FILL_TOAST_MS } from '@/components/FillToast';
 import type { OpenTradeParams } from '@/hooks/useOpenTrade';
 import { TRADING_ADDRESS, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import type { MarketSummary } from '@/lib/types';
@@ -292,6 +293,96 @@ describe('<OpenPositionForm>', () => {
     orderId: '42', pairIndex: 0, kind: 'open', buy: null, collateral: null, leverage: null, requestedAt: 0,
     requestedAtBlock: '1', status: 'pending', expired: false, resolvedAt: null, cancelReason: null, tradeId: null,
     ...over,
+  });
+
+  describe('the "position opened" note', () => {
+    async function submitMarket() {
+      const view = render(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+      fireEvent.change(screen.getByTestId('size-input'), { target: { value: SIZE_0_01_BTC } });
+      fireEvent.click(screen.getByTestId('submit-open-button'));
+      await waitFor(() => expect(screen.getByTestId('order-pending-banner')).toBeInTheDocument());
+      return view;
+    }
+    const rerenderForm = (rerender: (ui: React.ReactElement) => void) =>
+      rerender(<OpenPositionForm pairIndex={0} maxLeverage={10000n} market={BTC_USD} />);
+
+    it('appears once the market order fills, naming what opened', async () => {
+      const { rerender } = await submitMarket();
+      expect(screen.queryByTestId('fill-toast')).toBeNull();
+      ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      expect(screen.getByTestId('fill-toast')).toHaveTextContent(/^Position opened BTC-PERP Long 10x · [\d,]+\.\d{2} USDW/);
+    });
+
+    it('still appears when the trader has moved on to the next order before the fill', async () => {
+      const { rerender } = await submitMarket();
+      fireEvent.change(screen.getByTestId('size-input'), { target: { value: '0.02' } });
+      expect(screen.queryByTestId('order-pending-banner')).toBeNull();
+      ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      expect(screen.getByTestId('fill-toast')).toBeInTheDocument();
+    });
+
+    it.each(['cancelled', 'timeout'])('shows nothing for an order that ends %s, then shows the next fill', async (status) => {
+      const { rerender } = await submitMarket();
+      ordersMockState = [order42({ status, cancelReason: status === 'cancelled' ? 'SLIPPAGE' : null })];
+      rerenderForm(rerender);
+      expect(screen.queryByTestId('fill-toast')).toBeNull();
+
+      openTradeMock.mockResolvedValueOnce({ hash: '0xabd', receipt: {}, orderId: 43n });
+      fireEvent.click(screen.getByTestId('submit-open-button'));
+      await waitFor(() => expect(openTradeMock).toHaveBeenCalledTimes(2));
+      ordersMockState = [...ordersMockState, order42({ orderId: '43', status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      await waitFor(() => expect(screen.getByTestId('fill-toast')).toBeInTheDocument());
+    });
+
+    it('ignores fills of orders this form did not send', async () => {
+      ordersMockState = [order42({ orderId: '7', status: 'executed', tradeId: '3' })];
+      const { rerender } = await submitMarket();
+      expect(screen.queryByTestId('fill-toast')).toBeNull();
+      ordersMockState = [...ordersMockState, order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      expect(screen.getAllByTestId('fill-toast')).toHaveLength(1);
+    });
+
+    it('leaves on its own after a few seconds', async () => {
+      const { rerender } = await submitMarket();
+      vi.useFakeTimers();
+      try {
+        ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+        rerenderForm(rerender);
+        expect(screen.getByTestId('fill-toast')).toBeInTheDocument();
+        act(() => {
+          vi.advanceTimersByTime(FILL_TOAST_MS - 1);
+        });
+        expect(screen.getByTestId('fill-toast')).toBeInTheDocument();
+        act(() => {
+          vi.advanceTimersByTime(1);
+        });
+        expect(screen.queryByTestId('fill-toast')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('closes when dismissed', async () => {
+      const { rerender } = await submitMarket();
+      ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      fireEvent.click(screen.getByTestId('fill-toast-close'));
+      expect(screen.queryByTestId('fill-toast')).toBeNull();
+    });
+
+    it('shows once per fill, not again on later refreshes of the orders', async () => {
+      const { rerender } = await submitMarket();
+      ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      fireEvent.click(screen.getByTestId('fill-toast-close'));
+      ordersMockState = [order42({ status: 'executed', tradeId: '9' })];
+      rerenderForm(rerender);
+      expect(screen.queryByTestId('fill-toast')).toBeNull();
+    });
   });
 
   it('says a reclaimed order got its collateral back in full, not "cancelled, minus the oracle fee"', async () => {

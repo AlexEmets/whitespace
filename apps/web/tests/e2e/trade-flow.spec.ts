@@ -129,6 +129,8 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     // the order panel reports the fill.
     await expect(page.getByTestId(`order-row-${order.orderId}`)).toHaveCount(0);
     await expect(page.getByTestId('order-filled')).toContainText('Filled');
+    // The quiet corner note, which outlives the form's banner (FillToast.tsx).
+    await expect(page.getByTestId('fill-toast')).toContainText('Position opened');
 
     await page.getByTestId('tab-positions').click();
     const positionRow = page.getByTestId('position-row-0-0');
