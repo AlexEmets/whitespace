@@ -143,9 +143,11 @@ docker restart whitespace-postgres      # if it does not recover by itself
 The public 1874 RPC rate-limits per IP, and the keeper, both bots and the indexer share this
 host's. The keeper has the least slack (a report must land within 10 s of the order), so:
 
-- Node services resolve IPv4 first (`--dns-result-order=ipv4first`): the provider raised the
-  limit for `65.21.53.147`. The keeper alone resolves IPv6 first, so the bots' and indexer's
-  bursts on the IPv4 address cannot rate-limit it past an order's 10 s window. Check either
+- The keeper and the indexer resolve IPv6 first; every other Node service IPv4 first
+  (`--dns-result-order`). The limit the provider says it raised for `65.21.53.147` does not
+  hold: under a 20-trader load test (`tools/stack/load.mjs`) the IPv4 address was refused for
+  minutes and the indexer stopped advancing. The bots' and API's bursts on IPv4 therefore
+  cannot stall fills (10 s window) or indexed state. Check either
   address with `curl -4` / `curl -6` against the RPC; a "rate limit exceeded" on one only
   affects the services on it.
 - The indexer is capped by `PONDER_MAX_RPS` in `services/indexer/.env` (10 today). At 25 the
