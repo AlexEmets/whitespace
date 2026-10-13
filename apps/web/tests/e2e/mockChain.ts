@@ -436,6 +436,10 @@ export function createMockChain(state: TestState) {
         return handleSendTransaction((params[0] as { to?: string; data?: Hex }) ?? {});
       case 'eth_getTransactionReceipt':
         return receipts.get(params[0] as string) ?? null;
+      case 'eth_getBalance':
+        // Only the trader's own gas is modelled. Anything else (a session key) keeps
+        // answering null, as every RPC method this mock does not know always has.
+        return addressEquals(String(params[0]), MOCK_TRADER_ADDRESS) ? numberToHex(state.wbtBalance) : null;
       default:
         return null;
     }

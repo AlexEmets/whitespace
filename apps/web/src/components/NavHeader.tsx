@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useHealth } from '@/hooks/useHealth';
 import { BrandMark } from './BrandMark';
 import { ChainGuard } from './ChainGuard';
+import { GetStarted } from './GetStarted';
 import { ThemeToggle } from './ThemeToggle';
 import { WalletConnect } from './WalletConnect';
 
@@ -26,7 +27,10 @@ const NAV_LINKS: Array<{ href: string; label: string; testId: string }> = [
  * whose hero draws the large one; two eclipses on one screen would compete.
  *
  * On a phone the links fold behind a menu button (globals.css hides the button above
- * 900px), and the menu closes itself on navigation so it never covers the page it opened. */
+ * 900px), and the menu closes itself on navigation so it never covers the page it opened.
+ *
+ * It also carries the first-connect setup dialog (GetStarted), for the same reason the
+ * wallet control lives here: it has to be reachable from any page a wallet connects on. */
 export function NavHeader() {
   const pathname = usePathname();
   const { indexedBlock, latencyMs } = useHealth();
@@ -52,7 +56,13 @@ export function NavHeader() {
       <header className="nav-header">
         <Link href="/" className="wordmark" data-testid="wordmark">
           <BrandMark className="wordmark-mark" />
-          whitespace
+          <span className="wordmark-text">
+            whitespace
+            {/* The testnet is a beta: said once, where the name is, on every page. */}
+            <span className="beta-tag" data-testid="beta-tag">
+              beta
+            </span>
+          </span>
         </Link>
         <nav id="site-nav" className={`nav-links${menuOpen ? ' open' : ''}`} data-testid="site-nav">
           {NAV_LINKS.map((link) => (
@@ -94,6 +104,9 @@ export function NavHeader() {
         </div>
       </header>
       <ChainGuard />
+      {/* Here because this header is on every route: wherever a new wallet connects, it
+          is offered the gas and margin it needs before it can trade. */}
+      <GetStarted />
     </>
   );
 }

@@ -74,6 +74,11 @@ export interface SentCall {
 
 export class TestState {
   usdwBalance = 10_000_000_000n; // 10,000.00 USDW
+  /** The trader's native WBT (gas), raw wei. Funded by default, so the first-connect setup
+   * dialog (GetStarted) stays out of every spec that is not about it. */
+  wbtBalance = 1_000_000_000_000_000_000n; // 1 WBT
+  /** Addresses POST /faucet/wbt has paid, in order. */
+  wbtFaucetClaims: string[] = [];
   /** spender (lowercased address) -> approved amount */
   allowances = new Map<string, bigint>();
   vaultSettlementId = 1;
