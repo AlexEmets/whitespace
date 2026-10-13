@@ -1,7 +1,8 @@
 'use client';
 
 import { parseEventLogs, zeroAddress, type Address, type Hash, type TransactionReceipt } from 'viem';
-import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { OPEN_ORDER_TYPE, TRADING_ABI, type OpenOrderKind } from '@/lib/abi';
 import { slippageForSubmission } from '@/lib/orderRules';
 import { TRADING_ADDRESS } from '@/lib/deployment';
@@ -40,7 +41,7 @@ export interface OpenTradeParams {
 export function useOpenTrade() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useTestnetWriteContract();
   const session = useSessionKey();
 
   async function openTrade(params: OpenTradeParams) {

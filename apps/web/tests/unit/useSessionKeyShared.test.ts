@@ -18,11 +18,13 @@ const state = vi.hoisted(() => ({
   gasWei: 10n ** 18n,
   sessionWrite: vi.fn(async () => '0xsession' as `0x${string}`),
   refetch: vi.fn(async () => undefined),
-  writeContract: vi.fn(async (_args: { functionName: string; args?: readonly unknown[] }) => '0xhash'),
+  writeContract: vi.fn(async (_args: { functionName: string; args?: readonly unknown[]; chain?: { id: number } }) => '0xhash'),
+  walletChainId: 1874,
+  switches: [] as number[],
 }));
 
 vi.mock('wagmi', () => ({
-  useAccount: () => ({ address: TRADER }),
+  useAccount: () => ({ address: TRADER, chainId: state.walletChainId }),
   usePublicClient: () => ({
     waitForTransactionReceipt: async () => ({ status: 'success', logs: [] }),
     getBalance: async () => 10n ** 18n,
@@ -30,6 +32,11 @@ vi.mock('wagmi', () => ({
     estimateContractGas: async () => 100_000n,
   }),
   useWalletClient: () => ({ data: state.walletReady ? { writeContract: state.writeContract, sendTransaction: vi.fn() } : undefined }),
+  useSwitchChain: () => ({
+    switchChainAsync: async ({ chainId }: { chainId: number }) => {
+      state.switches.push(chainId);
+    },
+  }),
   useReadContract: (args: { query?: { refetchInterval?: number } }) => {
     state.lastReadQuery = args.query;
     return { data: state.delegate, refetch: state.refetch };
@@ -53,6 +60,8 @@ beforeEach(() => {
   state.sessionWrite.mockReset();
   state.sessionWrite.mockImplementation(async () => '0xsession');
   state.writeContract.mockClear();
+  state.walletChainId = 1874;
+  state.switches.length = 0;
   // The on-chain delegate becomes whatever setDelegate registered.
   state.writeContract.mockImplementation(async (args) => {
     if (args.functionName === 'setDelegate') state.delegate = args.args![0] as string;
@@ -158,5 +167,36 @@ describe('useSessionKey shares one key across every instance', () => {
       throw new Error('nonce too low');
     });
     await expect(toggle.result.current.send('updateTp', [0, 0, 1n], 'update TP')).rejects.toThrow('nonce too low');
+  });
+});
+
+/** Turning one-click on is a wallet signature too, through the wallet's own client rather
+ * than useWriteContract — so it carries the testnet guard by hand. */
+describe('useSessionKey signs on Whitechain testnet only', () => {
+  it('switches a wallet on another network to 1874 and names the chain before delegating', async () => {
+    state.walletChainId = 1;
+    const { result } = renderHook(() => useSessionKey());
+
+    await act(async () => {
+      await result.current.enable();
+    });
+
+    expect(state.switches).toEqual([1874]);
+    const delegate = state.writeContract.mock.calls.find(([args]) => args.functionName === 'setDelegate');
+    expect(delegate?.[0].chain?.id).toBe(1874);
+  });
+
+  it('does not ask to switch on 1874, and still names the chain when turning it off', async () => {
+    const { result } = renderHook(() => useSessionKey());
+    await act(async () => {
+      await result.current.enable();
+    });
+    await act(async () => {
+      await result.current.disable();
+    });
+
+    expect(state.switches).toEqual([]);
+    const remove = state.writeContract.mock.calls.find(([args]) => args.functionName === 'removeDelegate');
+    expect(remove?.[0].chain?.id).toBe(1874);
   });
 });

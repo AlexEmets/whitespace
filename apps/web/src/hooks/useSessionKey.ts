@@ -5,6 +5,7 @@ import { parseEther, type Address } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { useAccount, useBalance, usePublicClient, useReadContract, useWalletClient } from 'wagmi';
 import { TRADING_ABI } from '@/lib/abi';
+import { whitechainTestnet1874 } from '@/lib/chain';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { padGas } from '@/lib/gas';
 import {
@@ -18,6 +19,7 @@ import {
   subscribeSessionKeys,
 } from '@/lib/sessionKey';
 import { confirmTx, describeTxError } from '@/lib/tx';
+import { useEnsureTestnet } from './useTestnetWriteContract';
 
 /** How often the on-chain delegate is re-read. */
 export const DELEGATION_REFRESH_MS = 10_000;
@@ -81,6 +83,10 @@ export function useSessionKey(): SessionKeyState {
   const { address } = useAccount();
   const publicClient = usePublicClient();
   const { data: walletClient } = useWalletClient();
+  // The wallet signs three things here (delegate, revoke, gas top-up) through its own
+  // client rather than useWriteContract, so it gets the same guard by hand: switch to 1874
+  // first, and name the chain so viem refuses to sign on any other (useTestnetWriteContract).
+  const ensureTestnet = useEnsureTestnet();
 
   // One store for every instance of this hook (see subscribeSessionKeys): the key enabled from
   // the toggle must be the key the order ticket signs with. The snapshot is the hex string,
@@ -133,11 +139,16 @@ export function useSessionKey(): SessionKeyState {
   const sendGasTopUp = useCallback(
     async (to: Address) => {
       if (!walletClient || !publicClient) return;
-      const hash = await walletClient.sendTransaction({ to, value: parseEther(SESSION_KEY_GAS_TOPUP_WBT) });
+      await ensureTestnet();
+      const hash = await walletClient.sendTransaction({
+        to,
+        value: parseEther(SESSION_KEY_GAS_TOPUP_WBT),
+        chain: whitechainTestnet1874,
+      });
       await confirmTx(publicClient, hash, 'fund the session key');
       await gas.refetch();
     },
-    [walletClient, publicClient, gas],
+    [walletClient, publicClient, gas, ensureTestnet],
   );
 
   const enable = useCallback(async () => {
@@ -152,11 +163,13 @@ export function useSessionKey(): SessionKeyState {
     setEnabling(true);
     try {
       const key = sessionKey ?? createSessionKey(address);
+      await ensureTestnet();
       const hash = await walletClient.writeContract({
         address: TRADING_ADDRESS,
         abi: TRADING_ABI,
         functionName: 'setDelegate',
         args: [key.address],
+        chain: whitechainTestnet1874,
       });
       await confirmTx(publicClient, hash, 'enable one-click trading');
       await delegation.refetch();
@@ -173,7 +186,7 @@ export function useSessionKey(): SessionKeyState {
     } finally {
       setEnabling(false);
     }
-  }, [address, walletClient, publicClient, sessionKey, delegation, sendGasTopUp]);
+  }, [address, walletClient, publicClient, sessionKey, delegation, sendGasTopUp, ensureTestnet]);
 
   const disable = useCallback(async () => {
     if (!address) return;
@@ -184,10 +197,12 @@ export function useSessionKey(): SessionKeyState {
     setError(null);
     setDisabling(true);
     try {
+      await ensureTestnet();
       const hash = await walletClient.writeContract({
         address: TRADING_ADDRESS,
         abi: TRADING_ABI,
         functionName: 'removeDelegate',
+        chain: whitechainTestnet1874,
       });
       await confirmTx(publicClient, hash, 'turn off one-click trading');
       clearSessionKey(address);
@@ -197,7 +212,7 @@ export function useSessionKey(): SessionKeyState {
     } finally {
       setDisabling(false);
     }
-  }, [address, walletClient, publicClient, delegation]);
+  }, [address, walletClient, publicClient, delegation, ensureTestnet]);
 
   const fundGas = useCallback(async () => {
     if (!sessionAddress) return;

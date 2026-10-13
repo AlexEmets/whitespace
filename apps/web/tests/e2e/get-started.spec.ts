@@ -76,3 +76,31 @@ test('a wallet that already has gas and margin is not interrupted', async ({ pag
   await page.waitForTimeout(2_000);
   await expect(page.getByTestId('get-started')).not.toBeVisible();
 });
+
+/**
+ * The bug: a wallet browser left on Ethereum mainnet offered to sign the dialog's USDW
+ * claim on mainnet. The wallet here starts on chain 1 and refuses — and records — any send
+ * off 1874; the claim has to move it to 1874 first and only then sign.
+ */
+test('a wallet left on another network is moved to 1874 before it signs the USDW claim', async ({
+  page,
+  baseURL,
+}) => {
+  test.setTimeout(60_000);
+  const state = new TestState();
+  state.usdwBalance = 0n; // gas, but no margin: the dialog opens on the USDW step
+  await installMockWallet(page, state, { startsUnauthorized: true, walletChainId: 1 });
+  await installMockBackend(page, state, `${baseURL}/__api`);
+
+  await page.goto('/');
+  await page.getByTestId('connect-wallet-button').click();
+  await expect(page.getByTestId('get-started')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('chain-guard-banner')).toBeVisible();
+
+  await page.getByTestId('get-started-claim-usdw').click();
+
+  await expect(page.getByTestId('get-started-usdw')).toHaveAttribute('data-done', 'true', { timeout: 15_000 });
+  expect(state.usdwBalance).toBe(1_000_000_000n);
+  await expect(page.getByTestId('chain-guard-banner')).not.toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { __offChainSends?: number[] }).__offChainSends ?? [])).toEqual([]);
+});

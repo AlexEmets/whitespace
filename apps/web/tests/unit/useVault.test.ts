@@ -24,13 +24,23 @@ function receiptFor(eventName: 'DepositRequestedV2' | 'WithdrawRequestedV2', set
 
 const state = vi.hoisted(() => ({ receipt: null as unknown, target: 5 }));
 
+const vaultWrites = vi.hoisted(() => [] as { chainId?: number }[]);
+
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0x1111111111111111111111111111111111111111' }),
   usePublicClient: () => ({
     readContract: async () => state.target,
     waitForTransactionReceipt: async () => state.receipt,
   }),
-  useWriteContract: () => ({ writeContractAsync: async () => '0xhash', isPending: false }),
+  useWriteContract: () => ({
+    writeContractAsync: async (request: { chainId?: number }) => {
+      vaultWrites.push(request);
+      return '0xhash';
+    },
+    isPending: false,
+  }),
+  // Already on 1874: the testnet guard (useTestnetWriteContract) has nothing to switch.
+  useSwitchChain: () => ({ switchChainAsync: async () => undefined }),
   useReadContract: () => ({ data: undefined }),
 }));
 
@@ -56,5 +66,15 @@ describe('useVault takes the settlement id from the request event', () => {
     state.receipt = { status: 'success', logs: [] };
     const { result } = renderHook(() => useVault());
     expect((await result.current.requestDeposit(5n)).settlementId).toBe(5);
+  });
+});
+
+describe('useVault signs on Whitechain testnet only', () => {
+  it('names chain 1874 on the request, so a wallet elsewhere cannot sign it there', async () => {
+    vaultWrites.length = 0;
+    const { result } = renderHook(() => useVault());
+    await result.current.requestDeposit(5n);
+    expect(vaultWrites).toHaveLength(1);
+    expect(vaultWrites[0]!.chainId).toBe(1874);
   });
 });

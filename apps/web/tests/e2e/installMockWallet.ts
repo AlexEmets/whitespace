@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { CHAIN_INFO } from '../../src/lib/config';
+import { CHAIN_ID, CHAIN_INFO } from '../../src/lib/config';
 import { createMockChain, UnmockedCallError } from './mockChain';
 import type { TestState } from './testState';
 
@@ -56,6 +56,14 @@ export type MockWalletOptions = {
    * injection race also announces itself.
    */
   silentWallet?: { flag: string };
+  /**
+   * Put the wallet on another network to start with (e.g. 1, Ethereum mainnet), the way a
+   * wallet browser left on mainnet arrives. The wallet then answers `eth_chainId` itself,
+   * moves on `wallet_switchEthereumChain`, and REFUSES any `eth_sendTransaction` while it
+   * is off 1874 — recording it in `window.__offChainSends`, so a spec can prove nothing was
+   * ever offered for signing on the wrong network. Unset, the wallet is on 1874 throughout.
+   */
+  walletChainId?: number;
 };
 
 /** A 1×1 transparent SVG. EIP-6963 requires `info.icon`; its content is irrelevant here. */
@@ -71,15 +79,19 @@ export async function installMockWallet(
   await page.exposeFunction('__mockRpc', (payload: { method: string; params?: unknown[] }) => chain.handleRequest(payload));
 
   await page.addInitScript(
-    ([announce, icon, startsUnauthorized, silentWallet]: [
+    ([announce, icon, startsUnauthorized, silentWallet, walletChainId, homeChainId]: [
       readonly AnnouncedWallet[],
       string,
       boolean,
       { flag: string } | null,
+      number | null,
+      number,
     ]) => {
+      const toHex = (n: number) => `0x${n.toString(16)}`;
       function makeProvider() {
         const handlers: Record<string, Array<(...args: unknown[]) => void>> = {};
         let authorized = !startsUnauthorized;
+        let onChain = walletChainId;
         return {
           isMetaMask: true,
           on(event: string, handler: (...args: unknown[]) => void) {
@@ -93,6 +105,19 @@ export async function installMockWallet(
             // wallet does not silently authorise the others.
             if (payload.method === 'eth_requestAccounts') authorized = true;
             if (payload.method === 'eth_accounts' && !authorized) return Promise.resolve([]);
+            if (onChain !== null) {
+              if (payload.method === 'eth_chainId') return Promise.resolve(toHex(onChain));
+              if (payload.method === 'wallet_switchEthereumChain') {
+                onChain = parseInt((payload.params?.[0] as { chainId: string }).chainId, 16);
+                for (const handler of handlers.chainChanged ?? []) handler(toHex(onChain));
+                return Promise.resolve(null);
+              }
+              if (payload.method === 'eth_sendTransaction' && onChain !== homeChainId) {
+                const w = window as unknown as { __offChainSends?: number[] };
+                (w.__offChainSends ??= []).push(onChain);
+                return Promise.reject(Object.assign(new Error(`mock wallet: refused to send on chain ${onChain}`), { code: -32000 }));
+              }
+            }
             // @ts-expect-error bridged in via page.exposeFunction
             return window.__mockRpc(payload);
           },
@@ -133,7 +158,9 @@ export async function installMockWallet(
       BLANK_ICON,
       options.startsUnauthorized ?? false,
       options.silentWallet ?? null,
-    ] as [readonly AnnouncedWallet[], string, boolean, { flag: string } | null],
+      options.walletChainId ?? null,
+      CHAIN_ID,
+    ] as [readonly AnnouncedWallet[], string, boolean, { flag: string } | null, number | null, number],
   );
 
   await page.route(CHAIN_INFO.rpc, async (route) => {

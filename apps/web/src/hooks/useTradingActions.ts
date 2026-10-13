@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { padGas } from '@/lib/gas';
@@ -40,7 +41,7 @@ const ACTION_LABEL: Record<TradingWrite['functionName'], string> = {
 export function useTradingActions() {
   const publicClient = usePublicClient();
   const { address: account } = useAccount();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync } = useTestnetWriteContract();
   const session = useSessionKey();
   const [pending, setPending] = useState<TradingWrite['functionName'] | null>(null);
 
