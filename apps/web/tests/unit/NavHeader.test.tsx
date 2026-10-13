@@ -73,6 +73,15 @@ describe('<NavHeader>', () => {
     }
   });
 
+  it('links the Terms and the Privacy Policy from the menu, and marks them active on their pages', () => {
+    pathname = '/terms';
+    render(<NavHeader />);
+    expect(screen.getByTestId('nav-terms')).toHaveAttribute('href', '/terms');
+    expect(screen.getByTestId('nav-privacy')).toHaveAttribute('href', '/privacy');
+    expect(screen.getByTestId('nav-terms')).toHaveClass('active');
+    expect(screen.getByTestId('nav-privacy')).not.toHaveClass('active');
+  });
+
   it('draws the header eclipse everywhere but the landing page', () => {
     const { rerender } = render(<NavHeader />);
     expect(screen.getByTestId('eclipse-backdrop')).toBeInTheDocument();

@@ -18,6 +18,10 @@ const NAV_LINKS: Array<{ href: string; label: string; testId: string }> = [
   { href: '/points', label: 'Points', testId: 'points' },
   { href: '/docs', label: 'Docs', testId: 'docs' },
   { href: '/faucet', label: 'Faucet', testId: 'faucet' },
+  // In the menu, not only the landing footer: the Terms are what a connecting wallet is
+  // asked to agree to, so they have to be one click away from any page.
+  { href: '/terms', label: 'Terms', testId: 'terms' },
+  { href: '/privacy', label: 'Privacy', testId: 'privacy' },
 ];
 
 /** Shared header across every page: the eclipse wordmark, nav, and the live chain/health
