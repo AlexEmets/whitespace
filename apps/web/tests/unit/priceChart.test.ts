@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_VISIBLE_CANDLES,
+  HISTORY_PAGE_CANDLES,
+  MAX_VISIBLE_CANDLES,
   MIN_VISIBLE_CANDLES,
+  OVERSCROLL_KEEP,
+  RIGHT_MARGIN_CANDLES,
   clampView,
+  countAppendedOnRight,
+  defaultView,
+  freshRange,
+  labelClearOfChips,
+  maxVisible,
+  panPriceDomain,
+  priceAxisZoomFactor,
+  scalePriceDomain,
+  timeAxisZoomFactor,
+  wantsOlderCandles,
   domainWithMark,
   formatAxisTime,
   isDefaultView,
@@ -66,9 +81,17 @@ describe('clampView', () => {
     });
   });
 
-  it('clamps the pan offset so the window cannot leave the series', () => {
-    expect(clampView({ visible: 20, endOffset: 999 }, 100).endOffset).toBe(80);
-    expect(clampView({ visible: 20, endOffset: -50 }, 100).endOffset).toBe(0);
+  /** As on TradingView: the series can be dragged past either end into empty space, but
+   * never off the plot — OVERSCROLL_KEEP candles stay in view. It used to stop at the
+   * ends, and with the window opening on the whole series that meant no drag at all. */
+  it('lets the window run past either end until OVERSCROLL_KEEP candles are left', () => {
+    expect(clampView({ visible: 20, endOffset: 999 }, 100).endOffset).toBe(100 - OVERSCROLL_KEEP);
+    expect(clampView({ visible: 20, endOffset: -50 }, 100).endOffset).toBe(-(20 - OVERSCROLL_KEEP));
+  });
+
+  it('caps the window at MAX_VISIBLE_CANDLES however much history is loaded', () => {
+    expect(maxVisible(5000)).toBe(MAX_VISIBLE_CANDLES);
+    expect(clampView({ visible: 9999, endOffset: 0 }, 5000).visible).toBe(MAX_VISIBLE_CANDLES);
   });
 
   it('rounds fractional drag offsets to whole candles', () => {
@@ -102,10 +125,17 @@ describe('zoomView', () => {
     expect(zoomView({ visible: 100, endOffset: 0 }, 400, 1 / 1.15, 1).endOffset).toBe(0);
   });
 
-  it('cannot be zoomed out past the whole series', () => {
+  it('cannot be zoomed out past the whole series, and then shows all of it', () => {
     let v = { visible: 100, endOffset: 0 };
     for (let i = 0; i < 50; i += 1) v = zoomView(v, 300, 1.15, 0.5);
     expect(v).toEqual({ visible: 300, endOffset: 0 });
+  });
+
+  it('zooming out from a window dragged into empty space still ends on the whole series', () => {
+    let v = { visible: 40, endOffset: -30 };
+    for (let i = 0; i < 50; i += 1) v = zoomView(v, 120, 1.15, 0.9);
+    expect(v.visible).toBe(120);
+    expect(v.endOffset).toBe(0);
   });
 
   it('cannot be zoomed in past the minimum', () => {
@@ -132,12 +162,12 @@ describe('panView', () => {
     expect(panView(back, 400, -30).endOffset).toBe(0);
   });
 
-  it('stops at the oldest candle', () => {
-    expect(panView({ visible: 50, endOffset: 0 }, 400, 10_000).endOffset).toBe(350);
+  it('runs past the oldest candle, stopping with OVERSCROLL_KEEP of them still in view', () => {
+    expect(panView({ visible: 50, endOffset: 0 }, 400, 10_000).endOffset).toBe(400 - OVERSCROLL_KEEP);
   });
 
-  it('stops at the newest candle', () => {
-    expect(panView({ visible: 50, endOffset: 10 }, 400, -10_000).endOffset).toBe(0);
+  it('runs past the newest candle into empty space, stopping the same way', () => {
+    expect(panView({ visible: 50, endOffset: 10 }, 400, -10_000).endOffset).toBe(-(50 - OVERSCROLL_KEEP));
   });
 
   it('keeps the window width while panning', () => {
@@ -145,18 +175,109 @@ describe('panView', () => {
   });
 });
 
-describe('isDefaultView', () => {
-  it('is true only for the whole series pinned to the live edge', () => {
-    expect(isDefaultView({ visible: 400, endOffset: 0 }, 400)).toBe(true);
-    expect(isDefaultView({ visible: 100, endOffset: 0 }, 400)).toBe(false); // zoomed
-    expect(isDefaultView({ visible: 350, endOffset: 5 }, 400)).toBe(false); // panned
+describe('defaultView', () => {
+  /** A chart opened on the whole loaded history had nowhere to be dragged. */
+  it('opens on the latest stretch with a little room right of the live bar', () => {
+    expect(defaultView(1000)).toEqual({ visible: DEFAULT_VISIBLE_CANDLES, endOffset: -RIGHT_MARGIN_CANDLES });
   });
 
-  it('normalises away an offset that cannot exist, so reset does not stay enabled forever', () => {
-    // Showing all 400 bars leaves nothing to pan into, so endOffset 5 is not a state the
-    // chart can be in — clampView collapses it and the affordance correctly reads "at
-    // default" rather than offering a reset that would change nothing.
-    expect(isDefaultView({ visible: 400, endOffset: 5 }, 400)).toBe(true);
+  it('leaves older history to the left of the window to drag back into', () => {
+    const v = defaultView(1000);
+    const firstSlot = 1000 - v.visible - v.endOffset;
+    expect(firstSlot).toBeGreaterThan(0);
+  });
+
+  it('keeps the normal bar width for a short series', () => {
+    expect(defaultView(7).visible).toBe(MIN_VISIBLE_CANDLES);
+  });
+
+  it('is empty for an empty series', () => {
+    expect(defaultView(0)).toEqual({ visible: 0, endOffset: 0 });
+  });
+});
+
+describe('isDefaultView', () => {
+  it('is true only where the chart opened', () => {
+    expect(isDefaultView(defaultView(400), 400)).toBe(true);
+    expect(isDefaultView({ visible: 60, endOffset: -RIGHT_MARGIN_CANDLES }, 400)).toBe(false); // zoomed
+    expect(isDefaultView({ visible: DEFAULT_VISIBLE_CANDLES, endOffset: 40 }, 400)).toBe(false); // panned
+  });
+
+  it('normalises a window wider than a short series, so reset does not stay enabled forever', () => {
+    expect(isDefaultView({ visible: 999, endOffset: -RIGHT_MARGIN_CANDLES }, 10)).toBe(true);
+  });
+});
+
+describe('history paging', () => {
+  it('opens on one page of the interval, up to now', () => {
+    expect(freshRange(3600, 1_000_000_000)).toEqual({ from: 1_000_000_000 - 3600 * HISTORY_PAGE_CANDLES, to: 1_000_000_000 });
+  });
+
+  it('wants the page before once the window is within a window of the oldest bar', () => {
+    expect(wantsOlderCandles(defaultView(1000), 1000)).toBe(false);
+    expect(wantsOlderCandles({ visible: 100, endOffset: 790 }, 1000)).toBe(false); // first slot 110
+    expect(wantsOlderCandles({ visible: 100, endOffset: 820 }, 1000)).toBe(true);
+    expect(wantsOlderCandles({ visible: 100, endOffset: 995 }, 1000)).toBe(true);
+  });
+
+  it('wants nothing from an empty series', () => {
+    expect(wantsOlderCandles({ visible: 0, endOffset: 0 }, 0)).toBe(false);
+  });
+});
+
+describe('countAppendedOnRight', () => {
+  const series = (ts: number[]) => ts.map((t) => ({ t }));
+
+  it('counts live buckets added after the newest one', () => {
+    expect(countAppendedOnRight(300, series([100, 200, 300, 400, 500]))).toBe(2);
+  });
+
+  /** The bug it exists for: a page of history grows the series on the LEFT, and treating
+   * that as new bars would yank a scrolled-back window by a whole page. */
+  it('counts nothing for a page of older history', () => {
+    expect(countAppendedOnRight(300, series([-200, -100, 0, 100, 200, 300]))).toBe(0);
+  });
+
+  it('counts nothing when the live bucket is only updated in place, or there was no series', () => {
+    expect(countAppendedOnRight(300, series([100, 200, 300]))).toBe(0);
+    expect(countAppendedOnRight(null, series([100, 200]))).toBe(0);
+  });
+});
+
+describe('price scale by hand', () => {
+  const d = { min: usd(100n), max: usd(200n) };
+
+  it('stretches and squeezes about the centre', () => {
+    expect(scalePriceDomain(d, 2)).toEqual({ min: usd(50n), max: usd(250n) });
+    expect(scalePriceDomain(d, 0.5)).toEqual({ min: usd(125n), max: usd(175n) });
+  });
+
+  it('never squeezes to nothing, and never below a price of zero', () => {
+    const tiny = scalePriceDomain(d, 1e-12);
+    expect(tiny.max).toBeGreaterThan(tiny.min);
+    expect(scalePriceDomain({ min: 1n, max: usd(1n) }, 50).min).toBeGreaterThanOrEqual(1n);
+  });
+
+  it('pans with the pointer: dragging down by half the plot shows prices half a range higher', () => {
+    expect(panPriceDomain(d, 200, 400)).toEqual({ min: usd(150n), max: usd(250n) });
+    expect(panPriceDomain(d, -200, 400)).toEqual({ min: usd(50n), max: usd(150n) });
+  });
+
+  it('cannot be panned below a price of zero', () => {
+    const p = panPriceDomain(d, -10_000, 400);
+    expect(p.min).toBe(1n);
+    expect(p.max - p.min).toBe(d.max - d.min);
+  });
+
+  it('drags like TradingView: down on the price axis widens the range, up narrows it, and back undoes it', () => {
+    expect(priceAxisZoomFactor(50)).toBeGreaterThan(1);
+    expect(priceAxisZoomFactor(-50)).toBeLessThan(1);
+    expect(priceAxisZoomFactor(50) * priceAxisZoomFactor(-50)).toBeCloseTo(1, 10);
+  });
+
+  it('zooms time in when the time axis is dragged right, out when dragged left', () => {
+    expect(timeAxisZoomFactor(40)).toBeLessThan(1);
+    expect(timeAxisZoomFactor(-40)).toBeGreaterThan(1);
   });
 });
 
@@ -388,5 +509,18 @@ describe('applyWheelZoom', () => {
   it('does not bank zoom-out past the whole series', () => {
     const everything = { visible: TOTAL, endOffset: 0 };
     expect(applyWheelZoom(everything, TOTAL, 1.01, 1).pending).toBe(1);
+  });
+});
+
+describe('labelClearOfChips', () => {
+  /** "83,404.34" used to print straight over the "83,400.00" level beneath it. */
+  it('hides an axis label that a price chip sits on', () => {
+    expect(labelClearOfChips(100, [104])).toBe(false);
+    expect(labelClearOfChips(100, [null, 95])).toBe(false);
+  });
+
+  it('keeps labels a chip height or more away, and all of them with no chip', () => {
+    expect(labelClearOfChips(100, [114])).toBe(true);
+    expect(labelClearOfChips(100, [null, null])).toBe(true);
   });
 });

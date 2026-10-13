@@ -19,13 +19,10 @@
 
 .svg {
   display: block;
-  touch-action: none; /* the pointer handlers own horizontal drag; let them have it */
-  cursor: crosshair;
+  touch-action: none; /* the pointer handlers own every drag on the chart; let them have it */
   user-select: none;
-}
-
-.svg:active {
-  cursor: grabbing;
+  /* The cursor is set inline by the component, per region: a crosshair over the plot, a
+     grab while dragging it, ns-resize over the price axis, ew-resize over the time axis. */
 }
 
 /*

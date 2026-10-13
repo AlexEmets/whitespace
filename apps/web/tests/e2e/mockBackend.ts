@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { asciiToBytes32Hex } from '@whitespace/shared/markets';
+import { INTERVAL_SECONDS } from '@whitespace/shared/candles';
 import { SCALE, toDecimalString } from '@whitespace/shared/decimal';
 import { MOCK_PAIR_INDEX, type MockLimitOrder, type MockOrder, type MockPosition, type TestState } from './testState';
 
@@ -66,6 +67,25 @@ function emptyPoints(address: string) {
 }
 
 /**
+ * A deterministic wavy series over the requested range, the way services/api answers a
+ * ranged /candles request: buckets of the interval from `start` on, the most recent 5000.
+ * Prices sway ±1,000 around `base` so the axis has a real range to fit.
+ */
+function historySeries(start: number, params: URLSearchParams, base = 65_000) {
+  const step = INTERVAL_SECONDS[(params.get('interval') ?? '1m') as keyof typeof INTERVAL_SECONDS] ?? 60;
+  const to = Number(params.get('to') ?? Math.floor(Date.now() / 1000));
+  const from = Math.max(start, Number(params.get('from') ?? start));
+  const first = Math.ceil(from / step) * step;
+  const out = [];
+  for (let t = first; t <= to; t += step) {
+    const mid = base + Math.round(1000 * Math.sin(t / (step * 40)));
+    const usd = (n: number) => fmtPrice((BigInt(n) * 10n ** 18n).toString());
+    out.push({ t, o: usd(mid - 20), h: usd(mid + 60), l: usd(mid - 60), c: usd(mid + 20), v: fmtCollateral('1000000000') });
+  }
+  return out.slice(-5000);
+}
+
+/**
  * Registers page.route handlers standing in for services/api (D3's REST surface) against
  * the shared TestState. This is the "read via API" half of the architecture — the mock
  * chain (mockChain.ts) is the "write via wallet-signed tx" half. Every monetary field is
@@ -88,6 +108,10 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
 
     if (path === `/markets/${MOCK_PAIR_INDEX}`) {
       return route.fulfill({ json: MOCK_MARKET });
+    }
+
+    if (path === `/markets/${MOCK_PAIR_INDEX}/candles` && state.chartHistory) {
+      return route.fulfill({ json: historySeries(state.chartHistory.start, url.searchParams, state.chartHistory.base) });
     }
 
     if (path === `/markets/${MOCK_PAIR_INDEX}/candles`) {

@@ -77,6 +77,13 @@ export class TestState {
   /** The trader's native WBT (gas), raw wei. Funded by default, so the first-connect setup
    * dialog (GetStarted) stays out of every spec that is not about it. */
   wbtBalance = 1_000_000_000_000_000_000n; // 1 WBT
+  /**
+   * When set, GET /candles serves a real series for the requested interval and range,
+   * from `start` (unix seconds) on, capped at the API's 5000 most recent — so the chart can
+   * page back through history. Unset, it serves the five flat hourly bars every other spec
+   * was written against.
+   */
+  chartHistory?: { start: number; /** whole dollars the series sways around; 65,000 if unset */ base?: number };
   /** Addresses POST /faucet/wbt has paid, in order. */
   wbtFaucetClaims: string[] = [];
   /** spender (lowercased address) -> approved amount */

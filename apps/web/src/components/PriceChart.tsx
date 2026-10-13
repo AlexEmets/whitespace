@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { INTERVAL_SECONDS } from '@whitespace/shared/candles';
 import { useCandles } from '@/hooks/useCandles';
 import { usePrice } from '@/hooks/usePrice';
@@ -22,12 +22,33 @@ const CHART_HEIGHT = 340;
 const MIN_MEASURED_HEIGHT = 160;
 /** Right gutter holds the price axis, bottom gutter the time axis. The plot is what is
  * left; everything below is expressed against it so a resize moves one number. */
-const PAD = { top: 10, right: 66, bottom: 24, left: 8 } as const;
+// 74 on the right fits a ten-character BTC price ("100,000.00") in its chip at the axis font;
+// at 66 the last digit of "83,395.28" ran off the edge.
+const PAD = { top: 10, right: 74, bottom: 24, left: 8 } as const;
 const PRICE_TICK_TARGET = 5;
 const TIME_TICK_TARGET = 6;
 /** Below this the bars are too thin to read as candles; above `total` there is nothing
  * left to show. Both ends are clamps, not scroll limits — see `clampView`. */
 export const MIN_VISIBLE_CANDLES = 20;
+/** The widest the window gets, however much history is loaded: past this a bar is a
+ * fraction of a pixel and the SVG is thousands of nodes for no readable gain. */
+export const MAX_VISIBLE_CANDLES = 1500;
+/** What a chart opens on: the latest stretch, as a trading terminal opens — not the whole
+ * loaded history squeezed into the plot, which left nothing to drag back into. */
+export const DEFAULT_VISIBLE_CANDLES = 120;
+/** Empty slots kept right of the newest bar on open, so the live candle is not jammed
+ * against the price axis. */
+export const RIGHT_MARGIN_CANDLES = 3;
+/** Dragging may carry the series past either end into empty space — as a trading chart
+ * does — until this many candles are left in view. */
+export const OVERSCROLL_KEEP = 5;
+/** History is fetched in pages of this many candles of the current interval: one on open,
+ * another each time the view nears the oldest loaded bar. */
+export const HISTORY_PAGE_CANDLES = 1000;
+/** Vertical drag on the price axis: zoom per pixel, as the exponent of the factor. */
+const PRICE_AXIS_ZOOM_PER_PX = 0.004;
+/** Horizontal drag on the time axis: zoom per pixel, as the exponent of the factor. */
+const TIME_AXIS_ZOOM_PER_PX = 0.004;
 /** Zoom per pixel of wheel travel, as the exponent of the factor: a 100 px mouse notch
  * zooms ~7%. A trackpad pinch (wheel events with ctrlKey) sends deltas of a few units
  * where a scroll sends tens, so it gets its own, larger rate. */
@@ -52,6 +73,14 @@ export interface ChartView {
   endOffset: number;
 }
 
+/** The three parts of the chart that a pointer can grab, each dragging differently. */
+type Region = 'plot' | 'price' | 'time';
+
+/** The first page of history for an interval: `HISTORY_PAGE_CANDLES` of it, up to now. */
+export function freshRange(intervalSeconds: number, nowSeconds = Math.floor(Date.now() / 1000)): { from: number; to: number } {
+  return { from: nowSeconds - intervalSeconds * HISTORY_PAGE_CANDLES, to: nowSeconds };
+}
+
 /**
  * The widest the window may get: the whole series, or `MIN_VISIBLE_CANDLES` slots when the
  * series is shorter than that.
@@ -65,16 +94,33 @@ export interface ChartView {
  * `fitContent()` — fit-to-data, exactly what this used to be — silently overrides it).
  */
 export function maxVisible(total: number): number {
-  return Math.max(total, MIN_VISIBLE_CANDLES);
+  return Math.min(MAX_VISIBLE_CANDLES, Math.max(total, MIN_VISIBLE_CANDLES));
 }
 
+/**
+ * The window, made valid. Its width is held between the zoom limits; its position may run
+ * past either end of the series into empty slots — a negative `endOffset` is empty space
+ * right of the newest bar, an offset beyond `total - visible` empty space left of the
+ * oldest — but only until `OVERSCROLL_KEEP` candles are left in view, so the series can
+ * never be dragged off the plot altogether.
+ *
+ * It used to clamp the position to [0, total − visible], and the chart opened on the
+ * whole series: the window was the series, so there was nowhere to drag it.
+ */
 export function clampView(view: ChartView, total: number): ChartView {
   if (total <= 0) return { visible: 0, endOffset: 0 };
   const visible = Math.min(maxVisible(total), Math.max(MIN_VISIBLE_CANDLES, Math.round(view.visible)));
-  // `total - visible` goes negative once the window is wider than the series; a window
-  // that already shows everything has nowhere to scroll, so the range collapses to [0, 0].
-  const endOffset = Math.min(Math.max(0, total - visible), Math.max(0, Math.round(view.endOffset)));
+  const keep = Math.min(total, OVERSCROLL_KEEP);
+  const minEnd = -(visible - keep);
+  const maxEnd = total - keep;
+  const endOffset = Math.min(maxEnd, Math.max(minEnd, Math.round(view.endOffset)));
   return { visible, endOffset };
+}
+
+/** Where a chart opens, and where resetting the time scale returns it: the latest
+ * `DEFAULT_VISIBLE_CANDLES` with a little room right of the live bar. */
+export function defaultView(total: number): ChartView {
+  return clampView({ visible: DEFAULT_VISIBLE_CANDLES, endOffset: -RIGHT_MARGIN_CANDLES }, total);
 }
 
 /** Zoom about the cursor: the bar under the pointer stays under the pointer. `factor > 1`
@@ -87,7 +133,13 @@ export function zoomView(view: ChartView, total: number, factor: number, cursorR
   const anchor = total - current.visible - current.endOffset + ratio * current.visible;
   const zoomed = clampView({ visible: current.visible * factor, endOffset: current.endOffset }, total);
   const nextFirst = anchor - ratio * zoomed.visible;
-  return clampView({ visible: zoomed.visible, endOffset: total - zoomed.visible - nextFirst }, total);
+  const next = clampView({ visible: zoomed.visible, endOffset: total - zoomed.visible - nextFirst }, total);
+  // Once the window can hold the whole series, zooming out shows all of it rather than
+  // sliding part of it off one edge into empty slots on the other.
+  if (next.visible >= total) {
+    return { visible: next.visible, endOffset: Math.min(0, Math.max(-(next.visible - total), next.endOffset)) };
+  }
+  return next;
 }
 
 /**
@@ -135,10 +187,89 @@ export function panView(view: ChartView, total: number, deltaCandles: number): C
   return clampView({ visible: current.visible, endOffset: current.endOffset + deltaCandles }, total);
 }
 
-/** "Everything, pinned to the live edge" — the state the reset affordance returns to. */
+/** Whether the window is where the chart opened — the state the time-axis reset returns to. */
 export function isDefaultView(view: ChartView, total: number): boolean {
   const v = clampView(view, total);
-  return v.visible === maxVisible(total) && v.endOffset === 0;
+  const d = defaultView(total);
+  return v.visible === d.visible && v.endOffset === d.endOffset;
+}
+
+/**
+ * Whether the window has come within one window's width of the oldest loaded bar — time
+ * to fetch the page before it, so a trader dragging back through history meets more
+ * candles instead of a wall.
+ */
+export function wantsOlderCandles(view: ChartView, total: number): boolean {
+  if (total <= 0) return false;
+  const v = clampView(view, total);
+  const firstSlot = total - v.visible - v.endOffset;
+  return firstSlot < v.visible;
+}
+
+/**
+ * How many bars arrived on the RIGHT of the series — newer than the newest one before.
+ * A history page grows the series on the left and must not move a window anchored to the
+ * right; a live bucket grows it on the right and must, for a trader scrolled back.
+ */
+export function countAppendedOnRight(prevNewest: number | null, candles: ReadonlyArray<{ t: number }>): number {
+  if (prevNewest === null) return 0;
+  let n = 0;
+  for (let i = candles.length - 1; i >= 0 && candles[i]!.t > prevNewest; i -= 1) n += 1;
+  return n;
+}
+
+/** A manually set price range, in raw 18-decimal prices. `null` in state means auto. */
+export interface PriceDomain {
+  min: bigint;
+  max: bigint;
+}
+
+const FACTOR_SCALE = 1_000_000;
+
+/**
+ * The price range zoomed about its centre: `factor > 1` widens it (the candles shrink),
+ * `< 1` narrows it (they stretch). In bigint, like every price here; the factor is a
+ * float only as a ratio, applied as an integer fraction. Never narrower than a millionth
+ * of the price, never below 1 wei of price (a log axis needs a positive floor).
+ */
+export function scalePriceDomain(domain: PriceDomain, factor: number): PriceDomain {
+  const centre = (domain.min + domain.max) / 2n;
+  const half = (domain.max - domain.min) / 2n;
+  const ratio = BigInt(Math.max(1, Math.round(factor * FACTOR_SCALE)));
+  const floor = centre > 0n ? centre / 2_000_000n : 1n;
+  let nextHalf = (half * ratio) / BigInt(FACTOR_SCALE);
+  if (nextHalf < floor) nextHalf = floor > 0n ? floor : 1n;
+  let min = centre - nextHalf;
+  const max = centre + nextHalf;
+  if (min < 1n) min = 1n;
+  return { min, max: max > min ? max : min + 1n };
+}
+
+/** The price range moved by a drag of `deltaPx` (down positive) over a plot `plotH` tall:
+ * dragging down shows higher prices, as the content follows the pointer. */
+export function panPriceDomain(domain: PriceDomain, deltaPx: number, plotH: number): PriceDomain {
+  if (plotH <= 0) return domain;
+  const span = domain.max - domain.min;
+  const shift = (span * BigInt(Math.round(deltaPx * 1000))) / BigInt(Math.round(plotH * 1000));
+  let min = domain.min + shift;
+  let max = domain.max + shift;
+  if (min < 1n) {
+    max += 1n - min;
+    min = 1n;
+  }
+  return { min, max };
+}
+
+/** Zoom factor for a vertical drag on the price axis: down widens the range, up narrows
+ * it, as on TradingView. Exponential, so dragging back returns exactly. */
+export function priceAxisZoomFactor(deltaPx: number): number {
+  return Math.exp(deltaPx * PRICE_AXIS_ZOOM_PER_PX);
+}
+
+/** Zoom factor for a horizontal drag on the time axis: right widens the bars (zooms in),
+ * left squeezes them. */
+export function timeAxisZoomFactor(deltaPx: number): number {
+  return Math.exp(-deltaPx * TIME_AXIS_ZOOM_PER_PX);
 }
 
 function ceilDiv(a: bigint, b: bigint): bigint {
@@ -182,6 +313,18 @@ export function niceStep(range: bigint, targetTicks: number): bigint {
     }
   }
   return best;
+}
+
+/** Height of the price chips on the axis (the live mark, the crosshair's close). */
+const CHIP_H = 14;
+
+/**
+ * Whether an axis label at `y` is clear of every chip at `chipYs` — a label under a chip
+ * is hidden, as TradingView does, rather than printed through it ("83,404.34" over
+ * "83,400.00").
+ */
+export function labelClearOfChips(y: number, chipYs: ReadonlyArray<number | null>): boolean {
+  return chipYs.every((c) => c === null || Math.abs(y - c) >= CHIP_H);
 }
 
 /** Labelled price levels inside [min, max], on round multiples of a nice step. */
@@ -280,8 +423,12 @@ interface Layout {
  * Candlestick chart over `/candles`, plus the live mark/index price from the
  * `price:<pairIndex>` WS channel (REST-polled fallback).
  *
- * Live, zoomable, pannable, with a crosshair readout. Interval selection and the log
- * scale toggle are both genuine, wired features. There is no depth view (a vault has no
+ * Live, zoomable, pannable, with a crosshair readout, handled the way TradingView is: drag
+ * the plot through time (and through price, once the price scale is set by hand), drag the
+ * price axis up or down to stretch or squeeze the candles, drag the time axis to zoom, the
+ * wheel zooms time over the plot and price over the price axis, and a double-click on an
+ * axis puts it back. History loads a page at a time as the view nears the oldest bar.
+ * Interval selection and the log scale toggle are both genuine, wired features. There is no depth view (a vault has no
  * book) and no indicator library, so neither is offered as a disabled button.
  *
  * WHAT THE MOCKUP HAS THAT THIS DOES NOT. terminal_design.pdf draws a dashed horizontal
@@ -324,10 +471,16 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       // Not remembered across visits; the switch itself still works.
     }
   }, []);
-  const now = useMemo(() => Math.floor(Date.now() / 1000), []);
-  const from = now - 60 * 60 * 24 * 2; // 2 days back
-  const { candles, loading, error } = useCandles(pairIndex, interval, from, now);
+  const intervalSeconds = INTERVAL_SECONDS[interval] ?? 60;
+  // History a page at a time: one page of the current interval on open, the page before it
+  // whenever the view nears the oldest loaded bar (see wantsOlderCandles). It used to be a
+  // fixed two days — 48 bars at 1h, 2 at 1d — and nothing more could ever be reached.
+  const [range, setRange] = useState(() => freshRange(intervalSeconds));
+  const [historyExhausted, setHistoryExhausted] = useState(false);
+  const { candles, loading, error } = useCandles(pairIndex, interval, range.from, range.to);
   const { data: price } = usePrice(pairIndex);
+  /** Set by hand from the price axis; null is auto — fitted to the visible candles. */
+  const [priceDomain, setPriceDomain] = useState<PriceDomain | null>(null);
 
   const total = candles.length;
   const [rawView, setRawView] = useState<ChartView>({ visible: 0, endOffset: 0 });
@@ -339,7 +492,17 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   const [hover, setHover] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const drag = useRef<{ pointerId: number; startX: number; startEndOffset: number; moved: boolean } | null>(null);
+  const drag = useRef<{
+    pointerId: number;
+    region: Region;
+    startX: number;
+    startY: number;
+    startView: ChartView;
+    startDomain: PriceDomain | null;
+  } | null>(null);
+  const [cursorRegion, setCursorRegion] = useState<Region>('plot');
+  const [dragging, setDragging] = useState(false);
+  const clipId = `plot-clip-${useId().replace(/:/g, '')}`;
 
   /* ---- measure ---------------------------------------------------------- */
   // Real pixels, not a scaled viewBox: axis labels have to stay legible at whatever width
@@ -392,12 +555,12 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   const first = total - view.visible - view.endOffset;
   const leadingSlots = Math.max(0, -first);
   const sliceStart = Math.max(0, first);
-  const visibleCandles = useMemo(
-    () => candles.slice(sliceStart, sliceStart + view.visible - leadingSlots),
-    [candles, sliceStart, view.visible, leadingSlots],
-  );
+  // Past the newest bar the window holds empty slots on the right; the slice stops at the
+  // series' end and those slots are simply left blank.
+  const sliceEnd = Math.max(sliceStart, Math.min(total, first + view.visible));
+  const visibleCandles = useMemo(() => candles.slice(sliceStart, sliceEnd), [candles, sliceStart, sliceEnd]);
 
-  // Show the whole series the first time one arrives, and again whenever the series is
+  // Open on the latest stretch the first time a series arrives, and again whenever it is
   // swapped wholesale (interval change empties it). After that the user owns the window.
   const seeded = useRef(false);
   useEffect(() => {
@@ -407,21 +570,54 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     }
     if (!seeded.current) {
       seeded.current = true;
-      setRawView({ visible: maxVisible(total), endOffset: 0 });
+      setRawView(defaultView(total));
     }
   }, [total]);
 
   // A new bucket appearing must not slide the window out from under someone who has
   // panned back to look at something. `endOffset` counts from the right, so holding the
-  // view still means growing it by exactly the number of bars that were appended.
-  const prevTotal = useRef(total);
+  // view still means growing it by exactly the number of bars appended ON THE RIGHT — a
+  // page of history lands on the left and must not move it at all.
+  const prevNewest = useRef<number | null>(null);
   useEffect(() => {
-    const appended = total - prevTotal.current;
-    prevTotal.current = total;
+    const appended = countAppendedOnRight(prevNewest.current, candles);
+    prevNewest.current = candles.length > 0 ? candles[candles.length - 1]!.t : null;
     if (appended > 0) {
       setRawView((v) => (v.endOffset > 0 ? { ...v, endOffset: v.endOffset + appended } : v));
     }
-  }, [total]);
+  }, [candles]);
+
+  // A different market is a different series: its history, its price scale.
+  const prevPair = useRef(pairIndex);
+  useEffect(() => {
+    if (prevPair.current === pairIndex) return;
+    prevPair.current = pairIndex;
+    setRange(freshRange(intervalSeconds));
+    setHistoryExhausted(false);
+    setPriceDomain(null);
+  }, [pairIndex, intervalSeconds]);
+
+  // Fetch the page before the oldest loaded bar once the view comes near it. A fetch that
+  // brings nothing older (the start of the series, or the API's per-request cap) ends it.
+  const pendingPage = useRef<{ oldest: number; sawLoading: boolean } | null>(null);
+  useEffect(() => {
+    if (loading || historyExhausted || total === 0 || pendingPage.current !== null) return;
+    if (!wantsOlderCandles(view, total)) return;
+    const oldest = candles[0]!.t;
+    pendingPage.current = { oldest, sawLoading: false };
+    setRange({ from: oldest - intervalSeconds * HISTORY_PAGE_CANDLES, to: Math.floor(Date.now() / 1000) });
+  }, [loading, historyExhausted, total, view, candles, intervalSeconds]);
+  useEffect(() => {
+    const pending = pendingPage.current;
+    if (!pending) return;
+    if (loading) {
+      pending.sawLoading = true;
+      return;
+    }
+    if (!pending.sawLoading) return;
+    pendingPage.current = null;
+    if (candles.length === 0 || candles[0]!.t >= pending.oldest) setHistoryExhausted(true);
+  }, [loading, candles]);
 
   const step = view.visible > 0 ? layout.plotW / view.visible : 0;
 
@@ -436,15 +632,53 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     [layout],
   );
 
+  /** Which part of the chart a pointer is over: the plot, the price axis on the right, or
+   * the time axis along the bottom. Each one drags differently. */
+  const regionAt = useCallback(
+    (clientX: number, clientY: number): Region => {
+      const el = svgRef.current;
+      if (!el) return 'plot';
+      const rect = el.getBoundingClientRect();
+      const sx = rect.width > 0 ? layout.width / rect.width : 1;
+      const sy = rect.height > 0 ? layout.height / rect.height : 1;
+      const x = (clientX - rect.left) * sx;
+      const y = (clientY - rect.top) * sy;
+      if (x > PAD.left + layout.plotW) return 'price';
+      if (y > PAD.top + layout.plotH) return 'time';
+      return 'plot';
+    },
+    [layout],
+  );
+
   /* ---- wheel zoom ------------------------------------------------------- */
   // Native, non-passive: React routes wheel through a passive root listener, so
   // preventDefault from an onWheel prop is ignored and the page scrolls instead.
+  // The native listener reads the price scale through refs too: the domain set by hand, or
+  // the auto one it starts from.
+  const priceDomainRef = useRef(priceDomain);
+  priceDomainRef.current = priceDomain;
+  const autoDomainRef = useRef<PriceDomain | null>(null);
+  const stepRef = useRef(0);
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
-      if (event.deltaY === 0) return;
+      if (event.deltaY === 0 && event.deltaX === 0) return;
       event.preventDefault();
+      // Over the price axis the wheel stretches or squeezes the price scale.
+      if (regionAt(event.clientX, event.clientY) === 'price') {
+        const base = priceDomainRef.current ?? autoDomainRef.current;
+        if (base) setPriceDomain(scalePriceDomain(base, wheelZoomFactor(event.deltaY, event.deltaMode, event.ctrlKey)));
+        return;
+      }
+      // A sideways swipe (trackpad, shift-wheel) pans through time; the content follows it.
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) {
+        if (stepRef.current <= 0) return;
+        const next = clampView({ ...viewRef.current, endOffset: viewRef.current.endOffset - event.deltaX / stepRef.current }, total);
+        viewRef.current = next;
+        setRawView(next);
+        return;
+      }
       const pending = pendingZoom.current * wheelZoomFactor(event.deltaY, event.deltaMode, event.ctrlKey);
       const step = applyWheelZoom(viewRef.current, total, pending, ratioFromClientX(event.clientX));
       pendingZoom.current = step.pending;
@@ -455,22 +689,49 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [total, ratioFromClientX]);
+  }, [total, ratioFromClientX, regionAt]);
 
   /* ---- drag pan + crosshair --------------------------------------------- */
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
     if (total === 0) return;
-    drag.current = { pointerId: event.pointerId, startX: event.clientX, startEndOffset: view.endOffset, moved: false };
+    const region = regionAt(event.clientX, event.clientY);
+    const autoDomain = autoDomainRef.current;
+    drag.current = {
+      pointerId: event.pointerId,
+      region,
+      startX: event.clientX,
+      startY: event.clientY,
+      startView: view,
+      // The price axis always drags a domain — the one set by hand, or the auto one it
+      // takes over from. The plot moves through price only once a domain is set by hand.
+      startDomain: region === 'price' ? (priceDomain ?? autoDomain) : priceDomain,
+    };
+    setDragging(true);
+    setHover(null);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const d = drag.current;
     if (d && d.pointerId === event.pointerId) {
-      if (step <= 0) return;
-      const deltaCandles = (event.clientX - d.startX) / step;
-      if (Math.abs(event.clientX - d.startX) > 2) d.moved = true;
-      setRawView((v) => panView({ ...v, endOffset: d.startEndOffset + deltaCandles }, total, 0));
+      const dx = event.clientX - d.startX;
+      const dy = event.clientY - d.startY;
+      if (d.region === 'price') {
+        if (d.startDomain) setPriceDomain(scalePriceDomain(d.startDomain, priceAxisZoomFactor(dy)));
+        return;
+      }
+      if (d.region === 'time') {
+        setRawView(zoomView(d.startView, total, timeAxisZoomFactor(dx), 1));
+        return;
+      }
+      if (step > 0) setRawView(clampView({ ...d.startView, endOffset: d.startView.endOffset + dx / step }, total));
+      if (d.startDomain) setPriceDomain(panPriceDomain(d.startDomain, dy, layout.plotH));
+      return;
+    }
+    const region = regionAt(event.clientX, event.clientY);
+    if (region !== cursorRegion) setCursorRegion(region);
+    if (region !== 'plot') {
+      setHover(null);
       return;
     }
     if (step <= 0) return;
@@ -488,7 +749,16 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
       drag.current = null;
+      setDragging(false);
     }
+  };
+
+  /** A double-click on an axis puts that axis back: the price scale to auto, the time
+   * scale to where the chart opened. */
+  const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
+    const region = regionAt(event.clientX, event.clientY);
+    if (region === 'price') setPriceDomain(null);
+    else if (region === 'time') setRawView(defaultView(total));
   };
 
   /* ---- scale ------------------------------------------------------------ */
@@ -508,8 +778,12 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     // A flat series has no range to divide by; give it a symmetric band so the bars land
     // mid-plot instead of on the floor.
     const pad = domain.max === domain.min ? (domain.max === 0n ? 1n : domain.max / 1000n) : (domain.max - domain.min) / 24n;
-    const min = domain.min - pad;
-    const max = domain.max + pad;
+    const autoMin = domain.min - pad;
+    const autoMax = domain.max + pad;
+    // A range set by hand on the price axis wins over the fit until it is reset.
+    let min = priceDomain ? priceDomain.min : autoMin;
+    const max = priceDomain ? priceDomain.max : autoMax;
+    if (logScale && min < 1n) min = 1n;
 
     // Display-only pixel-position math: converting an exact bigint price to a JS number
     // ratio here is safe because the result never reaches a money formatter or a
@@ -522,8 +796,10 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       const ratio = hiN === loN ? 0.5 : (v - loN) / (hiN - loN);
       return PAD.top + layout.plotH - ratio * layout.plotH;
     };
-    return { min, max, toY };
-  }, [visibleCandles, logScale, layout.plotH, markRaw]);
+    return { min, max, toY, auto: { min: autoMin, max: autoMax } };
+  }, [visibleCandles, logScale, layout.plotH, markRaw, priceDomain]);
+  autoDomainRef.current = scale ? scale.auto : null;
+  stepRef.current = step;
 
   /** Centre of a slot, counted from the left edge of the plot. */
   const xOf = (slot: number) => PAD.left + (slot + 0.5) * step;
@@ -576,9 +852,16 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   const xTicks = useMemo(() => timeTickIndices(visibleCandles.length, TIME_TICK_TARGET), [visibleCandles.length]);
 
   const hovered: Candle | null = hover !== null ? (visibleCandles[hover] ?? null) : null;
+  // The close it snaps to, when that is on the plot: with a price range set by hand the
+  // hovered candle's close can sit above or below it, and its chip has nowhere to go.
+  const crosshairY = (() => {
+    if (!hovered || !scale) return null;
+    const y = scale.toY(priceToRaw(hovered.c));
+    return y >= PAD.top && y <= PAD.top + layout.plotH ? y : null;
+  })();
   const markY = scale && markRaw !== null && markRaw >= scale.min && markRaw <= scale.max ? scale.toY(markRaw) : null;
 
-  const intervalSeconds = INTERVAL_SECONDS[interval] ?? 60;
+  const now = Math.floor(Date.now() / 1000);
   const newest = candles[total - 1];
   // "Stale" = the live bucket stopped advancing. Worth saying out loud: a chart that has
   // simply stopped receiving data looks identical to a quiet market, and only one of
@@ -596,6 +879,9 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
               className={interval === i ? 'active' : ''}
               onClick={() => {
                 setInterval(i);
+                setRange(freshRange(INTERVAL_SECONDS[i] ?? 60));
+                setHistoryExhausted(false);
+                setPriceDomain(null);
                 seeded.current = false;
                 setHover(null);
               }}
@@ -637,6 +923,18 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
           <button type="button" className={logScale ? 'active' : ''} onClick={() => setLogScale((v) => !v)} data-testid="log-scale-toggle">
             Log
           </button>
+          {/* Lit while the price scale fits the candles; dark once it has been dragged by hand,
+              and pressing it fits it again — as TradingView's "auto" does. */}
+          <button
+            type="button"
+            className={priceDomain === null ? 'active' : ''}
+            aria-pressed={priceDomain === null}
+            onClick={() => setPriceDomain(null)}
+            title="Fit the price scale to the candles in view"
+            data-testid="price-auto"
+          >
+            Auto
+          </button>
         </div>
       </div>
 
@@ -648,7 +946,9 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
       ) : null}
 
       <div className="chart-area">
-        {loading ? <p>Loading candles…</p> : null}
+        {/* Only for the first load: a page of older history arriving under a chart someone is
+            dragging must not push a line of text in above it. */}
+        {loading && total === 0 ? <p>Loading candles…</p> : null}
         {error ? <p className="error-text">Failed to load candles: {error.message}</p> : null}
         {!loading && !error && total === 0 ? (
           <p className={styles.empty} data-testid="chart-empty">
@@ -670,15 +970,31 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                 data-testid="price-svg"
                 data-visible-candles={visibleCandles.length}
                 data-total-candles={total}
+                data-first-t={visibleCandles[0]?.t}
+                data-last-t={visibleCandles[visibleCandles.length - 1]?.t}
+                data-price-min={scale.min.toString()}
+                data-price-max={scale.max.toString()}
+                data-price-auto={priceDomain === null}
+                style={{
+                  cursor:
+                    cursorRegion === 'price' ? 'ns-resize' : cursorRegion === 'time' ? 'ew-resize' : dragging ? 'grabbing' : 'crosshair',
+                }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={endDrag}
                 onPointerCancel={endDrag}
+                onDoubleClick={onDoubleClick}
                 onPointerLeave={(e) => {
-                  endDrag(e);
-                  setHover(null);
+                  if (!drag.current) setHover(null);
                 }}
               >
+                <defs>
+                  {/* Candles dragged past the plot's edges, by time or by a price range set
+                      by hand, are cut at the plot rather than painted over the axes. */}
+                  <clipPath id={clipId}>
+                    <rect x={PAD.left} y={PAD.top} width={layout.plotW} height={layout.plotH} />
+                  </clipPath>
+                </defs>
                 {/* Grid first, so every stroke below paints over it. */}
                 <g className={styles.grid} data-testid="chart-grid">
                   {yTicks.map((t) => (
@@ -690,11 +1006,13 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                 </g>
 
                 <g className={styles.axis} data-testid="price-axis">
-                  {yTicks.map((t) => (
-                    <text key={`yl${t}`} x={PAD.left + layout.plotW + 6} y={scale.toY(t) + 3.5}>
-                      {formatMoney(t, PRICE_DECIMALS_NUM)}
-                    </text>
-                  ))}
+                  {yTicks
+                    .filter((t) => labelClearOfChips(scale.toY(t), [markY, crosshairY]))
+                    .map((t) => (
+                      <text key={`yl${t}`} x={PAD.left + layout.plotW + 6} y={scale.toY(t) + 3.5}>
+                        {formatMoney(t, PRICE_DECIMALS_NUM)}
+                      </text>
+                    ))}
                 </g>
 
                 <g className={`${styles.axis} ${styles.axisTime}`} data-testid="time-axis">
@@ -709,7 +1027,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                 </g>
 
                 {mode === 'candles' ? (
-                  <g data-testid="chart-candles">
+                  <g data-testid="chart-candles" clipPath={`url(#${clipId})`}>
                     {geometry.map((c) => (
                       <g key={c.key} className={c.up ? styles.up : styles.down}>
                         <line x1={c.x} x2={c.x} y1={c.wickTop} y2={c.wickBottom} />
@@ -720,7 +1038,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                 ) : null}
 
                 {mode === 'line' && linePath ? (
-                  <g data-testid="chart-line">
+                  <g data-testid="chart-line" clipPath={`url(#${clipId})`}>
                     <path className={styles.lineArea} d={linePath.area} />
                     <path className={styles.line} d={linePath.line} />
                     {lastLinePoint ? <circle className={styles.lineDot} cx={lastLinePoint.x} cy={lastLinePoint.y} r={3.5} /> : null}
@@ -729,8 +1047,8 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
 
                 {markY !== null && price ? (
                   <g data-testid="mark-price-line">
-                    <line className={styles.markLine} x1={PAD.left} x2={PAD.left + layout.plotW} y1={markY} y2={markY} />
-                    <rect className={styles.markChip} x={PAD.left + layout.plotW + 2} y={markY - 7} width={PAD.right - 6} height={14} rx={5} />
+                    <line className={styles.markLine} x1={PAD.left} x2={PAD.left + layout.plotW} y1={markY} y2={markY} clipPath={`url(#${clipId})`} />
+                    <rect className={styles.markChip} x={PAD.left + layout.plotW + 2} y={markY - CHIP_H / 2} width={PAD.right - 6} height={CHIP_H} rx={5} />
                     <text className={styles.markChipText} x={PAD.left + layout.plotW + 6} y={markY + 3.5}>
                       {formatMoney(price.mark, PRICE_DECIMALS_NUM)}
                     </text>
@@ -742,10 +1060,11 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     a pixel back into a price to label it, i.e. inventing a monetary value
                     out of a float — see src/lib/money.ts. Snapping keeps every number on
                     this chart one the API actually sent. */}
-                {hovered && hover !== null ? (
+                {hovered && hover !== null && crosshairY !== null ? (
                   <g data-testid="crosshair">
                     <line className={styles.crosshair} x1={xOfCandle(hover)} x2={xOfCandle(hover)} y1={PAD.top} y2={PAD.top + layout.plotH} />
                     <line
+                      clipPath={`url(#${clipId})`}
                       className={styles.crosshair}
                       x1={PAD.left}
                       x2={PAD.left + layout.plotW}
