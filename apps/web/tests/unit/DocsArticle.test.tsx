@@ -116,13 +116,61 @@ describe('<DocsArticle>', () => {
     expect(container.textContent ?? '').toMatch(/0\.50%/);
   });
 
-  it('describes liquidation as a value test and keeps the liquidation price unavailable', () => {
+  it('describes liquidation as a value test, with the shown price as the contract\'s snapshot', () => {
     paramsAvailable.value = true;
     const { container } = render(<DocsArticle />);
     const text = container.textContent ?? '';
     expect(text).toMatch(/tradeValue\s*<\s*liqMarginValue/);
     expect(text).toMatch(/isolated/i);
+    expect(text).toMatch(/The terminal shows a liquidation price/);
     expect(text).toMatch(/getTradeLiquidationPrice/);
+    expect(text).toMatch(/Treat the liquidation price as a snapshot/i);
+    // The liquidation upkeep is deployed and run by two bots; the page must not say otherwise.
+    expect(text).toMatch(/Two independent automation bots/);
+    expect(text).not.toMatch(/not deployed on this chain/i);
+  });
+
+  it('documents limit and stop orders, TP and SL, and how each one fills', () => {
+    paramsAvailable.value = true;
+    render(<DocsArticle />);
+    const lifecycle = screen.getByTestId('docs-section-lifecycle');
+    expect(lifecycle).toHaveTextContent(/A limit order fills at your price or better/);
+    expect(lifecycle).toHaveTextContent(/A stop order fills at the market once triggered/);
+    expect(lifecycle).toHaveTextContent(/re-price or cancel them/);
+    expect(lifecycle).toHaveTextContent(/Reclaim collateral/);
+  });
+
+  it('says fees come out of the margin, so the position opens smaller than typed', () => {
+    paramsAvailable.value = true;
+    render(<DocsArticle />);
+    const fees = screen.getByTestId('docs-section-fees');
+    expect(fees).toHaveTextContent(/Fees come out of your margin/);
+    expect(fees).toHaveTextContent(/\(collateral − fees\) × leverage/);
+    expect(fees).toHaveTextContent(/narrows the gap between long and short open interest/);
+    expect(fees).toHaveTextContent(/Per market, live/);
+    expect(fees).not.toHaveTextContent(/FUNDING readout is a dash/);
+  });
+
+  /** The page once still listed limit orders, the liquidation price, funding, partial closes
+   * and points as missing, weeks after each had shipped. */
+  it('lists only what is really missing', () => {
+    paramsAvailable.value = true;
+    render(<DocsArticle />);
+    const limits = screen.getByTestId('docs-section-limits');
+    for (const stale of [
+      /Market orders only/i,
+      /No liquidation price is shown/i,
+      /No funding rate is published/i,
+      /Partial closes are missing/i,
+      /no points programme/i,
+    ]) {
+      expect(limits).not.toHaveTextContent(stale);
+    }
+    expect(limits).toHaveTextContent(/TWAP/);
+    expect(limits).toHaveTextContent(/no cross margin/);
+    expect(limits).toHaveTextContent(/plain admin keys/);
+    expect(limits).toHaveTextContent(/polled, not pushed/);
+    expect(limits).toHaveTextContent(/points have no value and promise no token or airdrop/);
   });
 
   it('repeats none of the mockups\' marketing figures', () => {

@@ -59,11 +59,16 @@ test('declining the Terms disconnects the wallet', async ({ page, baseURL }) => 
   await expect(page.getByTestId('wallet-connected')).toHaveCount(0);
 });
 
-test('the landing page links the Terms and the Privacy Policy', async ({ page, baseURL }) => {
+test('the landing page states points honestly and links the Terms and the Privacy Policy', async ({ page, baseURL }) => {
   const state = new TestState();
   await installMockBackend(page, state, `${baseURL}/__api`);
 
   await page.goto('/');
+  // Season One is live: the landing page used to call points "not live yet".
+  await expect(page.getByTestId('landing-points-title')).toHaveText('Live, and worth nothing.');
+  await expect(page.getByText('Not live yet.')).toHaveCount(0);
+  await expect(page.getByTestId('landing-points-body').locator('a[href="/terms"]')).toBeVisible();
+
   await page.getByTestId('footer-terms').click();
   await page.waitForURL('**/terms', { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Terms of Use');
