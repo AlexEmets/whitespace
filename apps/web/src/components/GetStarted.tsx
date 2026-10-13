@@ -6,6 +6,7 @@ import type { Address } from 'viem';
 import { useAccount } from 'wagmi';
 import { type Erc20Handle, useErc20 } from '@/hooks/useErc20';
 import { FAUCET_MINT_USDW, useFaucet } from '@/hooks/useFaucet';
+import { useTermsAccepted } from '@/hooks/useTermsAccepted';
 import { useWbtBalance } from '@/hooks/useWbtBalance';
 import { FAUCET_WBT_AMOUNT, formatRetryAfter, useWbtFaucet } from '@/hooks/useWbtFaucet';
 import { COLLATERAL_DECIMALS } from '@/lib/config';
@@ -43,7 +44,10 @@ export function GetStarted() {
   const erc20 = useErc20(TRADING_STORAGE_ADDRESS);
   const wbt = useWbtBalance(address);
   const needs = fundingNeeds(wbt.wei, erc20.balanceLoaded ? erc20.balance : null);
-  const wantsSetup = needsFunding(needs);
+  // After the Terms (TermsGate): two dialogs stacked on one connect would be one too many,
+  // and nobody should be walked into claiming before they have agreed to anything.
+  const termsAccepted = useTermsAccepted();
+  const wantsSetup = needsFunding(needs) && termsAccepted;
   const [open, setOpen] = useState(false);
   // Belt to the storage's braces: where localStorage is unavailable the dialog would
   // otherwise reopen on every balance poll.

@@ -63,7 +63,10 @@ export function Modal({
   const mounted = useMounted();
 
   useEffect(() => {
-    if (!open) return undefined;
+    // Not before the portal exists: a dialog open from its very first render (TermsGate on
+    // a wallet that reconnects instantly) would otherwise look for its focus target before
+    // the dialog is in the DOM, find nothing, and leave focus on the page underneath.
+    if (!open || !mounted) return undefined;
 
     const opener = document.activeElement;
     const previousOverflow = document.body.style.overflow;
@@ -84,7 +87,7 @@ export function Modal({
       document.body.style.overflow = previousOverflow;
       if (opener instanceof HTMLElement) opener.focus();
     };
-  }, [open, onClose, initialFocusRef]);
+  }, [open, mounted, onClose, initialFocusRef]);
 
   if (!mounted || !open) return null;
 

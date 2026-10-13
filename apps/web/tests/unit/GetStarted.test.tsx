@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { parseEther } from 'viem';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GetStarted } from '@/components/GetStarted';
+import { __resetTermsSession, acceptTerms } from '@/lib/legal';
 import { hasSeenGetStarted, markGetStartedSeen } from '@/lib/testFunds';
 
 /**
@@ -78,6 +79,8 @@ vi.mock('next/link', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  __resetTermsSession();
+  acceptTerms(); // the Terms come first (TermsGate); these tests start past them
   address = ADDRESS_A;
   wbtWei = 0n;
   usdw = 0n;
@@ -126,6 +129,18 @@ describe('<GetStarted> — when it opens', () => {
 
     usdwLoaded = true;
     rerender(<GetStarted />);
+    expect(screen.getByTestId('get-started')).toBeInTheDocument();
+  });
+
+  /** Two dialogs on one connect would be one too many: the Terms are asked for first. */
+  it('waits until the Terms have been agreed to', () => {
+    localStorage.clear();
+    __resetTermsSession();
+    render(<GetStarted />);
+    expect(screen.queryByTestId('get-started')).not.toBeInTheDocument();
+    expect(hasSeenGetStarted(ADDRESS_A)).toBe(false);
+
+    act(() => acceptTerms());
     expect(screen.getByTestId('get-started')).toBeInTheDocument();
   });
 

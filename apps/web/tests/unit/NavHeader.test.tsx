@@ -33,6 +33,7 @@ vi.mock('@/hooks/useHealth', () => ({ useHealth: () => ({ indexedBlock: '9004269
 vi.mock('@/components/WalletConnect', () => ({ WalletConnect: () => null }));
 vi.mock('@/components/ChainGuard', () => ({ ChainGuard: () => null }));
 vi.mock('@/components/GetStarted', () => ({ GetStarted: () => <div data-testid="get-started-mount" /> }));
+vi.mock('@/components/TermsGate', () => ({ TermsGate: () => <div data-testid="terms-gate-mount" /> }));
 
 beforeEach(() => {
   pathname = '/trade';
@@ -61,11 +62,13 @@ describe('<NavHeader>', () => {
     }
   });
 
-  it('carries the first-connect setup dialog on every page', () => {
+  it('carries the first-connect dialogs on every page, the Terms before the setup guide', () => {
     for (const path of ['/', '/trade', '/faucet']) {
       pathname = path;
       const { unmount } = render(<NavHeader />);
-      expect(screen.getByTestId('get-started-mount')).toBeInTheDocument();
+      const terms = screen.getByTestId('terms-gate-mount');
+      const setup = screen.getByTestId('get-started-mount');
+      expect(terms.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       unmount();
     }
   });

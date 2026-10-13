@@ -1,0 +1,109 @@
+/* Scoped to TermsGate. The dialog shell is Modal.module.css; the scale matches the setup
+   guide (GetStarted.module.css), which follows it. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  font-family: var(--font-sans);
+  overflow-y: auto;
+}
+
+.lede {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+.lede a,
+.consent a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.lede a:hover {
+  text-decoration: underline;
+}
+
+.points {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.95rem 1rem 0.95rem 2rem;
+  font-size: 0.86rem;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.018);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.points li::marker {
+  color: var(--accent);
+}
+
+.consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.consent input {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.5rem;
+}
+
+.primary,
+.secondary {
+  height: 2.9rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.primary {
+  font-weight: 500;
+  color: var(--on-color);
+  background: var(--accent);
+  border: none;
+}
+
+.primary:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.primary:disabled {
+  color: var(--fg-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: not-allowed;
+}
+
+.secondary {
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+}
+
+.secondary:hover {
+  color: var(--fg);
+}

@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { CHAIN_ID, CHAIN_INFO } from '../../src/lib/config';
+import { TERMS_ACCEPTED_KEY, TERMS_VERSION } from '../../src/lib/legal';
 import { createMockChain, UnmockedCallError } from './mockChain';
 import type { TestState } from './testState';
 
@@ -64,6 +65,12 @@ export type MockWalletOptions = {
    * ever offered for signing on the wrong network. Unset, the wallet is on 1874 throughout.
    */
   walletChainId?: number;
+  /**
+   * Whether this browser has already agreed to the Terms (TermsGate). On by default, so
+   * the agreement dialog stays out of every spec that is not about it; a spec that drives
+   * the agreement itself turns it off.
+   */
+  termsAccepted?: boolean;
 };
 
 /** A 1×1 transparent SVG. EIP-6963 requires `info.icon`; its content is irrelevant here. */
@@ -77,6 +84,15 @@ export async function installMockWallet(
   const chain = createMockChain(state);
 
   await page.exposeFunction('__mockRpc', (payload: { method: string; params?: unknown[] }) => chain.handleRequest(payload));
+
+  if (options.termsAccepted ?? true) {
+    await page.addInitScript(
+      ([key, version]: [string, string]) => {
+        localStorage.setItem(key, version);
+      },
+      [TERMS_ACCEPTED_KEY, TERMS_VERSION] as [string, string],
+    );
+  }
 
   await page.addInitScript(
     ([announce, icon, startsUnauthorized, silentWallet, walletChainId, homeChainId]: [
