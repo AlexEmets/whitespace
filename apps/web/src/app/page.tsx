@@ -207,6 +207,12 @@ export default function LandingPage() {
           <Link href="/docs">Docs</Link>
           <Link href="/faucet">Faucet</Link>
           <Link href="/vaults">Vaults</Link>
+          <Link href="/terms" data-testid="footer-terms">
+            Terms
+          </Link>
+          <Link href="/privacy" data-testid="footer-privacy">
+            Privacy
+          </Link>
         </span>
       </footer>
     </div>

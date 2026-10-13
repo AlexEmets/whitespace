@@ -7,6 +7,7 @@ import { useHealth } from '@/hooks/useHealth';
 import { BrandMark } from './BrandMark';
 import { ChainGuard } from './ChainGuard';
 import { GetStarted } from './GetStarted';
+import { TermsGate } from './TermsGate';
 import { ThemeToggle } from './ThemeToggle';
 import { WalletConnect } from './WalletConnect';
 
@@ -29,8 +30,9 @@ const NAV_LINKS: Array<{ href: string; label: string; testId: string }> = [
  * On a phone the links fold behind a menu button (globals.css hides the button above
  * 900px), and the menu closes itself on navigation so it never covers the page it opened.
  *
- * It also carries the first-connect setup dialog (GetStarted), for the same reason the
- * wallet control lives here: it has to be reachable from any page a wallet connects on. */
+ * It also carries the first-connect dialogs — agreement to the Terms (TermsGate), then the
+ * setup guide (GetStarted) — for the same reason the wallet control lives here: they have
+ * to be reachable from any page a wallet connects on. */
 export function NavHeader() {
   const pathname = usePathname();
   const { indexedBlock, latencyMs } = useHealth();
@@ -104,8 +106,10 @@ export function NavHeader() {
         </div>
       </header>
       <ChainGuard />
-      {/* Here because this header is on every route: wherever a new wallet connects, it
-          is offered the gas and margin it needs before it can trade. */}
+      {/* Here because this header is on every route: wherever a wallet connects, it is
+          asked to agree to the Terms first, and a new one is then offered the gas and margin
+          it needs before it can trade. */}
+      <TermsGate />
       <GetStarted />
     </>
   );
