@@ -49,15 +49,6 @@
   padding: 0 var(--page-pad) 5rem;
 }
 
-@media (max-width: 900px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .toc {
-    position: static;
-  }
-}
-
 /* The header is not sticky, so the table of contents only needs to clear the viewport edge. */
 .toc {
   position: sticky;
@@ -103,6 +94,19 @@
 
 .tocList a:hover {
   color: var(--fg);
+}
+
+/* One column on a phone, with the contents above the text and scrolling away with it.
+   After the rules it overrides on purpose: it used to sit above `.toc`, lost to its
+   `position: sticky` on source order, and the near-transparent panel slid over every
+   section as the page scrolled. */
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .toc {
+    position: static;
+  }
 }
 
 .body {
