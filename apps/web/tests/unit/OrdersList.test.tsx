@@ -24,6 +24,8 @@ vi.mock('wagmi', () => ({
   useReadContracts: () => ({ data: chainState.details }),
   usePublicClient: () => ({ waitForTransactionReceipt: vi.fn(async () => ({ status: 'success' })) }),
   useWriteContract: () => ({ writeContractAsync: reclaimMock, isPending: false }),
+  // Already on 1874: the testnet guard (useTestnetWriteContract) has nothing to switch.
+  useSwitchChain: () => ({ switchChainAsync: async () => undefined }),
 }));
 
 vi.mock('@/hooks/useMarkets', () => ({
@@ -133,7 +135,7 @@ describe('<OrdersList> — two-phase order lifecycle (design §5.1/§7)', () => 
     fireEvent.click(button);
     await waitFor(() => expect(reclaimMock).toHaveBeenCalled());
     expect(reclaimMock).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: 'openTradeMarketTimeout', args: [8n] }),
+      expect.objectContaining({ functionName: 'openTradeMarketTimeout', args: [8n], chainId: 1874 }),
     );
   });
 

@@ -1,7 +1,8 @@
 'use client';
 
 import { parseEventLogs, type TransactionReceipt } from 'viem';
-import { useAccount, usePublicClient, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { padGas } from '@/lib/gas';
@@ -36,7 +37,7 @@ function closeOrderId(receipt: TransactionReceipt): bigint | undefined {
 export function useCloseTrade() {
   const publicClient = usePublicClient();
   const { address: account } = useAccount();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useTestnetWriteContract();
   const session = useSessionKey();
 
   async function closeTrade(params: CloseTradeParams) {

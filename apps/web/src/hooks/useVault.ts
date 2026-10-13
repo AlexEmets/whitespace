@@ -1,7 +1,8 @@
 'use client';
 
 import { parseEventLogs, type TransactionReceipt } from 'viem';
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient, useReadContract } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { ERC20_ABI, VAULT_ABI, VAULT_REQUEST_STATUS, type VaultRequestStatus } from '@/lib/abi';
 import { VAULT_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
@@ -75,7 +76,7 @@ function requestedSettlementId(
 export function useVault() {
   const { address } = useAccount();
   const publicClient = usePublicClient();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useTestnetWriteContract();
 
   async function requestDeposit(assetsRaw: bigint): Promise<{ hash: `0x${string}`; settlementId: number }> {
     if (!publicClient) throw new Error('useVault: no public client');

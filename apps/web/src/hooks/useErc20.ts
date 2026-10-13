@@ -1,7 +1,8 @@
 'use client';
 
 import type { Address } from 'viem';
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
+import { useAccount, usePublicClient, useReadContract } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { ERC20_ABI } from '@/lib/abi';
 import { COLLATERAL_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
@@ -58,7 +59,7 @@ export const ERC20_REFRESH_MS = 4_000;
 export function useErc20(spender?: Address): Erc20Handle {
   const { address } = useAccount();
   const publicClient = usePublicClient();
-  const { writeContractAsync, isPending: isWritePending } = useWriteContract();
+  const { writeContractAsync, isPending: isWritePending } = useTestnetWriteContract();
 
   const balance = useReadContract({
     address: COLLATERAL_ADDRESS,

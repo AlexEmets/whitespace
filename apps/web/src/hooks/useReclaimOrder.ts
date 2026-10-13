@@ -1,6 +1,7 @@
 'use client';
 
-import { useBlockNumber, usePublicClient, useReadContract, useWriteContract } from 'wagmi';
+import { useBlockNumber, usePublicClient, useReadContract } from 'wagmi';
+import { useTestnetWriteContract } from './useTestnetWriteContract';
 import { TRADING_ABI } from '@/lib/abi';
 import { TRADING_ADDRESS } from '@/lib/deployment';
 import { confirmTx } from '@/lib/tx';
@@ -24,7 +25,7 @@ import type { OrderSummary } from '@/lib/types';
  */
 export function useReclaimOrder() {
   const publicClient = usePublicClient();
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { writeContractAsync, isPending } = useTestnetWriteContract();
 
   /**
    * An OPEN order returns its collateral (`openTradeMarketTimeout`); a CLOSE order releases the

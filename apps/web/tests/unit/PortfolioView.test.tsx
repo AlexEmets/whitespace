@@ -71,6 +71,8 @@ vi.mock('wagmi', () => ({
   useReadContract: () => ({ data: undefined, isLoading: false, refetch: vi.fn() }),
   usePublicClient: () => undefined,
   useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false }),
+  // Already on 1874: the testnet guard (useTestnetWriteContract) has nothing to switch.
+  useSwitchChain: () => ({ switchChainAsync: async () => undefined }),
 }));
 
 vi.mock('@/hooks/usePositions', () => ({

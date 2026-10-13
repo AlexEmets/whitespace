@@ -29,6 +29,8 @@ vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTRADER0000000000000000000000000000000000' }),
   usePublicClient: () => publicClient,
   useWriteContract: () => ({ writeContractAsync: state.writeContractAsync, isPending: false }),
+  // Already on 1874: the testnet guard (useTestnetWriteContract) has nothing to switch.
+  useSwitchChain: () => ({ switchChainAsync: async () => undefined }),
 }));
 
 vi.mock('@/hooks/useSessionKey', () => ({
@@ -60,6 +62,8 @@ describe('useOpenTrade one-click branch', () => {
     const { result } = renderHook(() => useOpenTrade());
     await result.current.openTrade(OPEN);
     expect(state.writeContractAsync).toHaveBeenCalledTimes(1);
+    // Pinned to 1874, so a wallet on another network cannot sign it there.
+    expect(state.writeContractAsync).toHaveBeenCalledWith(expect.objectContaining({ chainId: 1874 }));
     expect(state.sessionSend).not.toHaveBeenCalled();
   });
 
@@ -81,6 +85,7 @@ describe('useCloseTrade one-click branch', () => {
     await result.current.closeTrade(CLOSE);
     expect(state.simulateContract).toHaveBeenCalledTimes(1);
     expect(state.writeContractAsync).toHaveBeenCalledTimes(1);
+    expect(state.writeContractAsync).toHaveBeenCalledWith(expect.objectContaining({ chainId: 1874 }));
     expect(state.sessionSend).not.toHaveBeenCalled();
   });
 
@@ -101,6 +106,7 @@ describe('useTradingActions one-click branch', () => {
     await result.current.updateTp(0, 1, 70_000n * 10n ** 18n);
     expect(state.simulateContract).toHaveBeenCalledTimes(1);
     expect(state.writeContractAsync).toHaveBeenCalledTimes(1);
+    expect(state.writeContractAsync).toHaveBeenCalledWith(expect.objectContaining({ chainId: 1874 }));
     expect(state.sessionSend).not.toHaveBeenCalled();
   });
 
