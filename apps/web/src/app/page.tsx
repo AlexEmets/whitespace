@@ -173,14 +173,14 @@ export default function LandingPage() {
       <section className="landing-section">
         <div className="steps two-up">
           <div className="step panel">
-            <span className="step-index">Void Points</span>
-            <h3>Not live yet.</h3>
-            {/* No points contract, no emission schedule and no snapshot exist, which is
-                exactly what /points says in full. This page must not promise otherwise. */}
-            <p>
-              There is no points contract, no emission schedule and no snapshot — nothing traded today carries a
-              promised allocation. <Link href="/points">The points page</Link> shows the activity such a programme
-              would be computed from.
+            <span className="step-index">Points · Season One</span>
+            <h3 data-testid="landing-points-title">Live, and worth nothing.</h3>
+            {/* Season One is live (/points), and the Terms say what points are not: they have no
+                value and promise no token or airdrop. This card must not promise otherwise. */}
+            <p data-testid="landing-points-body">
+              Missions, time in market, daily streaks and liquidity earn points on the testnet.{' '}
+              <Link href="/points">The points page</Link> shows yours. They have no value and promise no token or
+              airdrop — see the <Link href="/terms">Terms</Link>.
             </p>
           </div>
           <div className="step panel">

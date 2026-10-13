@@ -30,8 +30,9 @@ import styles from './docs.module.css';
  *  3. The mockups' marketing figures (50x leverage, 0.035% taker, 25% referral) are not
  *     repeated here. Two of them contradict the live configuration and the third describes
  *     a programme that was cut.
- *  4. The limitations section is not an appendix. A trader who reads only half this page
- *     should still have hit the part that says the liquidation upkeep is not deployed.
+ *  4. The limitations section is not an appendix, and it is kept current: when a feature
+ *     ships, its line comes out of that section the same day. It once still said "market
+ *     orders only" and "no liquidation price" weeks after both had shipped.
  */
 
 /**
@@ -63,7 +64,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'oracle', title: 'The signed oracle' },
   { id: 'fees', title: 'Fees' },
   { id: 'contracts', title: 'Contracts' },
-  { id: 'limits', title: 'What is not live' },
+  { id: 'limits', title: 'Limits of this testnet' },
 ];
 
 function P({ children }: { children: ReactNode }) {
@@ -254,6 +255,37 @@ export function DocsArticle() {
               protocols real money.
             </P>
 
+            <H3>Limit and stop orders, take-profit and stop-loss</H3>
+            <P>
+              Besides market orders, the ticket places <strong>limit</strong> and <strong>stop</strong> entries, and
+              any position can carry a <strong>take-profit</strong> and a <strong>stop-loss</strong> — set when you
+              open it or later from the positions table. Resting orders live on-chain and are listed under Open
+              orders, where you can re-price or cancel them.
+            </P>
+            <P>
+              Nothing on-chain executes them by itself. Two automation bots watch the price against every resting
+              order and open position, and when a level is reached they request a freshly signed price through{' '}
+              <code>OstiumTradesUpKeep</code>, which only registered forwarders may call. Those fills therefore run
+              through the same two phases as a market order:
+            </P>
+            <List>
+              <LI>
+                <strong>A limit order fills at your price or better.</strong> If the price after spread and impact is
+                worse than your limit when the report arrives, that attempt is cancelled and the order keeps resting.
+                A fast move can fill you better than the limit — it is checked every few seconds, not matched in a
+                book.
+              </LI>
+              <LI>
+                <strong>A stop order fills at the market once triggered.</strong> It triggers when the oracle price
+                crosses your level, and then fills at the price of that moment, which in a fast move can be worse
+                than the stop.
+              </LI>
+              <LI>
+                <strong>Take-profit and stop-loss close the position</strong> once the price reaches their level. A
+                stop-loss, like a stop entry, can close beyond its level in a fast move.
+              </LI>
+            </List>
+
             <H3>If no keeper ever shows up</H3>
             <P>
               Your collateral is not stranded, but it is not instant either. After{' '}
@@ -261,8 +293,8 @@ export function DocsArticle() {
                 value={params.marketOrdersTimeoutBlocks === null ? null : `${params.marketOrdersTimeoutBlocks} blocks`}
                 reason="marketOrdersTimeout has not been read yet"
               />{' '}
-              (~1 second per block on this chain) you can reclaim it yourself by calling{' '}
-              <code>openTradeMarketTimeout</code> for that order.
+              (~1 second per block on this chain) the order gets a <strong>Reclaim collateral</strong> button under Open
+              orders, which calls <code>openTradeMarketTimeout</code> for it and returns the collateral.
             </P>
             <Caveat label="Known gap — a dead window">
               A signed report is only deliverable for{' '}
@@ -318,9 +350,11 @@ export function DocsArticle() {
 
             <H3>The trigger is a value test, not a price</H3>
             <P>
-              Most exchanges give you a liquidation price. This one does not, and the reason is worth stating rather
-              than papering over. The on-chain check is not a price comparison at all — it evaluates your position&rsquo;s
-              current value against a margin floor:
+              The terminal shows a <strong>liquidation price</strong> — in the order ticket before you open, and on
+              every position — read from the contract&rsquo;s own liquidation-price views (
+              <code>getTradeLiquidationPrice</code> for an open position) rather than recomputed in the browser. It
+              is a useful number, but it is not what the contract checks. The on-chain test is not a price comparison
+              at all — it evaluates your position&rsquo;s current value against a margin floor:
             </P>
             <div className={styles.formula}>{`tradeValue     = collateral
                  + collateral * percentProfit / 1e6 / 100
@@ -345,11 +379,10 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               means <strong>your liquidation level moves even when the price does not.</strong> That is the deeper
               reason a single &ldquo;liquidation price&rdquo; is misleading here: it is a snapshot of a moving quantity.
             </P>
-            <Caveat label="Why the Liq. column is a dash">
-              The contract does expose a <code>getTradeLiquidationPrice</code> view — but the liquidation path never
-              calls it, and it disagrees with the real predicate exactly at the boundary, where it matters. Showing its
-              output as &ldquo;your liquidation price&rdquo; would be presenting an approximation as a guarantee, so the
-              terminal and the portfolio both show an explained dash instead.
+            <Caveat label="Treat the liquidation price as a snapshot">
+              The liquidation path never calls <code>getTradeLiquidationPrice</code>; it runs the value test above,
+              and the two can disagree right at the boundary. Funding and rollover keep moving the real level while
+              you hold. Keep a margin of safety rather than trading to the last tick of the number shown.
             </Caveat>
 
             <H3>What protects you from a single bad tick</H3>
@@ -360,13 +393,13 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               there is for you — and the liquidator suppresses all new submissions whenever the oracle is degraded (see
               section 05).
             </P>
-            <Caveat label="Not currently operational on testnet 1874">
-              The repo&rsquo;s phase-6 record (<code>docs/decisions/phase-6-liquidator.md</code> §2.6) states that the
-              automation upkeep liquidations execute through, <code>OstiumTradesUpKeep</code>, is not deployed on this
-              chain — and that its entry point is gated to an allowlisted forwarder rather than being permissionless, so
-              no third party can substitute for it. Treat automatic liquidation as <em>not yet proven on this
-              deployment</em>. This has not been independently re-probed by this page.
-            </Caveat>
+            <H3>Who liquidates</H3>
+            <P>
+              Two independent automation bots evaluate every open position against the value test. One that fails it
+              is submitted through <code>OstiumTradesUpKeep</code> and settles at a freshly signed price, like any
+              close. That entry point is gated to registered forwarders rather than being permissionless, so no third
+              party can liquidate — or step in if both bots stop.
+            </P>
             <p className={styles.sourceLine}>
               Source: docs/decisions/phase-6-liquidator.md §2.1–2.6, §4; docs/decisions/phase-5-frontend.md (isolated
               margin ruling); design spec §5.2 (mark = EMA of index).
@@ -494,8 +527,8 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
                       <Live value={oracleFee} reason="pairOracleFee has not been read yet" />
                     </td>
                     <td className={styles.td}>
-                      Flat, per price request. Kept even when your order is cancelled — this is the &ldquo;minus the
-                      oracle fee&rdquo; in every refund.
+                      Flat, per price request. Taken from your margin when a position opens, and kept even when an order
+                      is cancelled — this is the &ldquo;minus the oracle fee&rdquo; in every refund.
                     </td>
                   </tr>
                   <tr>
@@ -503,17 +536,17 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
                     <td className={`${styles.td} ${styles.tdNum}`}>
                       <Live value={makerFee} reason="pairOpeningFees has not been read yet" />
                     </td>
-                    <td className={styles.td}>Charged on the notional when a position opens.</td>
+                    <td className={styles.td}>
+                      Charged instead of the taker rate on the part of a trade that narrows the gap between long and
+                      short open interest, up to the market&rsquo;s maker leverage limit.
+                    </td>
                   </tr>
                   <tr>
                     <td className={`${styles.td} ${styles.tdKey}`}>Opening fee · taker</td>
                     <td className={`${styles.td} ${styles.tdNum}`}>
                       <Live value={takerFee} reason="pairOpeningFees has not been read yet" />
                     </td>
-                    <td className={styles.td}>
-                      Same field group. The landing mockup&rsquo;s 0.035% is a design figure and is not what this market
-                      is configured with.
-                    </td>
+                    <td className={styles.td}>Charged on the rest of the notional when a position opens.</td>
                   </tr>
                   <tr>
                     <td className={`${styles.td} ${styles.tdKey}`}>Rollover</td>
@@ -523,35 +556,42 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
                       </span>
                     </td>
                     <td className={styles.td}>
-                      Accrues continuously on an open position and is deducted from <code>tradeValue</code> at
-                      settlement. The accrual is real; no endpoint publishes the rate, so none is shown.
+                      Accrues every block on an open position and is settled when it closes. No rate is published, but
+                      what each position has accrued is shown in its Funding column, and what was charged is listed in
+                      Funding history.
                     </td>
                   </tr>
                   <tr>
                     <td className={`${styles.td} ${styles.tdKey}`}>Funding</td>
-                    <td className={`${styles.td} ${styles.tdNum}`}>
-                      <span className="dash" title="Not available: no read endpoint publishes a funding rate">
-                        —
-                      </span>
-                    </td>
+                    <td className={`${styles.td} ${styles.tdNum}`}>Per market, live</td>
                     <td className={styles.td}>
-                      Same treatment. The terminal&rsquo;s FUNDING readout is a dash for the same reason, not because
-                      funding is zero.
+                      Flows between longs and shorts every block; a positive rate means longs pay shorts. The terminal
+                      header shows each market&rsquo;s current rate per hour, read from the contract; positions show what
+                      they have accrued, and Funding history what was charged.
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
+            <H3>Fees come out of your margin</H3>
+            <P>
+              The opening fee and the oracle fee are deducted from the collateral you send <em>before</em> the
+              position opens, and the leverage applies to what is left. So the position is{' '}
+              <code>(collateral − fees) × leverage</code>: at 100× a 0.03% fee is 3% of the margin, and a ticket for
+              1 BTC opens about 0.97 BTC. The ticket shows the size that opens after fees next to the size you typed.
+            </P>
             <P>
               Separately from fees, <strong>spread and price impact</strong> move your execution price away from the
-              reported one. They are applied on-chain before your slippage tolerance is checked, and this app does not
-              reproduce that arithmetic — which is why the unrealised PnL shown on your positions is labelled an
-              estimate rather than a payout.
+              reported one. They are applied on-chain before your slippage tolerance is checked. The ticket&rsquo;s
+              quote applies the same formula, so the Buy and Sell prices it shows for your size are what the contract
+              would fill at that moment; the unrealised PnL on open positions is still an estimate at the live mark,
+              before closing fees, funding and rollover.
             </P>
             <p className={styles.sourceLine}>
               Source: <code>IOstiumPairsStorage.pairOracleFee</code> and <code>IOstiumPairInfos.pairOpeningFees</code>{' '}
-              (both PRECISION_6), read live; docs/decisions/phase-6-liquidator.md §2.3 (rollover/funding accrual);
-              docs/decisions/phase-5-frontend.md (fee-honesty ruling).
+              (both PRECISION_6), read live; maker/taker split in <code>OstiumPairInfos._getBaseOpeningFee</code>; fee
+              deduction in <code>TradingCallbacksLib.executeRegisterTrade</code>; docs/decisions/phase-6-liquidator.md
+              §2.3 (rollover/funding accrual).
             </p>
           </DocSection>
 
@@ -604,7 +644,7 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
             </p>
           </DocSection>
 
-          <DocSection index={8} id="limits" title="What is not live">
+          <DocSection index={8} id="limits" title="Limits of this testnet">
             <P>
               This is a testnet deployment and it is not finished. The list below is the honest inventory, not a
               roadmap.
@@ -619,34 +659,26 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
                 The markets list is read from the API and is never padded out with placeholder rows.
               </LI>
               <LI>
-                <strong>Market orders only.</strong> Limit and stop orders exist as on-chain order types, but the UI to
-                place, list and cancel resting orders was not built. TWAP does not exist in the contracts at all.
+                <strong>Market, limit and stop orders, with TP/SL — nothing more.</strong> TWAP and other algorithmic
+                orders do not exist in the contracts, and margin is isolated only: there is no cross margin.
               </LI>
               <LI>
-                <strong>No liquidation price is shown</strong>, anywhere — see section 04 for why that is a decision
-                rather than an omission.
+                <strong>Nothing here has been audited.</strong> No third-party audit has been performed. The contract
+                tests, fuzz tests included, run in CI on every push and the invariant suites on their own profile, but
+                no static analysis runs in CI.
               </LI>
               <LI>
-                <strong>No funding rate is published</strong> by any endpoint, so the terminal shows a dash rather than
-                a number.
-              </LI>
-              <LI>
-                <strong>Partial closes are missing from history.</strong> The indexer only writes a history row when a
-                position closes fully, so a partially-closed position stays in your open table until the remainder is
-                closed.
+                <strong>The contracts are run with plain admin keys.</strong> Testnet roles are not behind a multisig or a
+                timelock: the team can change parameters, pause, upgrade or redeploy at any time.
               </LI>
               <LI>
                 <strong>Live updates are polled, not pushed.</strong> The WebSocket is backed by a poll, so there is no
                 latency floor below the poll interval.
               </LI>
               <LI>
-                <strong>There is no points programme and no referral programme.</strong> See <Link href="/points">Points</Link>{' '}
-                for the full statement; the referral share in the landing mockup describes something that was cut from
-                scope.
-              </LI>
-              <LI>
-                <strong>Nothing here has been audited.</strong> No third-party audit has been performed, and static and
-                fuzz analysis are not yet wired into CI.
+                <strong>Points are a testnet score.</strong> <Link href="/points">Points</Link> Season One counts your
+                activity; points have no value and promise no token or airdrop — see the{' '}
+                <Link href="/terms">Terms</Link>. There is no referral programme.
               </LI>
             </List>
             <p className={styles.sourceLine}>
