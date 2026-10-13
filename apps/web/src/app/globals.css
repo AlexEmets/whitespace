@@ -2610,15 +2610,17 @@ table.data-table[data-testid='positions-table'] .cell-sub.neg {
 }
 
 /* Touch screens: 16px is the size below which iOS Safari zooms the page on focus, and a
-   zoomed trading ticket has to be pinched back by hand. */
+   zoomed trading ticket has to be pinched back by hand.
+
+   !important, because the fields that matter most are sized in CSS modules (the ticket's
+   TP/SL and slippage, the close amount, the vault deposit), and a module's class selector
+   outranks any element selector here. Without it those stayed at 11–14px on a phone, where
+   the root font is 13px, and zoomed on every tap. */
 @media (hover: none) and (pointer: coarse) {
-  input,
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
-  textarea,
-  .field-group input,
-  .position-manager input,
-  .vault-panel input {
-    font-size: 16px;
+  textarea {
+    font-size: 16px !important;
   }
 }
 
