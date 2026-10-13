@@ -14,6 +14,11 @@ import { confirmTx } from '@/lib/tx';
 export interface Erc20Handle {
   /** Raw 6-decimal USDW. */
   balance: bigint;
+  /**
+   * Whether `balance` has been read at least once. Until then it is a placeholder 0n,
+   * which looks exactly like an empty wallet to anything that branches on it.
+   */
+  balanceLoaded: boolean;
   /** Raw 6-decimal USDW. Always 0n when the hook was called without a spender. */
   allowance: bigint;
   /**
@@ -117,6 +122,7 @@ export function useErc20(spender?: Address): Erc20Handle {
 
   return {
     balance: balance.data ?? 0n,
+    balanceLoaded: balance.data !== undefined,
     allowance: allowance.data ?? 0n,
     hasSpender: Boolean(spender),
     refetchBalance: balance.refetch,

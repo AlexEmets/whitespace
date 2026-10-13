@@ -181,6 +181,17 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
       return route.fulfill({ json: state.orders.map(formatOrder) });
     }
 
+    // The WBT faucet is a server wallet sending native gas: no wallet prompt, and the
+    // balance the chain reports moves by the payout.
+    if (path === '/faucet/wbt' && route.request().method() === 'POST') {
+      const { address } = route.request().postDataJSON() as { address: string };
+      state.wbtFaucetClaims.push(address.toLowerCase());
+      state.wbtBalance += 300_000_000_000_000_000n; // FAUCET_WBT_AMOUNT = 0.3
+      return route.fulfill({
+        json: { ok: true, txHash: `0x${'ab'.repeat(32)}`, amountWei: '300000000000000000', from: `0x${'fe'.repeat(20)}` },
+      });
+    }
+
     if (path === '/points/leaderboard') {
       return route.fulfill({ json: state.leaderboard ?? [] });
     }

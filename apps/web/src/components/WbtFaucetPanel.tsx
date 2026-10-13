@@ -1,7 +1,7 @@
 'use client';
 
 import { useAccount } from 'wagmi';
-import { FAUCET_WBT_AMOUNT, FAUCET_WBT_COOLDOWN_HOURS, useWbtFaucet } from '@/hooks/useWbtFaucet';
+import { FAUCET_WBT_AMOUNT, FAUCET_WBT_COOLDOWN_HOURS, formatRetryAfter, useWbtFaucet } from '@/hooks/useWbtFaucet';
 import styles from './FaucetPanel.module.css';
 import wbt from './WbtFaucetPanel.module.css';
 
@@ -22,15 +22,7 @@ import wbt from './WbtFaucetPanel.module.css';
 
 /** The block explorer for chain 1874 (same one docs/DocsArticle names) — the funding tx
  * is linked here so the visitor can watch it confirm rather than take "sent" on faith. */
-const EXPLORER_BASE = 'https://explorer.testnet.whitechain.io';
-
-function formatRetry(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.round((seconds % 3600) / 60);
-  if (hours >= 1) return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
-  if (minutes >= 1) return `${minutes}m`;
-  return 'under a minute';
-}
+export const EXPLORER_BASE = 'https://explorer.testnet.whitechain.io';
 
 export function WbtFaucetPanel() {
   const { address, isConnected } = useAccount();
@@ -110,7 +102,7 @@ export function WbtFaucetPanel() {
         {faucet.error ? (
           <p className="error-text" role="alert" data-testid="wbt-faucet-error">
             {faucet.error}
-            {faucet.retryAfterSeconds != null ? ` Try again in ${formatRetry(faucet.retryAfterSeconds)}.` : ''}
+            {faucet.retryAfterSeconds != null ? ` Try again in ${formatRetryAfter(faucet.retryAfterSeconds)}.` : ''}
           </p>
         ) : null}
 

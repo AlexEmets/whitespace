@@ -32,6 +32,7 @@ vi.mock('next/link', () => ({
 vi.mock('@/hooks/useHealth', () => ({ useHealth: () => ({ indexedBlock: '9004269', latencyMs: 70 }) }));
 vi.mock('@/components/WalletConnect', () => ({ WalletConnect: () => null }));
 vi.mock('@/components/ChainGuard', () => ({ ChainGuard: () => null }));
+vi.mock('@/components/GetStarted', () => ({ GetStarted: () => <div data-testid="get-started-mount" /> }));
 
 beforeEach(() => {
   pathname = '/trade';
@@ -56,6 +57,15 @@ describe('<NavHeader>', () => {
       const { unmount } = render(<NavHeader />);
       expect(screen.getByTestId('wordmark')).toContainElement(screen.getByTestId('beta-tag'));
       expect(screen.getByTestId('beta-tag')).toHaveTextContent('beta');
+      unmount();
+    }
+  });
+
+  it('carries the first-connect setup dialog on every page', () => {
+    for (const path of ['/', '/trade', '/faucet']) {
+      pathname = path;
+      const { unmount } = render(<NavHeader />);
+      expect(screen.getByTestId('get-started-mount')).toBeInTheDocument();
       unmount();
     }
   });

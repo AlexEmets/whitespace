@@ -9,6 +9,15 @@ import { api } from '@/lib/api';
 export const FAUCET_WBT_AMOUNT = '0.3';
 export const FAUCET_WBT_COOLDOWN_HOURS = 24;
 
+/** A cooldown's `retryAfterSeconds` as a human wait: "3h 12m", "45m", "under a minute". */
+export function formatRetryAfter(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.round((seconds % 3600) / 60);
+  if (hours >= 1) return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+  if (minutes >= 1) return `${minutes}m`;
+  return 'under a minute';
+}
+
 export interface WbtFaucetState {
   /** Sends WBT to `address`. Resolves true only when the funding tx was broadcast. */
   request: () => Promise<boolean>;
