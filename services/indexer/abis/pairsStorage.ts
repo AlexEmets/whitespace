@@ -1,5 +1,5 @@
 // Event fragment transcribed from
-// contracts/src/vendor/ostium/interfaces/IOstiumPairsStorage.sol.
+// contracts/src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol.
 // PairAdded's topic0 and payload (index=0, from="BTC", to="USD") were
 // confirmed directly against a real on-chain log at block 0x6f2767 on
 // Whitechain testnet 1874, matching deployments/1874-operational.json's
@@ -38,7 +38,7 @@ export const pairsStorageAbi = [
       { name: 'feed', type: 'bytes32', indexed: false },
     ],
   },
-  // Transcribed from IOstiumPairsStorage.sol:64. Needed because the listing events are
+  // Transcribed from IWhitespacePairsStorage.sol:64. Needed because the listing events are
   // unreachable — the endpoint prunes its log index — so the only way to learn how many
   // pairs exist is to ask the contract. See src/lib/seedMarkets.ts.
   {

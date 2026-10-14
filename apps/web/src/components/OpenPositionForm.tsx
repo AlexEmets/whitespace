@@ -79,7 +79,7 @@ function parsePriceInput(text: string): bigint | null {
  * MARKET fills at the next oracle report within the trader's max slippage around the QUOTED
  * fill (not the mark, so a large order is not cancelled for the impact it was shown). LIMIT
  * and STOP rest on chain until the automation bot triggers them; their slippage must be 0
- * (OstiumTrading.openTrade).
+ * (WhitespaceTrading.openTrade).
  */
 export function OpenPositionForm({
   pairIndex,
@@ -93,7 +93,7 @@ export function OpenPositionForm({
   const { address, isConnected } = useAccount();
   const { data: price } = usePrice(pairIndex);
   // The spender is TradingStorage: it runs the safeTransferFrom at open
-  // (OstiumTradingStorage.sol:486), not Trading.
+  // (WhitespaceTradingStorage.sol:486), not Trading.
   const erc20 = useErc20(TRADING_STORAGE_ADDRESS);
   const faucet = useFaucet(erc20);
   const { openTrade, isPending } = useOpenTrade();

@@ -1,5 +1,5 @@
 // Event fragments transcribed from
-// contracts/src/vendor/ostium/interfaces/IOstiumVault.sol. The Vault runs an
+// contracts/src/vendor/ostium/interfaces/IWhitespaceVault.sol. The Vault runs an
 // async, settlement-based LP model (request -> settlement -> claim), not a
 // synchronous ERC-4626 deposit/withdraw. This indexer tracks the two most
 // meaningful lifecycle points for "LP deposits/withdrawals": the request

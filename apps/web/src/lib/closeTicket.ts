@@ -1,7 +1,7 @@
 /**
  * The arithmetic behind the close dialog. A close is a SHARE of the position, not an
  * amount: `closeTradeMarket` takes `closePercentage` in PRECISION_2 (10000 = all of it,
- * OstiumTrading.sol:28), so a typed amount is turned into a share at the contract's 0.01%
+ * WhitespaceTrading.sol:28), so a typed amount is turned into a share at the contract's 0.01%
  * grain and the dialog shows what that share actually closes.
  */
 
@@ -74,7 +74,7 @@ export function pnlForShare(pnlRaw: bigint, share: number): bigint {
  * Slippage, in bps, for a market close of `share` of the position.
  *
  * The callback checks the fill AFTER spread and impact against `wantedPrice ± slippage`
- * (OstiumTradingCallbacks.closeTradeMarketCallback), and a close cancelled for SLIPPAGE is not
+ * (WhitespaceTradingCallbacks.closeTradeMarketCallback), and a close cancelled for SLIPPAGE is not
  * free: it charges an oracle-fee bond from the position. Closing at the mark with a flat 0.5%
  * cancelled any close whose half-spread plus impact was wider than that. The open path already
  * sizes its tolerance to the quote; this does the same for the closing side — a long closes by

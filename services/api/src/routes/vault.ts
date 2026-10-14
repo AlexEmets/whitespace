@@ -28,7 +28,7 @@ export const SETTLEMENTS_MAX_LIMIT = 500;
 
 // GET /vault/settlements?limit=50 -> VaultSettlement[], newest first. Share price and
 // open PnL are 18 dp; assets, shares, closed PnL and buffer are 6 dp (the vault token has
-// 6 decimals, see OstiumVault.decimals()).
+// 6 decimals, see WhitespaceVault.decimals()).
 export const handleVaultSettlements: Handler = async (_req, _params, searchParams): Promise<RouteResult> => {
   const limit = parseLimit(searchParams, SETTLEMENTS_DEFAULT_LIMIT, SETTLEMENTS_MAX_LIMIT);
   if (limit === null) return badRequest(`limit must be an integer between 1 and ${SETTLEMENTS_MAX_LIMIT}`);

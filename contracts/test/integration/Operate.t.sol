@@ -5,12 +5,12 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumPairInfos} from "../../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumVerifier} from "../../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
-import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePairsStorage} from "../../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespacePairInfos} from "../../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceVerifier} from "../../src/vendor/ostium/interfaces/IWhitespaceVerifier.sol";
+import {WhitespaceVault} from "../../src/vendor/ostium/WhitespaceVault.sol";
 
 contract OperateTest is Test {
     DeployScript internal deployer;
@@ -107,19 +107,19 @@ contract OperateTest is Test {
     function test_listsPairAtIndexZero() public {
         (uint16 pairIndex,) = _configureAll();
         assertEq(pairIndex, 0);
-        assertEq(IOstiumPairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
+        assertEq(IWhitespacePairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
     }
 
     function test_authorisesSigner() public {
         _configureAll();
-        assertTrue(IOstiumVerifier(d.verifier).isAuthorizedSigner(signer));
+        assertTrue(IWhitespaceVerifier(d.verifier).isAuthorizedSigner(signer));
     }
 
     /// @dev The registry key is derived from Pair.oracle, not from the struct field name.
     function test_priceUpKeepRegisteredUnderOracleDerivedKey() public {
         _configureAll();
         assertEq(
-            IOstiumRegistry(d.registry).getContractAddress(bytes32("BTC/USDPriceUpkeep")),
+            IWhitespaceRegistry(d.registry).getContractAddress(bytes32("BTC/USDPriceUpkeep")),
             d.priceUpKeep
         );
     }
@@ -151,7 +151,7 @@ contract OperateTest is Test {
         uint256 usdwSupplyAfterFirst = IERC20(d.collateral).totalSupply();
         uint256 vaultSupplyAfterFirst = IERC20(d.vault).totalSupply();
         uint256 lpSharesAfterFirst = IERC20(d.vault).balanceOf(lp);
-        uint256 pendingAfterFirst = OstiumVault(d.vault).pendingDepositRequest(lp, firstSettlementId);
+        uint256 pendingAfterFirst = WhitespaceVault(d.vault).pendingDepositRequest(lp, firstSettlementId);
 
         assertGt(lpSharesAfterFirst, 0, "first pass must actually deliver claimed shares to the LP");
         assertEq(pendingAfterFirst, 0, "first pass must clear the pending deposit request on claim");
@@ -159,7 +159,7 @@ contract OperateTest is Test {
         (uint16 secondPair, uint32 secondSettlementId) = _configureAll();
 
         assertEq(secondPair, firstPair);
-        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 1);
+        assertEq(IWhitespacePairsStorage(d.pairsStorage).pairsCount(), 1);
 
         // requestLpDeposit must resume/skip rather than issue a second real request.
         assertEq(secondSettlementId, 0);
@@ -175,7 +175,7 @@ contract OperateTest is Test {
     ///      this script contract's own address instead".
     function test_addMarketRejectsNonGov() public {
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPairsStorage.NotGov.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePairsStorage.NotGov.selector, address(0xBAD)));
         operator.addMarket(_config());
     }
 
@@ -233,7 +233,7 @@ contract OperateTest is Test {
     ///      are what `services/api/src/publisher.ts` re-joins into a feed name. This asserts all
     ///      four, because a single wrong one is the failure that lists cleanly and breaks later.
     function _assertPairFields(uint16 pairIndex, bytes32 from, bytes32 to, string memory name) internal view {
-        IOstiumPairsStorage ps = IOstiumPairsStorage(d.pairsStorage);
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(d.pairsStorage);
         (bytes32 pairFrom, bytes32 pairTo, bytes32 feed,,,,,, string memory oracle) = ps.pairs(pairIndex);
         assertEq(pairFrom, from);
         assertEq(pairTo, to);
@@ -249,11 +249,11 @@ contract OperateTest is Test {
 
         assertEq(ethIndex, 1);
         assertEq(solIndex, 2);
-        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 3);
+        assertEq(IWhitespacePairsStorage(d.pairsStorage).pairsCount(), 3);
         _assertPairFields(ethIndex, bytes32("ETH"), bytes32("USD"), "ETH/USD");
         _assertPairFields(solIndex, bytes32("SOL"), bytes32("USD"), "SOL/USD");
         // BTC/USD must be exactly where it was; a new listing must not disturb pair 0.
-        assertEq(IOstiumPairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
+        assertEq(IWhitespacePairsStorage(d.pairsStorage).pairFeed(0), bytes32("BTC/USD"));
     }
 
     /// @dev The step with no equivalent in `addMarket`, and the one whose absence is invisible
@@ -263,7 +263,7 @@ contract OperateTest is Test {
         _configureAll();
         _addMarket("ETH/USD");
 
-        IOstiumRegistry registry = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(d.registry);
         assertEq(
             registry.getContractAddress(bytes32("ETH/USDPriceUpkeep")),
             registry.getContractAddress(bytes32("BTC/USDPriceUpkeep"))
@@ -278,13 +278,13 @@ contract OperateTest is Test {
         _configureAll();
         uint16 pairIndex = _addMarket("ETH/USD");
 
-        IOstiumPairInfos pairInfos =
-            IOstiumPairInfos(IOstiumRegistry(d.registry).getContractAddress("pairInfos"));
+        IWhitespacePairInfos pairInfos =
+            IWhitespacePairInfos(IWhitespaceRegistry(d.registry).getContractAddress("pairInfos"));
         (,,,,, uint64 springFactor,,,,,,) = pairInfos.pairFundingFees(pairIndex);
         assertGt(springFactor, 0, "springFactor is a divisor; zero panics on the first trade");
 
-        IOstiumTradingStorage ts =
-            IOstiumTradingStorage(IOstiumRegistry(d.registry).getContractAddress("tradingStorage"));
+        IWhitespaceTradingStorage ts =
+            IWhitespaceTradingStorage(IWhitespaceRegistry(d.registry).getContractAddress("tradingStorage"));
         assertGt(ts.openInterest(pairIndex, 2), 0, "zero max OI silently cancels every trade");
     }
 
@@ -299,7 +299,7 @@ contract OperateTest is Test {
         uint16 secondIndex = _addMarket("ETH/USD");
 
         assertEq(secondIndex, firstIndex);
-        assertEq(IOstiumPairsStorage(d.pairsStorage).pairsCount(), 2);
+        assertEq(IWhitespacePairsStorage(d.pairsStorage).pairsCount(), 2);
     }
 
     /// @dev A name with no `/` would otherwise list a pair whose `to` is `bytes32(0)`: `addPair`

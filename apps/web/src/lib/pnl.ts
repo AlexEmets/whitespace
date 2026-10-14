@@ -66,7 +66,7 @@ export function estimatePositionSizeBase(params: { collateral: MoneyInput; lever
  * This one is NOT display-only — its result is what gets submitted. The order form is
  * denominated in the base asset because terminal_design.pdf's order panel leads with
  * SIZE, but `openTrade` takes collateral and leverage and has no size parameter at all
- * (IOstiumTradingStorage.Trade). So the field the trader types into is converted here,
+ * (IWhitespaceTradingStorage.Trade). So the field the trader types into is converted here,
  * and the converted figure is surfaced as "Margin required" so the number leaving the
  * wallet is on screen rather than implied.
  *

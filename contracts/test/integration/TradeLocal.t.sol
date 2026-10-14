@@ -7,11 +7,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumForwarded} from "../../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {IOstiumVerifier} from "../../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceForwarded} from "../../src/vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {IWhitespaceVerifier} from "../../src/vendor/ostium/interfaces/IWhitespaceVerifier.sol";
 
 /// @notice Proves the complete two-phase price flow end to end on a local chain — open a BTC/USD
 ///         position, deliver a signed report, close it, deliver a second report — plus the four
@@ -76,7 +76,7 @@ contract TradeLocalTest is Test {
         vm.prank(gov);          operator.registerUpkeep(c);
     }
 
-    /// @dev Mirrors `OstiumVerifier.verify` exactly: it recovers over the EIP-191 prefix applied
+    /// @dev Mirrors `WhitespaceVerifier.verify` exactly: it recovers over the EIP-191 prefix applied
     ///      to keccak256(reportData). Getting this wrong makes every delivery revert
     ///      NotAuthorizedSigner with a garbage recovered address, which is a confusing symptom.
     function _buildReport(bytes32 feedId, uint32 timestamp, int192 price, uint256 signingKey)
@@ -121,8 +121,8 @@ contract TradeLocalTest is Test {
     function _openMarketTrade(uint256 collateral) internal returns (uint256 orderId, uint32 timestamp) {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: collateral,
                 openPrice: uint192(uint256(int256(BTC_65K))),
                 tp: 0,
@@ -134,8 +134,8 @@ contract TradeLocalTest is Test {
                 buy: true,
                 isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
         return _lastPriceRequest();
@@ -143,11 +143,11 @@ contract TradeLocalTest is Test {
 
     function _deliver(uint256 orderId, bytes memory report, address from) internal {
         vm.prank(from);
-        IOstiumPriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
     }
 
     function _openCollateral() internal view returns (uint256 collateral) {
-        (collateral,,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (collateral,,,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     function test_openAndClosePosition() public {
@@ -163,7 +163,7 @@ contract TradeLocalTest is Test {
 
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
         (uint256 closeOrderId, uint32 closeTimestamp) = _lastPriceRequest();
         _deliver(
             closeOrderId,
@@ -187,9 +187,9 @@ contract TradeLocalTest is Test {
         bytes memory report = _buildReport(bytes32("BTC/USD"), timestamp, BTC_65K, ROGUE_KEY);
         vm.prank(keeper);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.NotAuthorizedSigner.selector, vm.addr(ROGUE_KEY))
+            abi.encodeWithSelector(IWhitespaceVerifier.NotAuthorizedSigner.selector, vm.addr(ROGUE_KEY))
         );
-        IOstiumPriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_wrongTimestampReverts() public {
@@ -199,8 +199,8 @@ contract TradeLocalTest is Test {
 
         bytes memory report = _buildReport(bytes32("BTC/USD"), timestamp + 1, BTC_65K, SIGNER_KEY);
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.InvalidPrice.selector, orderId));
-        IOstiumPriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.InvalidPrice.selector, orderId));
+        IWhitespacePriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_nonForwarderReverts() public {
@@ -211,9 +211,9 @@ contract TradeLocalTest is Test {
         bytes memory report = _buildReport(bytes32("BTC/USD"), timestamp, BTC_65K, SIGNER_KEY);
         vm.prank(address(0xBAD));
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, address(0xBAD))
+            abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, address(0xBAD))
         );
-        IOstiumPriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(d.priceUpKeep).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev The one failure mode that does NOT revert. With an empty vault,

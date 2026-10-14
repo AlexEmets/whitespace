@@ -2,10 +2,10 @@
 pragma solidity 0.8.24;
 
 import {TestnetTrading} from "../helpers/TestnetTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumTradingCallbacks} from "../../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceTradingCallbacks} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
 
-/// @notice `OstiumPairInfos` economics at the deployed testnet parameters, each checked against
+/// @notice `WhitespacePairInfos` economics at the deployed testnet parameters, each checked against
 ///         an independent re-derivation: maker/taker opening fees and their vault/dev split,
 ///         funding direction and cap, rollover accrual, the liquidation boundary, the dynamic
 ///         spread for several sizes, and recent-volume decay.
@@ -271,8 +271,8 @@ contract PairInfosEconomicsTest is TestnetTrading {
     function test_funding_theShortIsPaidWhatTheLongPays() public {
         _skewLong();
         vm.roll(vm.getBlockNumber() + 50_000);
-        IOstiumTradingStorage.Trade memory l = ts.getOpenTrade(longTrader, BTC, 0);
-        IOstiumTradingStorage.Trade memory s = ts.getOpenTrade(shortTrader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory l = ts.getOpenTrade(longTrader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory s = ts.getOpenTrade(shortTrader, BTC, 0);
         (int256 fl,) = pairInfos.getTradeFundingFee(longTrader, BTC, 0, true, l.collateral, l.leverage);
         (int256 fs,) = pairInfos.getTradeFundingFee(shortTrader, BTC, 0, false, s.collateral, s.leverage);
         assertGt(fl, 0, "long pays");
@@ -322,7 +322,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
         lev = bound(lev, 100, 10_000);
         blocks = bound(blocks, 1, 31_536_000);
         _openAt(longTrader, BTC, 100e6, uint32(lev), true, _basePrice(BTC));
-        IOstiumTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
         vm.roll(vm.getBlockNumber() + blocks);
         int256 fee = pairInfos.getTradeRolloverFee(longTrader, BTC, 0, true, t.collateral, t.leverage);
         int256 expected = int256(blocks * PREMIUM) * int256(t.collateral * t.leverage) / 1e18 / 100;
@@ -341,7 +341,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
 
     /// @dev Rollover, funding and the trade value at a close price, as the views report them now.
     function _accruedAtClose(address who, bool buy, uint256 closePx) internal view returns (Accrued memory a) {
-        IOstiumTradingStorage.Trade memory t = ts.getOpenTrade(who, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory t = ts.getOpenTrade(who, BTC, 0);
         a.r = pairInfos.getTradeRolloverFee(who, BTC, 0, buy, t.collateral, t.leverage);
         (a.f,) = pairInfos.getTradeFundingFee(who, BTC, 0, buy, t.collateral, t.leverage);
         a.value = pairInfos.getTradeValuePure(t.collateral, _profitP(t.openPrice, closePx, t.leverage), a.r, a.f);
@@ -361,7 +361,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
 
         uint256 before = _bal(longTrader);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.FeesChargedV2(id, tradeId, longTrader, a.r, a.f);
+        emit IWhitespaceTradingCallbacks.FeesChargedV2(id, tradeId, longTrader, a.r, a.f);
         _deliverAt(id, BTC, ts_, _basePrice(BTC));
         assertEq(_bal(longTrader) - before, a.value, "paid exactly the trade value");
     }
@@ -376,7 +376,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
         if (p > maxP) p = maxP;
     }
 
-    function _isLiq(IOstiumTradingStorage.Trade memory t, uint256 price, int256 r, int256 f, uint256 margin)
+    function _isLiq(IWhitespaceTradingStorage.Trade memory t, uint256 price, int256 r, int256 f, uint256 margin)
         internal
         view
         returns (bool)
@@ -408,7 +408,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
 
     /// @dev External self-calls (never inlined) to keep these off the fuzz test's stack.
     function liquidationPriceExt() external view returns (uint256) {
-        IOstiumTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
         return pairInfos.getTradeLiquidationPrice(longTrader, BTC, 0, t.openPrice, true, t.collateral, t.leverage, 10_000);
     }
 
@@ -419,7 +419,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
     /// @dev Binary search, under the contract's own arithmetic, for the highest price at which
     ///      the long's value is below its liquidation margin.
     function _liquidationBoundary() internal view returns (uint256 lo) {
-        IOstiumTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory t = ts.getOpenTrade(longTrader, BTC, 0);
         int256 r = pairInfos.getTradeRolloverFee(longTrader, BTC, 0, true, t.collateral, t.leverage);
         (int256 f,) = pairInfos.getTradeFundingFee(longTrader, BTC, 0, true, t.collateral, t.leverage);
         uint256 margin = pairInfos.getTradeLiquidationMargin(t.collateral, t.leverage, 10_000);
@@ -438,7 +438,7 @@ contract PairInfosEconomicsTest is TestnetTrading {
     function _assertLiquidatedAt(uint256 price, uint256 collateral) internal {
         uint256 vaultBefore = _bal(d.vault);
         uint256 traderBefore = _bal(longTrader);
-        (uint256 id, uint32 ts_) = _triggerNow(liquidatorA, longTrader, BTC, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+        (uint256 id, uint32 ts_) = _triggerNow(liquidatorA, longTrader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         _deliverAt(id, BTC, ts_, int192(int256(price)));
         assertEq(ts.openTradesCount(longTrader, BTC), 0, "liquidated at the boundary");
         assertEq(_bal(longTrader), traderBefore, "trader receives nothing");
@@ -448,10 +448,10 @@ contract PairInfosEconomicsTest is TestnetTrading {
 
     function _assertSurvivesAt(uint256 price, uint256 collateral) internal {
         uint256 tradeId = ts.getOpenTradeInfo(longTrader, BTC, 0).tradeId;
-        (uint256 id, uint32 ts_) = _triggerNow(liquidatorA, longTrader, BTC, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+        (uint256 id, uint32 ts_) = _triggerNow(liquidatorA, longTrader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationCloseOrderCanceled(
-            id, tradeId, longTrader, BTC, IOstiumTradingStorage.LimitOrder.LIQ, IOstiumTradingCallbacks.CancelReason.NOT_HIT
+        emit IWhitespaceTradingCallbacks.AutomationCloseOrderCanceled(
+            id, tradeId, longTrader, BTC, IWhitespaceTradingStorage.LimitOrder.LIQ, IWhitespaceTradingCallbacks.CancelReason.NOT_HIT
         );
         _deliverAt(id, BTC, ts_, int192(int256(price)));
         assertEq(ts.getOpenTrade(longTrader, BTC, 0).collateral, collateral, "one wei better survives intact");

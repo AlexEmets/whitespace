@@ -1,5 +1,5 @@
 /**
- * Sends OstiumTradesUpKeep.performUpkeep(abi.encode(SimplifiedTradeId[], timestamp)) through the
+ * Sends WhitespaceTradesUpKeep.performUpkeep(abi.encode(SimplifiedTradeId[], timestamp)) through the
  * shared @whitespace/txsender queue — one nonce queue per forwarder key, receipt timeouts
  * with same-nonce replacement, reverts that advance the nonce, and a JSON Lines dead letter.
  *

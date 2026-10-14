@@ -55,8 +55,8 @@ export function useFaucet(erc20: Erc20Handle): FaucetState {
    * Grants the spender an unlimited allowance in the same gesture as the mint.
    *
    * This is what keeps the approval out of the terminal. The allowance transaction is
-   * unavoidable — `OstiumTradingStorage` pulls collateral with `safeTransferFrom`
-   * (OstiumTradingStorage.sol:486), there is no exchange-side balance to spend from, and
+   * unavoidable — `WhitespaceTradingStorage` pulls collateral with `safeTransferFrom`
+   * (WhitespaceTradingStorage.sol:486), there is no exchange-side balance to spend from, and
    * USDW is a plain OpenZeppelin ERC20 with no `permit` to sign instead. What IS avoidable
    * is meeting it at trade time: a wallet armed here reaches the order form already
    * allowed, and its first order is a single confirmation.

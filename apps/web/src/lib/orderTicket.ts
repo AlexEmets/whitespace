@@ -6,7 +6,7 @@ import { baseSizeForNotional, collateralForPositionSize } from './pnl';
  * The arithmetic behind the order panel, kept out of the component so every number the trader
  * signs for is unit-tested.
  *
- * The contract takes collateral and leverage (IOstiumTradingStorage.Trade) — there is no size
+ * The contract takes collateral and leverage (IWhitespaceTradingStorage.Trade) — there is no size
  * parameter. The panel lets the trader type either the base-asset quantity (BTC) or the USD
  * notional, like Variational's size field with its unit toggle, and converts here.
  *

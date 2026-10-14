@@ -4,15 +4,15 @@ pragma solidity 0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
-import {OstiumPairInfos} from "../../src/vendor/ostium/OstiumPairInfos.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {WhitespaceVault} from "../../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespacePairInfos} from "../../src/vendor/ostium/WhitespacePairInfos.sol";
 
 contract DeployLocalTest is Test {
     DeployScript internal deployer;
     SystemDeployer.Deployment internal d;
 
-    // Four mutually distinct addresses: OstiumRegistry rejects any collision.
+    // Four mutually distinct addresses: WhitespaceRegistry rejects any collision.
     address internal gov = address(0x60F);
     address internal dev = address(0xDE7);
     address internal manager = address(0xA11);
@@ -32,7 +32,7 @@ contract DeployLocalTest is Test {
     }
 
     function test_rolesAreDistinctAndAssigned() public view {
-        IOstiumRegistry registry = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(d.registry);
         assertEq(registry.gov(), gov);
         assertEq(registry.dev(), dev);
         assertEq(registry.manager(), manager);
@@ -52,8 +52,8 @@ contract DeployLocalTest is Test {
     ///      only that the highest reinitializer ran; the state assertions are what prove the
     ///      intermediate ones ran too.
     ///
-    ///      `maxSettlementInterval` is written by `OstiumVault.initializeV3` and by nothing
-    ///      else (OstiumVault.sol:151), so it is 0 on a vault that skipped V3. That is the
+    ///      `maxSettlementInterval` is written by `WhitespaceVault.initializeV3` and by nothing
+    ///      else (WhitespaceVault.sol:151), so it is 0 on a vault that skipped V3. That is the
     ///      discriminating check. Most other reinitializers write nothing observable on a
     ///      greenfield replay (their bodies loop over the empty market arrays, or rewrite a
     ///      value `initialize` already set); the task report records that per contract.
@@ -63,20 +63,20 @@ contract DeployLocalTest is Test {
         assertEq(_initializedVersion(d.pairsStorage), 2);
         assertEq(_initializedVersion(d.openPnl), 2);
 
-        // OstiumVault V3 — written only by initializeV3 (OstiumVault.sol:151).
-        assertEq(OstiumVault(d.vault).maxSettlementInterval(), 24 hours);
+        // WhitespaceVault V3 — written only by initializeV3 (WhitespaceVault.sol:151).
+        assertEq(WhitespaceVault(d.vault).maxSettlementInterval(), 24 hours);
 
-        // OstiumVault V4 — initializeV4 sets marketMaker (OstiumVault.sol:183) and its
-        // _updateAccPnlPerTokenUsed() bumps lastSettlementId off 0 (OstiumVault.sol:793).
+        // WhitespaceVault V4 — initializeV4 sets marketMaker (WhitespaceVault.sol:183) and its
+        // _updateAccPnlPerTokenUsed() bumps lastSettlementId off 0 (WhitespaceVault.sol:793).
         // Nothing else in the suite pins that V4's argument was wired correctly.
-        assertEq(OstiumVault(d.vault).marketMaker(), marketMaker);
-        assertEq(OstiumVault(d.vault).lastSettlementId(), 1);
+        assertEq(WhitespaceVault(d.vault).marketMaker(), marketMaker);
+        assertEq(WhitespaceVault(d.vault).lastSettlementId(), 1);
 
-        // OstiumPairInfos configuration. NOT a V3 discriminator: `initialize`
-        // (OstiumPairInfos.sol:79-80) writes these same two fields with the same values,
+        // WhitespacePairInfos configuration. NOT a V3 discriminator: `initialize`
+        // (WhitespacePairInfos.sol:79-80) writes these same two fields with the same values,
         // so this pins configuration only.
-        assertEq(OstiumPairInfos(d.pairInfos).liqMarginThresholdP(), 25);
-        assertEq(OstiumPairInfos(d.pairInfos).maxNegativePnlOnOpenP(), 40);
+        assertEq(WhitespacePairInfos(d.pairInfos).liqMarginThresholdP(), 25);
+        assertEq(WhitespacePairInfos(d.pairInfos).maxNegativePnlOnOpenP(), 40);
     }
 
     /// @dev OZ v5 stores `_initialized` (uint64) in the first slot of the
@@ -87,7 +87,7 @@ contract DeployLocalTest is Test {
     }
 
     function test_registryKnowsEveryComponent() public view {
-        IOstiumRegistry registry = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(d.registry);
         assertEq(registry.getContractAddress("tradingStorage"), d.tradingStorage);
         assertEq(registry.getContractAddress("pairsStorage"), d.pairsStorage);
         assertEq(registry.getContractAddress("pairInfos"), d.pairInfos);
@@ -117,8 +117,8 @@ contract DeployLocalTest is Test {
     /// @dev Pins the priceUpKeep omission as INTENTIONAL, not forgotten.
     ///
     ///      `Deployment.priceUpKeep` is a local field name, not a registry key. The real key
-    ///      is per-oracle and not a constant — OstiumPriceRouter.sol:81-84 and
-    ///      OstiumTradingCallbacks.sol:83-85 both resolve it as
+    ///      is per-oracle and not a constant — WhitespacePriceRouter.sol:81-84 and
+    ///      WhitespaceTradingCallbacks.sol:83-85 both resolve it as
     ///      `bytes32(abi.encodePacked(pairsStorage.oracle(pairIndex), 'PriceUpkeep'))`, which
     ///      is undeterminable until pairs exist. Phase 1 adds none, so not registering it is
     ///      correct.
@@ -126,11 +126,11 @@ contract DeployLocalTest is Test {
     ///      Without this assertion, a future change that "helpfully" registers the upkeep
     ///      under the literal name "priceUpKeep" would pass the whole suite while creating a
     ///      registry entry no consumer ever reads — and would look authoritative to whoever
-    ///      wires phase 3. `OstiumRegistry.getContractAddress` reverts `NotFound(bytes32)`
-    ///      (OstiumRegistry.sol:114, declared IOstiumRegistry.sol:13) for an unknown name.
+    ///      wires phase 3. `WhitespaceRegistry.getContractAddress` reverts `NotFound(bytes32)`
+    ///      (WhitespaceRegistry.sol:114, declared IWhitespaceRegistry.sol:13) for an unknown name.
     function test_priceUpKeepIsNotRegisteredUnderItsStructName() public {
-        vm.expectRevert(abi.encodeWithSelector(IOstiumRegistry.NotFound.selector, bytes32("priceUpKeep")));
-        IOstiumRegistry(d.registry).getContractAddress("priceUpKeep");
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceRegistry.NotFound.selector, bytes32("priceUpKeep")));
+        IWhitespaceRegistry(d.registry).getContractAddress("priceUpKeep");
     }
 
     function test_collateralIsSixDecimals() public view {
@@ -139,7 +139,7 @@ contract DeployLocalTest is Test {
         assertEq(abi.decode(ret, (uint8)), 6);
     }
 
-    /// @dev `OstiumVault.initialize(address _asset, address _registry, ...)` takes two
+    /// @dev `WhitespaceVault.initialize(address _asset, address _registry, ...)` takes two
     ///      same-typed addresses in a row. Swapping them compiles and deploys cleanly,
     ///      so only this assertion catches it.
     function test_vaultAssetIsCollateralNotRegistry() public view {

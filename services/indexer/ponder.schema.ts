@@ -146,7 +146,7 @@ export const closedPosition = onchainTable(
     sl: t.bigint().notNull(), // PRECISION_18
     // 'close' (trader-initiated market close), 'tp', 'sl', 'liq'
     // (LimitOrder.LIQ), 'day_trade', 'other' — derived from
-    // IOstiumTradingStorage.LimitOrder on LimitCloseExecuted, or 'close' for
+    // IWhitespaceTradingStorage.LimitOrder on LimitCloseExecuted, or 'close' for
     // MarketCloseExecutedV2.
     closeReason: t.text().notNull(),
     percentProfit: t.bigint().notNull(), // PRECISION_18, signed, straight from the event
@@ -318,7 +318,7 @@ export const lpActivity = onchainTable(
  * Each handler fills its own columns, so either may arrive first. */
 export const vaultSettlement = onchainTable('vault_settlement', (t) => ({
   id: t.integer().primaryKey(), // settlementId
-  settlementType: t.text(), // 'acct' | 'mm' (IOstiumVault.SettlementType)
+  settlementType: t.text(), // 'acct' | 'mm' (IWhitespaceVault.SettlementType)
   settlementTs: t.integer(),
   totalAssets: t.bigint(), // PRECISION_6, USDW in the vault after settlement
   totalSupply: t.bigint(), // PRECISION_6, OLP shares outstanding after settlement

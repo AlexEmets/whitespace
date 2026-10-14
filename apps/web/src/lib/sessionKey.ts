@@ -16,12 +16,12 @@ import { CHAIN_ID, RPC_URL } from './config';
  * One-click trading session key.
  *
  * A session key is a fresh EOA generated in the browser and registered on-chain as the
- * trader's *delegate* (OstiumTrading.setDelegate). Once registered, the terminal signs every
+ * trader's *delegate* (WhitespaceTrading.setDelegate). Once registered, the terminal signs every
  * trade with this local key — no wallet popup — by wrapping the real call in
  * `delegatedAction(trader, calldata)`, which the contract executes as the trader.
  *
  * WHY THIS IS SAFE ENOUGH TO HOLD IN THE BROWSER. The delegate can only *trade*. Every
- * OstiumTrading function pays out and refunds to `_msgSender()` (the trader), and the four
+ * WhitespaceTrading function pays out and refunds to `_msgSender()` (the trader), and the four
  * delegation-management selectors are forbidden inside delegatedAction, so a leaked key can
  * open and close positions but cannot move funds to itself, re-point the delegation, or
  * renew it. The blast radius is bounded by the USDW allowance the trader has granted and by

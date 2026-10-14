@@ -30,10 +30,10 @@ type PendingRequest = VaultRequest;
  * flatten into "Deposited ✓" — it names which of the three states you are in, and refuses
  * to claim success until `claimDeposit` itself mines.
  *
- * Every live branch of `IOstiumVault.RequestStatus` gets a control:
+ * Every live branch of `IWhitespaceVault.RequestStatus` gets a control:
  *
  *   PENDING      -> Cancel request   (`cancelRequest*`, which the contract permits only
- *                                     in PENDING — OstiumVault.sol:481, :492)
+ *                                     in PENDING — WhitespaceVault.sol:481, :492)
  *   CLAIMABLE    -> Claim            (`claim*`; reverts in any other state, :532)
  *   RECLAIMABLE  -> Reclaim          (`reclaim*`; the settlement ran and did not fill the
  *                                     request, :590-591)

@@ -32,7 +32,7 @@ export function VaultPanel() {
         <span
           className="vault-stat-value"
           data-testid="vault-tvl"
-          title={tvl === null ? 'IOstiumVault.tvl has not been read yet' : undefined}
+          title={tvl === null ? 'IWhitespaceVault.tvl has not been read yet' : undefined}
         >
           {tvl === null ? '—' : `${formatMoney(tvl, COLLATERAL_DECIMALS)} USDW`}
         </span>

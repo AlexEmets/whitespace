@@ -19,11 +19,11 @@ export interface OpenTradeParams {
   leverageRaw: bigint;
   /** The price the trader saw when submitting (raw 18-decimal). Becomes `t.openPrice` —
    * the "wanted price" the contract checks the execution price against via slippageP.
-   * See contracts/src/vendor/ostium/OstiumTrading.sol:198 (must be nonzero) and
+   * See contracts/src/vendor/ostium/WhitespaceTrading.sol:198 (must be nonzero) and
    * lib/TradingCallbacksLib.sol:210-215 (the slippage check itself). */
   wantedPriceRaw: bigint;
   /** slippageP: PRECISION_2 percent, numerically identical to bps (contracts/src/vendor
-   * /ostium/OstiumTrading.sol:28, `PERCENT_BASE = 100e2`, and the
+   * /ostium/WhitespaceTrading.sol:28, `PERCENT_BASE = 100e2`, and the
    * `wantedPrice * slippageP / 100 / 100` check) — 50n means 0.50%. */
   slippageBps: bigint;
   tp?: bigint;

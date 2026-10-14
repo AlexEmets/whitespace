@@ -1,6 +1,6 @@
 /**
  * Automation bot entrypoint (services/liquidator): liquidations, TP, SL and LIMIT/STOP
- * entries through OstiumTradesUpKeep.performUpkeep. See
+ * entries through WhitespaceTradesUpKeep.performUpkeep. See
  * docs/decisions/phase-6-liquidator.md §11.
  *
  * Process-supervisor friendly: configuration is environment only (so a unit file can use

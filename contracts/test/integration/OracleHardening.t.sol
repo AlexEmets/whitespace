@@ -7,12 +7,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {OperateScript} from "../../script/Operate.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumForwarded} from "../../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {IOstiumVerifier} from "../../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceForwarded} from "../../src/vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {IWhitespaceVerifier} from "../../src/vendor/ostium/interfaces/IWhitespaceVerifier.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
 import {ReportLib} from "../helpers/ReportLib.sol";
@@ -196,8 +196,8 @@ contract OracleHardeningTest is Test {
     function _openMarketTrade(uint256 collateral) internal returns (uint256 orderId, uint32 timestamp) {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: collateral,
                 openPrice: uint192(uint256(int256(BTC_65K))),
                 tp: 0,
@@ -209,8 +209,8 @@ contract OracleHardeningTest is Test {
                 buy: true,
                 isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
         return _lastPriceRequest();
@@ -219,17 +219,17 @@ contract OracleHardeningTest is Test {
     function _requestClose() internal returns (uint256 orderId, uint32 timestamp) {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
         return _lastPriceRequest();
     }
 
     function _deliver(uint256 orderId, bytes memory report) internal {
         vm.prank(keeper);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function _openCollateral() internal view returns (uint256 collateral) {
-        (collateral,,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (collateral,,,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     /// @dev Opens a position and delivers a valid report at $65,000, which also establishes the
@@ -247,7 +247,7 @@ contract OracleHardeningTest is Test {
     // -------------------------------------------------------------------------------------
 
     function test_registryPointsAtTheHardenedContracts() public view {
-        IOstiumRegistry reg = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry reg = IWhitespaceRegistry(d.registry);
         assertEq(reg.getContractAddress("ostiumVerifier"), address(verifier));
         assertEq(reg.getContractAddress(PRICE_UPKEEP_KEY), address(upkeep));
         assertTrue(address(verifier) != d.verifier, "the vendored verifier must be replaced");
@@ -263,7 +263,7 @@ contract OracleHardeningTest is Test {
         assertEq(upkeep.maxAge(), MAX_AGE);
         assertEq(upkeep.maxDeviationBps(), MAX_DEVIATION_BPS);
         assertEq(upkeep.guardian(), guardian);
-        assertTrue(IOstiumForwarded(address(upkeep)).isForwarder(keeper));
+        assertTrue(IWhitespaceForwarded(address(upkeep)).isForwarder(keeper));
     }
 
     /// @dev A second full pass must deploy nothing and change nothing — the same resumability
@@ -280,7 +280,7 @@ contract OracleHardeningTest is Test {
         assertEq(u, upkeepBefore, "a replayed install must not deploy a second upkeep");
         assertEq(verifier.signerCount(), 5, "a replayed install must not re-register signers");
         assertEq(
-            IOstiumRegistry(d.registry).getContractAddress("ostiumVerifier"),
+            IWhitespaceRegistry(d.registry).getContractAddress("ostiumVerifier"),
             verifierBefore,
             "the registry pointer must not move on a replay"
         );
@@ -292,7 +292,7 @@ contract OracleHardeningTest is Test {
     ///      breaker and the deviation baseline across contracts that neither knows about — and
     ///      would give the guardian two `pause()` switches where the design specifies one.
     function test_oneUpkeepInstanceServesEveryRegisteredFeed() public {
-        IOstiumRegistry reg = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry reg = IWhitespaceRegistry(d.registry);
         bytes32 ethKey = "ETH/USDPriceUpkeep";
 
         bytes32[] memory feedKeys = new bytes32[](2);
@@ -308,7 +308,7 @@ contract OracleHardeningTest is Test {
     }
 
     /// @dev The derived key must be byte-identical to the literal the vendored contracts compute.
-    ///      `OstiumPriceRouter.sol:81-83` and `OstiumTradingCallbacks.sol:83-85` both look the
+    ///      `WhitespacePriceRouter.sol:81-83` and `WhitespaceTradingCallbacks.sol:83-85` both look the
     ///      upkeep up under `bytes32(abi.encodePacked(pair.oracle, "PriceUpkeep"))`. A market
     ///      registered under a key that differs by one byte lists successfully, then reverts
     ///      `NotFound` on its first price request — so this equality is load-bearing, not cosmetic.
@@ -343,7 +343,7 @@ contract OracleHardeningTest is Test {
         oc.registry = fresh.registry;
 
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumRegistry.NotGov.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceRegistry.NotGov.selector, address(0xBAD)));
         operator.installHardenedVerifier(oc);
     }
 
@@ -399,7 +399,7 @@ contract OracleHardeningTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(WhitespaceVerifier.InsufficientSignatures.selector, 2, THRESHOLD)
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
 
         assertEq(_openCollateral(), 0, "a rejected report must leave no position");
     }
@@ -413,7 +413,7 @@ contract OracleHardeningTest is Test {
 
         vm.prank(keeper);
         vm.expectRevert(WhitespaceVerifier.SignersNotAscending.selector);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_unauthorisedSignerIsRejectedAtDelivery() public {
@@ -428,9 +428,9 @@ contract OracleHardeningTest is Test {
 
         vm.prank(keeper);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.NotAuthorizedSigner.selector, vm.addr(ROGUE))
+            abi.encodeWithSelector(IWhitespaceVerifier.NotAuthorizedSigner.selector, vm.addr(ROGUE))
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev Domain separation, reached through the real delivery path: a report signed for
@@ -447,7 +447,7 @@ contract OracleHardeningTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(WhitespaceVerifier.WrongChain.selector, 1875, block.chainid)
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev And a report addressed to the retired vendored verifier is equally useless.
@@ -465,7 +465,7 @@ contract OracleHardeningTest is Test {
                 WhitespaceVerifier.WrongVerifier.selector, d.verifier, address(verifier)
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     // -------------------------------------------------------------------------------------
@@ -500,7 +500,7 @@ contract OracleHardeningTest is Test {
                 WhitespacePriceUpKeep.StaleReport.selector, timestamp, late, MAX_AGE
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
 
         assertEq(_openCollateral(), 0, "a stale report must leave no position");
     }
@@ -529,7 +529,7 @@ contract OracleHardeningTest is Test {
         stub.setPaused(paused);
         stub.setHalted(FEED, btcHalted);
         vm.prank(gov);
-        IOstiumRegistry(d.registry).updateContract(PRICE_UPKEEP_KEY, address(stub));
+        IWhitespaceRegistry(d.registry).updateContract(PRICE_UPKEEP_KEY, address(stub));
     }
 
     function test_installReplacesAnOutdatedHardenedUpkeep() public {
@@ -539,7 +539,7 @@ contract OracleHardeningTest is Test {
         address u = operator.installHardenedUpkeep(_oracleConfig());
 
         assertTrue(u != address(stub), "an outdated upkeep must be replaced, not reused");
-        assertEq(IOstiumRegistry(d.registry).getContractAddress(PRICE_UPKEEP_KEY), u);
+        assertEq(IWhitespaceRegistry(d.registry).getContractAddress(PRICE_UPKEEP_KEY), u);
         assertEq(WhitespacePriceUpKeep(u).baselineMaxAge(), 15 minutes);
         assertFalse(WhitespacePriceUpKeep(u).paused());
         assertFalse(WhitespacePriceUpKeep(u).isFeedHalted(FEED));
@@ -615,7 +615,7 @@ contract OracleHardeningTest is Test {
                 MAX_DEVIATION_BPS
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
 
         assertGt(_openCollateral(), 0, "a rejected report must leave the position untouched");
         assertEq(upkeep.lastPrice(FEED), BTC_65K, "a rejected price must not move the baseline");
@@ -638,7 +638,7 @@ contract OracleHardeningTest is Test {
                 MAX_DEVIATION_BPS
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
     }
 
     /// @dev The recovery path, and the reason `clearPriceBaseline` exists. A genuine >5% move
@@ -656,7 +656,7 @@ contract OracleHardeningTest is Test {
                 FEED, BTC_65K, BTC_PLUS_6PCT, MAX_DEVIATION_BPS
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
 
         vm.prank(gov);
         upkeep.clearPriceBaseline(FEED);
@@ -698,7 +698,7 @@ contract OracleHardeningTest is Test {
                 FEED, BTC_65K, BTC_PLUS_6PCT, MAX_DEVIATION_BPS
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
     }
 
     function test_baselineMaxAgeDefaultsToFifteenMinutes() public view {
@@ -721,16 +721,16 @@ contract OracleHardeningTest is Test {
                 FEED, BTC_65K, BTC_PLUS_6PCT, MAX_DEVIATION_BPS
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, closeOrderId));
     }
 
     function test_setBaselineMaxAgeRejectsZeroAndNonGov() public {
         vm.prank(gov);
-        vm.expectRevert(IOstiumPriceUpKeep.WrongParams.selector);
+        vm.expectRevert(IWhitespacePriceUpKeep.WrongParams.selector);
         upkeep.setBaselineMaxAge(0);
 
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.setBaselineMaxAge(1 hours);
     }
 
@@ -755,7 +755,7 @@ contract OracleHardeningTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(WhitespacePriceUpKeep.NonPositivePrice.selector, FEED, int192(0))
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     // -------------------------------------------------------------------------------------
@@ -789,13 +789,13 @@ contract OracleHardeningTest is Test {
 
         vm.prank(trader);
         vm.expectRevert(abi.encodeWithSelector(WhitespacePriceUpKeep.FeedHalted.selector, FEED));
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: 1000e6, openPrice: uint192(uint256(int256(BTC_65K))), tp: 0, sl: 0,
                 trader: trader, leverage: 1000, pairIndex: 0, index: 0, buy: true, isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
 
@@ -817,7 +817,7 @@ contract OracleHardeningTest is Test {
         bytes memory report = _signed(timestamp, BTC_65K);
         vm.prank(keeper);
         vm.expectRevert(abi.encodeWithSelector(WhitespacePriceUpKeep.FeedHalted.selector, FEED));
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_govCanResumeAHaltedFeed() public {
@@ -839,7 +839,7 @@ contract OracleHardeningTest is Test {
         upkeep.haltFeed(FEED);
 
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.resumeFeed(FEED);
     }
 
@@ -869,13 +869,13 @@ contract OracleHardeningTest is Test {
         _fundTrader(10_000e6);
         vm.prank(trader);
         vm.expectRevert(WhitespacePriceUpKeep.IsPaused.selector);
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: 1000e6, openPrice: uint192(uint256(int256(BTC_65K))), tp: 0, sl: 0,
                 trader: trader, leverage: 1000, pairIndex: 0, index: 0, buy: true, isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
     }
@@ -890,7 +890,7 @@ contract OracleHardeningTest is Test {
         bytes memory report = _signed(timestamp, BTC_65K);
         vm.prank(keeper);
         vm.expectRevert(WhitespacePriceUpKeep.IsPaused.selector);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev Immediate, no timelock, and reversible only by gov — then the exchange resumes.
@@ -911,7 +911,7 @@ contract OracleHardeningTest is Test {
         upkeep.pause();
 
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.unpause();
     }
 
@@ -932,29 +932,29 @@ contract OracleHardeningTest is Test {
     ///      which is precisely the move a compromised hot key would want.
     function test_guardianCannotChangeParameters() public {
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.setMaxDeviationBps(10_000);
 
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.setMaxAge(3600);
 
         vm.prank(guardian);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotGov.selector, guardian));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotGov.selector, guardian));
         upkeep.setGuardian(address(0xBAD));
     }
 
     function test_railParametersRejectDisablingValues() public {
         vm.prank(gov);
-        vm.expectRevert(IOstiumPriceUpKeep.WrongParams.selector);
+        vm.expectRevert(IWhitespacePriceUpKeep.WrongParams.selector);
         upkeep.setMaxAge(0);
 
         vm.prank(gov);
-        vm.expectRevert(IOstiumPriceUpKeep.WrongParams.selector);
+        vm.expectRevert(IWhitespacePriceUpKeep.WrongParams.selector);
         upkeep.setMaxDeviationBps(0);
 
         vm.prank(gov);
-        vm.expectRevert(IOstiumPriceUpKeep.WrongParams.selector);
+        vm.expectRevert(IWhitespacePriceUpKeep.WrongParams.selector);
         upkeep.setMaxDeviationBps(10_001);
     }
 
@@ -971,8 +971,8 @@ contract OracleHardeningTest is Test {
 
         bytes memory report = _signed(timestamp + 1, BTC_65K);
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.InvalidPrice.selector, orderId));
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.InvalidPrice.selector, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev A report for the wrong feed cannot be applied to this order.
@@ -985,8 +985,8 @@ contract OracleHardeningTest is Test {
         bytes memory report = ReportLib.signedReport(r, ReportLib.keys3(K1, K2, K3));
 
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.InvalidPrice.selector, orderId));
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.InvalidPrice.selector, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_nonForwarderStillReverts() public {
@@ -996,37 +996,37 @@ contract OracleHardeningTest is Test {
         bytes memory report = _signed(timestamp, BTC_65K);
         vm.prank(address(0xBAD));
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, address(0xBAD))
+            abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, address(0xBAD))
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function test_unknownOrderStillReverts() public {
         bytes memory report = _signed(uint32(block.timestamp), BTC_65K);
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotInitiated.selector, 999));
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, 999));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotInitiated.selector, 999));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, 999));
     }
 
     /// @dev Only the price router may register an order.
     function test_getPriceRejectsNonRouter() public {
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotRouter.selector, address(0xBAD)));
-        upkeep.getPrice(1, 0, IOstiumPriceUpKeep.OrderType.MARKET_OPEN, block.timestamp);
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotRouter.selector, address(0xBAD)));
+        upkeep.getPrice(1, 0, IWhitespacePriceUpKeep.OrderType.MARKET_OPEN, block.timestamp);
     }
 
     /// @dev Forwarder registration is `onlyTimelock` (the registry `owner()`), matching the
     ///      vendored upkeep, so the phase-1 runbook's role split still applies.
     function test_registerForwarderRejectsGov() public {
         vm.prank(gov);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.NotTimelock.selector, gov));
-        IOstiumForwarded(address(upkeep)).registerForwarder(address(0x1234));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.NotTimelock.selector, gov));
+        IWhitespaceForwarded(address(upkeep)).registerForwarder(address(0x1234));
     }
 }
 
 /// @notice The window between the two install transactions, when the verifier and the upkeep
 ///         disagree about the wire format.
-/// @dev    `WhitespaceVerifier` returns a NINE-field payload; `OstiumPrivatePriceUpKeep` decodes
+/// @dev    `WhitespaceVerifier` returns a NINE-field payload; `WhitespacePrivatePriceUpKeep` decodes
 ///         SEVEN. Migrating a live system means one gov transaction lands before the other, so
 ///         this state exists on chain for at least one block, and "it fails closed" is a claim
 ///         about a NEGATIVE — exactly the kind that deserves a probe rather than an assertion in
@@ -1104,13 +1104,13 @@ contract OracleMigrationWindowTest is Test {
     function _openMarketTrade() internal returns (uint256 orderId, uint32 timestamp) {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: 1000e6, openPrice: uint192(uint256(int256(BTC_65K))), tp: 0, sl: 0,
                 trader: trader, leverage: 1000, pairIndex: 0, index: 0, buy: true, isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
 
@@ -1126,7 +1126,7 @@ contract OracleMigrationWindowTest is Test {
     }
 
     function _openCollateral() internal view returns (uint256 collateral) {
-        (collateral,,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (collateral,,,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     /// @dev Verifier swapped, upkeep not yet. The vendored upkeep asks the hardened verifier for
@@ -1142,7 +1142,7 @@ contract OracleMigrationWindowTest is Test {
 
         vm.prank(keeper);
         (bool ok,) = d.priceUpKeep.call(
-            abi.encodeCall(IOstiumPriceUpKeep.performUpkeep, (abi.encode(report, orderId)))
+            abi.encodeCall(IWhitespacePriceUpKeep.performUpkeep, (abi.encode(report, orderId)))
         );
 
         assertFalse(ok, "a nine-field report must not be delivered through the seven-field upkeep");
@@ -1164,7 +1164,7 @@ contract OracleMigrationWindowTest is Test {
 
         vm.prank(keeper);
         (bool ok,) = u.call(
-            abi.encodeCall(IOstiumPriceUpKeep.performUpkeep, (abi.encode(report, orderId)))
+            abi.encodeCall(IWhitespacePriceUpKeep.performUpkeep, (abi.encode(report, orderId)))
         );
 
         assertFalse(ok, "a threshold report must not be delivered through the single-signer verifier");
@@ -1189,7 +1189,7 @@ contract OracleMigrationWindowTest is Test {
 
         vm.prank(keeper);
         (bool ok,) = u.call(
-            abi.encodeCall(IOstiumPriceUpKeep.performUpkeep, (abi.encode(legacyReport, orderId)))
+            abi.encodeCall(IWhitespacePriceUpKeep.performUpkeep, (abi.encode(legacyReport, orderId)))
         );
 
         assertFalse(ok, "the retired single-signature format must not be accepted");

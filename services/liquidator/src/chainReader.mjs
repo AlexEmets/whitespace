@@ -161,7 +161,7 @@ export function createChainReader({
     };
   }
 
-  /** Inputs to calculatePostFeeCollateral for this order (OstiumTradingCallbacks.sol:424, :443-446). */
+  /** Inputs to calculatePostFeeCollateral for this order (WhitespaceTradingCallbacks.sol:424, :443-446). */
   async function readOpenFees(trader, pairIndex, index) {
     const [opening, oracleFee, bf] = await Promise.all([
       infos('pairOpeningFees', [pairIndex]),
@@ -201,7 +201,7 @@ export function createChainReader({
     return BigInt(await infos('liqMarginThresholdP'));
   }
 
-  /** @param {number} limitOrder IOstiumTradingStorage.LimitOrder */
+  /** @param {number} limitOrder IWhitespaceTradingStorage.LimitOrder */
   async function readTriggerPending(trader, pairIndex, index, limitOrder) {
     const [triggerBlock, head, timeout] = await Promise.all([
       storage('orderTriggerBlock', [trader, pairIndex, index, limitOrder]),

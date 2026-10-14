@@ -1,5 +1,5 @@
 // Event fragments transcribed from
-// contracts/src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol.
+// contracts/src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol.
 // PriceRequestedV2 and PriceReceived were verified against real decoded logs
 // from Whitechain testnet 1874 (see test/decode.test.ts). Note: the deployed
 // contract emits PriceRequestedV2, not the V1 PriceRequested — confirmed by

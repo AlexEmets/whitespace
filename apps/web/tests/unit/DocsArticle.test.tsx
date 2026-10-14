@@ -189,7 +189,7 @@ describe('<DocsArticle>', () => {
     const text = container.textContent ?? '';
     expect(text).toMatch(/faucet token/i);
     expect(text).toMatch(/has been audited|audited/i);
-    expect(text).toMatch(/OstiumTradesUpKeep/);
+    expect(text).toMatch(/WhitespaceTradesUpKeep/);
     expect(text).toMatch(/degraded/i);
   });
 

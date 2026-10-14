@@ -4,13 +4,13 @@ pragma solidity 0.8.24;
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {IOstiumVerifier} from "../vendor/ostium/interfaces/IOstiumVerifier.sol";
-import {IOstiumRegistry} from "../vendor/ostium/interfaces/IOstiumRegistry.sol";
+import {IWhitespaceVerifier} from "../vendor/ostium/interfaces/IWhitespaceVerifier.sol";
+import {IWhitespaceRegistry} from "../vendor/ostium/interfaces/IWhitespaceRegistry.sol";
 
 /// @title  WhitespaceVerifier — k-of-N threshold price-report verification
-/// @notice Drop-in replacement for the vendored `OstiumVerifier` under the registry's
-///         `ostiumVerifier` key. Implements `IOstiumVerifier`, so every existing consumer
-///         (`OstiumPrivatePriceUpKeep`, `WhitespacePriceUpKeep`, `Operate.s.sol`) keeps
+/// @notice Drop-in replacement for the vendored `WhitespaceVerifier` under the registry's
+///         `ostiumVerifier` key. Implements `IWhitespaceVerifier`, so every existing consumer
+///         (`WhitespacePrivatePriceUpKeep`, `WhitespacePriceUpKeep`, `Operate.s.sol`) keeps
 ///         working against the same external surface.
 ///
 /// @dev    **Layer 1 of the two-layer oracle defence** (design spec §6.2). The vendored
@@ -51,10 +51,10 @@ import {IOstiumRegistry} from "../vendor/ostium/interfaces/IOstiumRegistry.sol";
 /// This verifier only reads the first two words of `reportData`; the remaining seven are the
 /// upkeep's business. It returns `reportData` verbatim on success, exactly as the vendored
 /// verifier does.
-contract WhitespaceVerifier is IOstiumVerifier {
+contract WhitespaceVerifier is IWhitespaceVerifier {
     /// @dev Immutable, unlike the vendored contract's mutable `registry`: nothing upstream ever
     ///      writes it, and gov authority is read through it on every privileged call.
-    IOstiumRegistry public immutable registry;
+    IWhitespaceRegistry public immutable registry;
 
     mapping(address => bool) public isAuthorizedSigner;
 
@@ -101,7 +101,7 @@ contract WhitespaceVerifier is IOstiumVerifier {
     ///      decision is therefore not "who deployed this" but "gov pointed the registry's
     ///      `ostiumVerifier` key at it" — gov must read `signerCount`/`threshold`/
     ///      `isAuthorizedSigner` off the deployed instance before adopting it.
-    constructor(IOstiumRegistry _registry, address[] memory initialSigners, uint256 initialThreshold) {
+    constructor(IWhitespaceRegistry _registry, address[] memory initialSigners, uint256 initialThreshold) {
         if (address(_registry) == address(0)) revert WrongParams();
         registry = _registry;
 

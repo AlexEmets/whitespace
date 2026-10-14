@@ -69,7 +69,7 @@ describe('tpCapError (TradingCallbacksLib.correctTp, checked at open)', () => {
   });
 });
 
-describe('updateTpError (OstiumTrading.updateTp)', () => {
+describe('updateTpError (WhitespaceTrading.updateTp)', () => {
   // 10x: maxDist = P * 900 / 1000 = 0.9 P
   const base = { buy: true, openPrice: P, leverage: 1_000n, initialLeverage: 1_000n };
   it('refuses zero — a TP can be moved, never removed', () => {
@@ -89,7 +89,7 @@ describe('updateTpError (OstiumTrading.updateTp)', () => {
   });
 });
 
-describe('updateSlError (OstiumTrading.updateSl)', () => {
+describe('updateSlError (WhitespaceTrading.updateSl)', () => {
   const base = { buy: true, openPrice: P, leverage: 1_000n, maxSlP: 75n };
   it('zero removes the stop', () => {
     expect(updateSlError({ ...base, newSl: 0n })).toBeNull();
@@ -130,7 +130,7 @@ describe('triggerPriceError', () => {
   });
 });
 
-describe('slippageForSubmission (OstiumTrading.openTrade)', () => {
+describe('slippageForSubmission (WhitespaceTrading.openTrade)', () => {
   it('is exactly zero for resting orders', () => {
     expect(slippageForSubmission('LIMIT', 50n)).toBe(0n);
     expect(slippageForSubmission('STOP', 50n)).toBe(0n);

@@ -20,11 +20,11 @@ import { confirmTx } from '@/lib/tx';
  * own balance: the number drops the moment a request lands, and a cached value would show
  * the user shares they no longer control.
  *
- * `OstiumVault.decimals()` is a hardcoded 6 (OstiumVault.sol:371-373), the same as USDW,
+ * `WhitespaceVault.decimals()` is a hardcoded 6 (WhitespaceVault.sol:371-373), the same as USDW,
  * so COLLATERAL_DECIMALS formats both.
  */
 /** Total assets the vault reports holding, raw 6-decimal USDW. A real contract read
- * (`IOstiumVault.tvl`), so it is 0 when the vault is genuinely empty and `null` only
+ * (`IWhitespaceVault.tvl`), so it is 0 when the vault is genuinely empty and `null` only
  * while the read is in flight — the two are not the same claim and are not rendered the
  * same way. */
 export function useVaultTvl() {
@@ -52,7 +52,7 @@ export function useVaultShares() {
 /**
  * LP deposit/withdraw flow (design: "Deposit/withdraw USDW to the vault (LP flow) —
  * `requestDeposit` / settlement / `claimDeposit`"). This is genuinely async: a request
- * only becomes claimable after a settlement runs (IOstiumVault.sol's `RequestStatus`
+ * only becomes claimable after a settlement runs (IWhitespaceVault.sol's `RequestStatus`
  * lifecycle: NONE -> PENDING -> CLAIMABLE|RECLAIMABLE). The UI must not claim to have
  * deposited until the claim step actually succeeds.
  */

@@ -7,15 +7,15 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {TestnetFixture} from "../helpers/TestnetFixture.sol";
 import {DeployScript, SystemDeployer} from "../../script/Deploy.s.sol";
 import {DeployTestnetScript} from "../../script/DeployTestnet.s.sol";
-import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
-import {OstiumPairInfos} from "../../src/vendor/ostium/OstiumPairInfos.sol";
+import {WhitespaceVault} from "../../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespacePairInfos} from "../../src/vendor/ostium/WhitespacePairInfos.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumPairInfos} from "../../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePairsStorage} from "../../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespacePairInfos} from "../../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
 
 /// @notice The testnet deploy script produces exactly the system the spec describes, every market
 ///         on it trades, liquidation works end to end, and re-running configuration changes nothing.
@@ -32,7 +32,7 @@ contract DeployTestnetTest is TestnetFixture {
     // -------------------------------------------------------------------------------------
 
     function test_registryResolvesEveryComponentIncludingTheTradesUpKeep() public view {
-        IOstiumRegistry r = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry r = IWhitespaceRegistry(d.registry);
         bytes32[9] memory names = [
             bytes32("tradingStorage"), "pairsStorage", "pairInfos", "trading", "callbacks", "vault",
             "openPnl", "priceRouter", "tradesUpKeep"
@@ -60,7 +60,7 @@ contract DeployTestnetTest is TestnetFixture {
     }
 
     function test_everyMarketResolvesItsPriceThroughTheOneHardenedUpkeep() public view {
-        IOstiumRegistry r = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry r = IWhitespaceRegistry(d.registry);
         bytes32[4] memory keys =
             [bytes32("BTC/USDPriceUpkeep"), "ETH/USDPriceUpkeep", "SOL/USDPriceUpkeep", "WBT/USDPriceUpkeep"];
         for (uint256 i = 0; i < keys.length; i++) {
@@ -77,12 +77,12 @@ contract DeployTestnetTest is TestnetFixture {
     }
 
     function test_marketOrdersTimeoutIsElevenBlocksAndTriggerTimeoutUnchanged() public view {
-        assertEq(IOstiumTrading(d.trading).marketOrdersTimeout(), 11, "marketOrdersTimeout");
-        assertEq(IOstiumTrading(d.trading).triggerTimeout(), 30, "triggerTimeout");
+        assertEq(IWhitespaceTrading(d.trading).marketOrdersTimeout(), 11, "marketOrdersTimeout");
+        assertEq(IWhitespaceTrading(d.trading).triggerTimeout(), 30, "triggerTimeout");
     }
 
     function test_vaultIsSeededAndSettlesHourly() public view {
-        OstiumVault v = OstiumVault(d.vault);
+        WhitespaceVault v = WhitespaceVault(d.vault);
         assertEq(v.maxSettlementInterval(), 1 hours, "maxSettlementInterval");
         assertEq(v.currentBalance(), LP_AMOUNT, "vault liquidity");
         assertGt(v.balanceOf(lp), 0, "the LP holds its claimed shares");
@@ -95,7 +95,7 @@ contract DeployTestnetTest is TestnetFixture {
     // -------------------------------------------------------------------------------------
 
     function test_listsExactlyTheFourSpecifiedMarketsInOrder() public view {
-        IOstiumPairsStorage ps = IOstiumPairsStorage(d.pairsStorage);
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(d.pairsStorage);
         DeployTestnetScript.MarketSpec[] memory specs = script.testnetMarkets();
         assertEq(ps.pairsCount(), specs.length, "pair count");
         assertEq(ps.groupsCount(), 1, "one group");
@@ -110,7 +110,7 @@ contract DeployTestnetTest is TestnetFixture {
             assertEq(maxLev, specs[i].maxLeverage, "maxLeverage");
             assertEq(groupIndex, 0, "group");
             assertEq(feeIndex, 0, "fee tier");
-            assertEq(IOstiumTradingStorage(d.tradingStorage).openInterest(i, 2), specs[i].maxOi, "max OI");
+            assertEq(IWhitespaceTradingStorage(d.tradingStorage).openInterest(i, 2), specs[i].maxOi, "max OI");
         }
     }
 
@@ -127,7 +127,7 @@ contract DeployTestnetTest is TestnetFixture {
     function test_everyMarketChargesTheSpecifiedOpeningFees() public {
         for (uint16 i = 0; i < 4; i++) {
             (uint32 maker, uint32 taker, uint32 usage, uint16 util, uint16 makerMaxLev, uint8 vaultPct) =
-                IOstiumPairInfos(d.pairInfos).pairOpeningFees(i);
+                IWhitespacePairInfos(d.pairInfos).pairOpeningFees(i);
             assertEq(maker, 10_000, "maker 0.01%");
             assertEq(taker, 30_000, "taker 0.03%");
             assertEq(usage, 0, "no usage fee");
@@ -141,9 +141,9 @@ contract DeployTestnetTest is TestnetFixture {
     ///         delivery (~0.0015 WBT) with margin, without eating small trades.
     function test_everyMarketChargesATenCentOracleFee() public view {
         for (uint16 i = 0; i < 4; i++) {
-            assertEq(IOstiumPairsStorage(d.pairsStorage).pairOracleFee(i), 100_000, "oracle fee $0.10");
+            assertEq(IWhitespacePairsStorage(d.pairsStorage).pairOracleFee(i), 100_000, "oracle fee $0.10");
         }
-        (bytes32 name, uint64 minLevPos, uint64 oracleFee, uint16 liqFeeP) = IOstiumPairsStorage(d.pairsStorage).fees(0);
+        (bytes32 name, uint64 minLevPos, uint64 oracleFee, uint16 liqFeeP) = IWhitespacePairsStorage(d.pairsStorage).fees(0);
         assertEq(name, bytes32("BTC-USD"), "tier name unchanged");
         assertEq(minLevPos, 10_000_000, "min position $10 unchanged");
         assertEq(oracleFee, 100_000, "tier oracle fee");
@@ -154,14 +154,14 @@ contract DeployTestnetTest is TestnetFixture {
     ///         brought to the current ones by a configuration replay — how the live 1874
     ///         deployment is re-priced without redeploying.
     function test_aReplayRepricesASystemOnTheOldFees() public {
-        IOstiumPairsStorage ps = IOstiumPairsStorage(d.pairsStorage);
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(d.pairsStorage);
         vm.prank(gov);
-        ps.updateFee(0, IOstiumPairsStorage.Fee({name: "BTC-USD", minLevPos: 10_000_000, oracleFee: 1_000_000, liqFeeP: 50}));
+        ps.updateFee(0, IWhitespacePairsStorage.Fee({name: "BTC-USD", minLevPos: 10_000_000, oracleFee: 1_000_000, liqFeeP: 50}));
         for (uint16 i = 0; i < 4; i++) {
             vm.prank(gov);
-            IOstiumPairInfos(d.pairInfos).setPairOpeningFees(
+            IWhitespacePairInfos(d.pairInfos).setPairOpeningFees(
                 i,
-                IOstiumPairInfos.PairOpeningFees({
+                IWhitespacePairInfos.PairOpeningFees({
                     makerFeeP: 30_000, takerFeeP: 60_000, usageFeeP: 0, utilizationThresholdP: 8_000,
                     makerMaxLeverage: 2_000, vaultFeePercent: 50
                 })
@@ -173,7 +173,7 @@ contract DeployTestnetTest is TestnetFixture {
 
         assertEq(ps.pairOracleFee(0), 100_000, "oracle fee re-priced");
         for (uint16 i = 0; i < 4; i++) {
-            (uint32 maker, uint32 taker,,,,) = IOstiumPairInfos(d.pairInfos).pairOpeningFees(i);
+            (uint32 maker, uint32 taker,,,,) = IWhitespacePairInfos(d.pairInfos).pairOpeningFees(i);
             assertEq(maker, 10_000, "maker re-priced");
             assertEq(taker, 30_000, "taker re-priced");
         }
@@ -182,7 +182,7 @@ contract DeployTestnetTest is TestnetFixture {
     function test_everyMarketHasFundingCappedAtOneHundredPercentAYear() public {
         for (uint16 i = 0; i < 4; i++) {
             (,,, int64 inflection, uint64 maxPerBlock, uint64 spring,, uint16 pos, uint16 neg, uint16 up, uint16 down,) =
-                IOstiumPairInfos(d.pairInfos).pairFundingFees(i);
+                IWhitespacePairInfos(d.pairInfos).pairFundingFees(i);
             assertEq(inflection, 0, "no inflection offset");
             assertEq(maxPerBlock, 31_709_791_983, "1e18 / 31,536,000 blocks");
             assertEq(spring, 1e14, "spring factor");
@@ -198,7 +198,7 @@ contract DeployTestnetTest is TestnetFixture {
     function test_everyMarketCarriesAOneAndAHalfPercentBrokerPremium() public view {
         for (uint16 i = 0; i < 4; i++) {
             (,, int256 lastLongPure, uint256 premium, uint64 maxPerBlock, uint32 lastUpdate, bool negAllowed) =
-                OstiumPairInfos(d.pairInfos).pairRolloverFeesV2(i);
+                WhitespacePairInfos(d.pairInfos).pairRolloverFeesV2(i);
             assertEq(lastLongPure, 0, "no directional rollover");
             assertEq(premium, 475_646_879, "1.5% / year");
             assertEq(maxPerBlock, 951_293_758, "cap = 2x premium");
@@ -211,7 +211,7 @@ contract DeployTestnetTest is TestnetFixture {
         uint256[4] memory thresholds = [uint256(50_000e18), 50_000e18, 50_000e18, 10_000e18];
         uint256[4] memory ks = [uint256(2e18), 2e18, 2e18, 1e19];
         for (uint16 i = 0; i < 4; i++) {
-            (uint256 thr, uint128 decay, uint256 k) = IOstiumPairInfos(d.pairInfos).pairDynamicSpreadParams(i);
+            (uint256 thr, uint128 decay, uint256 k) = IWhitespacePairInfos(d.pairInfos).pairDynamicSpreadParams(i);
             assertEq(thr, thresholds[i], "net volume threshold");
             assertEq(decay, 1e15, "decay rate");
             assertEq(k, ks[i], "priceImpactK");
@@ -229,7 +229,7 @@ contract DeployTestnetTest is TestnetFixture {
 
             vm.recordLogs();
             vm.prank(trader);
-            IOstiumTrading(d.trading).closeTradeMarket(i, 0, 0, uint192(uint256(int256(_basePrice(i)))), 100);
+            IWhitespaceTrading(d.trading).closeTradeMarket(i, 0, 0, uint192(uint256(int256(_basePrice(i)))), 100);
             (uint256 orderId, uint32 ts) = _lastPriceRequest();
             _deliver(orderId, _report(i, ts, _basePrice(i)));
             assertEq(_openTrade(trader, i, 0).leverage, 0, "position closed");
@@ -238,9 +238,9 @@ contract DeployTestnetTest is TestnetFixture {
 
     /// @notice The opening fee is charged at the spec rate and split half to the vault.
     function test_openingFeeIsChargedAndSplitHalfToTheVault() public {
-        uint256 devFeesBefore = IOstiumTradingStorage(d.tradingStorage).devFees();
+        uint256 devFeesBefore = IWhitespaceTradingStorage(d.tradingStorage).devFees();
         _open(trader, BTC, 1_000e6, 1_000, true);
-        uint256 devFee = IOstiumTradingStorage(d.tradingStorage).devFees() - devFeesBefore;
+        uint256 devFee = IWhitespaceTradingStorage(d.tradingStorage).devFees() - devFeesBefore;
         // ~10,000 notional at the 0.03% taker rate is ~3 USDW; the dev half is ~1.5. The $0.10
         // oracle fee accrues to devFees as well.
         assertApproxEqRel(devFee, 1.5e6 + 0.1e6, 0.01e18, "dev half of a 0.03% taker fee plus the oracle fee");
@@ -285,7 +285,7 @@ contract DeployTestnetTest is TestnetFixture {
 
             vm.prank(trader);
             (bool refundable,) =
-                d.trading.call(abi.encodeCall(IOstiumTrading.openTradeMarketTimeout, (orderId)));
+                d.trading.call(abi.encodeCall(IWhitespaceTrading.openTradeMarketTimeout, (orderId)));
 
             assertTrue(fillable != refundable, string.concat("block +", vm.toString(n), " is not exactly one"));
             assertEq(fillable, n <= MAX_AGE, "fillable exactly while the report is within maxAge");
@@ -295,7 +295,7 @@ contract DeployTestnetTest is TestnetFixture {
 
     function _tryDeliver(uint256 orderId, bytes memory report) internal returns (bool ok) {
         vm.prank(keeper);
-        (ok,) = address(upkeep).call(abi.encodeCall(IOstiumPriceUpKeep.performUpkeep, (abi.encode(report, orderId))));
+        (ok,) = address(upkeep).call(abi.encodeCall(IWhitespacePriceUpKeep.performUpkeep, (abi.encode(report, orderId))));
     }
 
     // -------------------------------------------------------------------------------------
@@ -307,7 +307,7 @@ contract DeployTestnetTest is TestnetFixture {
         uint256 vaultBefore = IERC20(d.collateral).balanceOf(d.vault);
         uint256 traderBefore = IERC20(d.collateral).balanceOf(trader);
 
-        (uint256 orderId, uint32 ts) = _trigger(liquidatorA, trader, BTC, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+        (uint256 orderId, uint32 ts) = _trigger(liquidatorA, trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         _deliver(orderId, _report(BTC, ts, 63_500e18)); // -2.3% at 50x is past the margin
 
         assertEq(_openTrade(trader, BTC, 0).leverage, 0, "position liquidated");
@@ -317,7 +317,7 @@ contract DeployTestnetTest is TestnetFixture {
 
     function test_aHealthyPositionSurvivesALiquidationTrigger() public {
         _open(trader, BTC, 1_000e6, 5_000, true);
-        (uint256 orderId, uint32 ts) = _trigger(liquidatorB, trader, BTC, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+        (uint256 orderId, uint32 ts) = _trigger(liquidatorB, trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         _deliver(orderId, _report(BTC, ts, _basePrice(BTC)));
         assertEq(_openTrade(trader, BTC, 0).leverage, 5_000, "not liquidated at its own entry");
     }
@@ -347,20 +347,20 @@ contract DeployTestnetTest is TestnetFixture {
         SystemDeployer.Deployment memory bare = core.deployAll(
             SystemDeployer.Roles({gov: gov, dev: dev, manager: manager, owner: owner, marketMaker: marketMaker})
         );
-        assertEq(IOstiumTrading(bare.trading).marketOrdersTimeout(), 30, "precondition");
+        assertEq(IWhitespaceTrading(bare.trading).marketOrdersTimeout(), 30, "precondition");
 
         vm.setEnv("REGISTRY_ADDRESS", vm.toString(bare.registry));
         DeployTestnetScript fresh = new DeployTestnetScript();
         fresh.configureTestnet();
 
-        assertEq(IOstiumTrading(bare.trading).marketOrdersTimeout(), 11, "timeout aligned");
-        assertEq(IOstiumPairsStorage(bare.pairsStorage).pairsCount(), 4, "markets listed");
-        assertEq(OstiumVault(bare.vault).currentBalance(), LP_AMOUNT, "vault seeded");
-        IOstiumRegistry(bare.registry).getContractAddress("tradesUpKeep");
+        assertEq(IWhitespaceTrading(bare.trading).marketOrdersTimeout(), 11, "timeout aligned");
+        assertEq(IWhitespacePairsStorage(bare.pairsStorage).pairsCount(), 4, "markets listed");
+        assertEq(WhitespaceVault(bare.vault).currentBalance(), LP_AMOUNT, "vault seeded");
+        IWhitespaceRegistry(bare.registry).getContractAddress("tradesUpKeep");
     }
 
     /// @notice Under `forge script --broadcast`, a call the compiler sees as non-view is sent as a
-    ///         TRANSACTION. `IOstiumPairInfos` declares its mapping getters without `view`, so
+    ///         TRANSACTION. `IWhitespacePairInfos` declares its mapping getters without `view`, so
     ///         reading them through the interface made every deploy and every replay broadcast
     ///         16 gas-paying no-op transactions (seen on the anvil rehearsal). Every read the
     ///         script makes must reach the chain as a STATICCALL.

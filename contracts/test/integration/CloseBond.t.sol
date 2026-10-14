@@ -6,12 +6,12 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {SystemFixture} from "../helpers/SystemFixture.sol";
 import {ReportLib} from "../helpers/ReportLib.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumTradingCallbacks} from "../../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
-import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumPairInfos} from "../../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceTradingCallbacks} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
+import {IWhitespacePairsStorage} from "../../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespacePairInfos} from "../../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
 import {TradingLib} from "../../src/vendor/ostium/lib/TradingLib.sol";
 import {TradingCallbacksLib} from "../../src/vendor/ostium/lib/TradingCallbacksLib.sol";
 
@@ -19,7 +19,7 @@ import {TradingCallbacksLib} from "../../src/vendor/ostium/lib/TradingCallbacksL
 /// @dev See docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md.
 contract CloseBondTest is SystemFixture {
     /// Settled by test_fullCloseIsTenThousandNotOneHundred rather than assumed:
-    /// OstiumTrading.PERCENT_BASE (OstiumTrading.sol:28), the value that means "close all of it".
+    /// WhitespaceTrading.PERCENT_BASE (WhitespaceTrading.sol:28), the value that means "close all of it".
     uint16 internal constant FULL = 100e2;
 
     address internal trader = address(0x7AA);
@@ -68,7 +68,7 @@ contract CloseBondTest is SystemFixture {
     function _requestCloseAndFillAt(uint16 pct, int192 price) internal {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(
+        IWhitespaceTrading(d.trading).closeTradeMarket(
             0, 0, pct, uint192(uint256(int256(price))), 100
         );
         (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
@@ -89,14 +89,14 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev Request a close at `pct` and deliver a market-closed report, which
-    ///      `OstiumTradingCallbacks.sol:250-252` turns into `CancelReason.MARKET_CLOSED`.
+    ///      `WhitespaceTradingCallbacks.sol:250-252` turns into `CancelReason.MARKET_CLOSED`.
     ///      Decodes the emitted `MarketCloseCanceled` event rather than assuming the delivery
     ///      took that branch — a different cancel reason (e.g. `WRONG_TRADE`) would also leave
     ///      the position open and keep the bond, but for a reason this plan is not describing.
     function _requestCloseAndCancel(uint16 pct) internal {
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(
+        IWhitespaceTrading(d.trading).closeTradeMarket(
             0, 0, pct, uint192(uint256(int256(BTC_65K))), 100
         );
         (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
@@ -106,11 +106,11 @@ contract CloseBondTest is SystemFixture {
         bytes32 sig = keccak256("MarketCloseCanceled(uint256,uint256,address,uint256,uint256,uint8)");
         for (uint256 j = logs.length; j > 0; j--) {
             if (logs[j - 1].topics.length > 0 && logs[j - 1].topics[0] == sig) {
-                (,, IOstiumTradingCallbacks.CancelReason reason) =
-                    abi.decode(logs[j - 1].data, (uint256, uint256, IOstiumTradingCallbacks.CancelReason));
+                (,, IWhitespaceTradingCallbacks.CancelReason reason) =
+                    abi.decode(logs[j - 1].data, (uint256, uint256, IWhitespaceTradingCallbacks.CancelReason));
                 assertEq(
                     uint8(reason),
-                    uint8(IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED),
+                    uint8(IWhitespaceTradingCallbacks.CancelReason.MARKET_CLOSED),
                     "a price=0 report must cancel with MARKET_CLOSED, not some other reason"
                 );
                 return;
@@ -132,7 +132,7 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev Opens directly at `TradingLib.getEffectiveMaxLeverage` rather than working up to it
-    ///      via `removeCollateral`: `OstiumTrading.sol`'s open-time check is `t.leverage >
+    ///      via `removeCollateral`: `WhitespaceTrading.sol`'s open-time check is `t.leverage >
     ///      maxLeverage`, so leverage exactly equal to the cap is accepted on open, not just
     ///      reachable afterward. $1,000 collateral at this pair's 100.00x cap sits comfortably
     ///      inside `pairMinLevPos`, `maxOpenInterest` and `groupMaxCollateral` (20% of a
@@ -141,7 +141,7 @@ contract CloseBondTest is SystemFixture {
     /// @dev The pair's effective cap for an overnight trade, which is what every leverage check on
     ///      the close path compares against.
     function _maxLeverage() internal view returns (uint32) {
-        return TradingLib.getEffectiveMaxLeverage(0, false, IOstiumPairsStorage(d.pairsStorage));
+        return TradingLib.getEffectiveMaxLeverage(0, false, IWhitespacePairsStorage(d.pairsStorage));
     }
 
     function _openAtLeverage(uint32 leverage, uint256 collateral) internal {
@@ -150,7 +150,7 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev Opens directly at `TradingLib.getEffectiveMaxLeverage` rather than working up to it
-    ///      via `removeCollateral`: `OstiumTrading.sol`'s open-time check is `t.leverage >
+    ///      via `removeCollateral`: `WhitespaceTrading.sol`'s open-time check is `t.leverage >
     ///      maxLeverage`, so leverage exactly equal to the cap is accepted on open, not just
     ///      reachable afterward. $1,000 collateral at this pair's 100.00x cap sits comfortably
     ///      inside `pairMinLevPos`, `maxOpenInterest` and `groupMaxCollateral` (20% of a
@@ -193,7 +193,7 @@ contract CloseBondTest is SystemFixture {
     /// @dev What a full close pays out, measured rather than recomputed: snapshot state,
     ///      actually run the full close against `trader`'s live, funded position, read the
     ///      USDW balance delta, then roll back so the caller's position and wallet are
-    ///      untouched. Recomputing this from `OstiumPairInfos`' own fee/PnL formulas would
+    ///      untouched. Recomputing this from `WhitespacePairInfos`' own fee/PnL formulas would
     ///      assert the contract against itself; asking the contract directly (while the wallet
     ///      is still funded enough to pay the bond) and then undoing it is the only way later
     ///      tasks get an independent number to compare their own payout against.
@@ -206,53 +206,53 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev The oracle-fee bond charged and refunded on the close path
-    ///      (`OstiumTrading.sol:311`, `OstiumTradingCallbacks.sol:336-342`).
+    ///      (`WhitespaceTrading.sol:311`, `WhitespaceTradingCallbacks.sol:336-342`).
     function _bond() internal view returns (uint256) {
-        return IOstiumPairsStorage(d.pairsStorage).pairOracleFee(0);
+        return IWhitespacePairsStorage(d.pairsStorage).pairOracleFee(0);
     }
 
     /// @dev Accrued protocol fees, including any bond kept on a cancelled or partial close.
     function _devFees() internal view returns (uint256) {
-        return IOstiumTradingStorage(d.tradingStorage).devFees();
+        return IWhitespaceTradingStorage(d.tradingStorage).devFees();
     }
 
     /// @dev `trader`'s leverage on their one open-trade slot, PRECISION_2. `openTrades` returns
     ///      the 10-tuple `(collateral, openPrice, tp, sl, trader, leverage, pairIndex, index,
     ///      buy, isDayTrade)` — leverage is the 6th field.
     function _openLeverage() internal view returns (uint32 leverage) {
-        (,,,,, leverage,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (,,,,, leverage,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     /// @dev The 2nd and 3rd fields of the same 10-tuple.
     function _openPrice() internal view returns (uint192 openPrice) {
-        (, openPrice,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (, openPrice,,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     /// @dev The 4th field of the same 10-tuple.
     function _openSl() internal view returns (uint192 sl) {
-        (,,, sl,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (,,, sl,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
     function _openTp() internal view returns (uint192 tp) {
-        (,, tp,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
+        (,, tp,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(trader, 0, 0);
     }
 
-    function _tradeInfo() internal view returns (IOstiumTradingStorage.TradeInfo memory) {
-        return IOstiumTradingStorage(d.tradingStorage).getOpenTradeInfo(trader, 0, 0);
+    function _tradeInfo() internal view returns (IWhitespaceTradingStorage.TradeInfo memory) {
+        return IWhitespaceTradingStorage(d.tradingStorage).getOpenTradeInfo(trader, 0, 0);
     }
 
     /// @dev The long side of the pair's group collateral. `_chargeBondFromPosition` must debit
     ///      this in lockstep with the trade's own collateral field, the way
     ///      `handleRemoveCollateral` does — they track the same money.
     function _groupCollateral() internal view returns (uint256) {
-        return IOstiumPairsStorage(d.pairsStorage).groupCollateral(0, true);
+        return IWhitespacePairsStorage(d.pairsStorage).groupCollateral(0, true);
     }
 
     /// @dev How far the open position is above its liquidation margin, valued at `price`.
     ///
     ///      This is what the bond eats: the leverage recompute holds `collateral x leverage`
     ///      fixed, and `liqMarginValue` is a pure function of that product
-    ///      (`OstiumPairInfos.getTradeLiquidationMargin`), so charging one bond drops `tradeValue`
+    ///      (`WhitespacePairInfos.getTradeLiquidationMargin`), so charging one bond drops `tradeValue`
     ///      by exactly one bond and leaves `liqMarginValue` where it was.
     ///
     ///      Rollover and funding are passed as zero rather than read: `Deploy.s.sol` sets
@@ -260,7 +260,7 @@ contract CloseBondTest is SystemFixture {
     ///      accumulators are pinned at zero for this fixture's whole life. Anything non-zero here
     ///      would mean the fixture changed underneath this helper.
     function _headroomAt(uint256 collateral, uint32 leverage, int192 price) internal view returns (int256) {
-        IOstiumPairInfos pairInfos = IOstiumPairInfos(d.pairInfos);
+        IWhitespacePairInfos pairInfos = IWhitespacePairInfos(d.pairInfos);
         (int256 profitP,) = TradingCallbacksLib.currentPercentProfit(
             int256(uint256(_openPrice())),
             int256(price),
@@ -287,7 +287,7 @@ contract CloseBondTest is SystemFixture {
         returns (int192)
     {
         uint256 rawAdjustedThreshold =
-            uint256(IOstiumPairInfos(d.pairInfos).liqMarginThresholdP()) * leverage * 1e6 / _maxLeverage();
+            uint256(IWhitespacePairInfos(d.pairInfos).liqMarginThresholdP()) * leverage * 1e6 / _maxLeverage();
 
         int256 openPrice = int256(uint256(_openPrice()));
         int256 profitP =
@@ -297,38 +297,38 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// @dev Registers this test contract as `tradesUpKeep` so it can drive
-    ///      `OstiumTrading.executeAutomationOrder` directly. `_onlyTradesUpKeep` is a bare
+    ///      `WhitespaceTrading.executeAutomationOrder` directly. `_onlyTradesUpKeep` is a bare
     ///      `msg.sender == registry.getContractAddress('tradesUpKeep')` check and
-    ///      `OstiumRegistry.registerContract` only demands the address have code, so the real
-    ///      `OstiumTradesUpKeep` — which does nothing but forward — buys nothing here.
+    ///      `WhitespaceRegistry.registerContract` only demands the address have code, so the real
+    ///      `WhitespaceTradesUpKeep` — which does nothing but forward — buys nothing here.
     function _becomeTradesUpKeep() internal {
         bytes32[] memory names = new bytes32[](1);
         address[] memory addrs = new address[](1);
         names[0] = "tradesUpKeep";
         addrs[0] = address(this);
         vm.prank(gov);
-        IOstiumRegistry(d.registry).registerContracts(names, addrs);
+        IWhitespaceRegistry(d.registry).registerContracts(names, addrs);
     }
 
     /// @dev Retire the open position through its own take-profit, exactly as a keeper would:
     ///      request the price, then deliver a report that trips the trigger.
     function _executeTp(int192 price) internal {
         vm.recordLogs();
-        IOstiumTrading(d.trading).executeAutomationOrder(
-            IOstiumTradingStorage.LimitOrder.TP, trader, 0, 0, block.timestamp
+        IWhitespaceTrading(d.trading).executeAutomationOrder(
+            IWhitespaceTradingStorage.LimitOrder.TP, trader, 0, 0, block.timestamp
         );
         (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
         _deliver(orderId, _signed(timestamp, price));
     }
 
     /// @dev The cancel reason on the last `MarketCloseCanceled` in the recorded logs.
-    function _lastCloseCancelReason() internal returns (IOstiumTradingCallbacks.CancelReason) {
+    function _lastCloseCancelReason() internal returns (IWhitespaceTradingCallbacks.CancelReason) {
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 sig = keccak256("MarketCloseCanceled(uint256,uint256,address,uint256,uint256,uint8)");
         for (uint256 j = logs.length; j > 0; j--) {
             if (logs[j - 1].topics.length > 0 && logs[j - 1].topics[0] == sig) {
-                (,, IOstiumTradingCallbacks.CancelReason reason) =
-                    abi.decode(logs[j - 1].data, (uint256, uint256, IOstiumTradingCallbacks.CancelReason));
+                (,, IWhitespaceTradingCallbacks.CancelReason reason) =
+                    abi.decode(logs[j - 1].data, (uint256, uint256, IWhitespaceTradingCallbacks.CancelReason));
                 return reason;
             }
         }
@@ -340,7 +340,7 @@ contract CloseBondTest is SystemFixture {
     // -------------------------------------------------------------------------------------
 
     /// TradeLocal.t.sol:166 passes closePercentage = 0 (its literal 100 there is the
-    /// unrelated slippageP argument), which OstiumTrading.sol:297-299 defaults to
+    /// unrelated slippageP argument), which WhitespaceTrading.sol:297-299 defaults to
     /// PERCENT_BASE — so that test exercises a full close without ever pinning what
     /// PERCENT_BASE actually is. Seven later tasks in this plan branch on that value, so it
     /// is settled here by test rather than by reading.
@@ -359,7 +359,7 @@ contract CloseBondTest is SystemFixture {
     }
 
     /// Baseline: a full close that executes is bond-neutral — charged at request
-    /// (OstiumTrading.sol:311), refunded at execution (OstiumTradingCallbacks.sol:336-342).
+    /// (WhitespaceTrading.sol:311), refunded at execution (WhitespaceTradingCallbacks.sol:336-342).
     function test_baselineFullCloseIsBondNeutral() public {
         _configureAll();
         _fundTrader(10_000e6);
@@ -417,7 +417,7 @@ contract CloseBondTest is SystemFixture {
         assertEq(_openCollateral(), 0, "a trader holding zero USDW must still be able to close");
     }
 
-    /// Notional is the protocol's invariant (see removeCollateral, OstiumTrading.sol). Charging
+    /// Notional is the protocol's invariant (see removeCollateral, WhitespaceTrading.sol). Charging
     /// the bond lowers collateral, so leverage MUST rise to keep collateral x leverage fixed.
     /// Subtracting collateral alone would delete `leverage x bond` of exposure with no fill.
     function test_chargingTheBondRaisesLeverageAndPreservesNotional() public {
@@ -567,7 +567,7 @@ contract CloseBondTest is SystemFixture {
 
         // The interaction this inherits from handleRemoveCollateral, stated so it cannot regress
         // silently: updateTrade routes tp through _updateTp, which re-stamps tpLastUpdated, and
-        // OstiumTrading.executeAutomationOrder returns NO_TP for any report timestamped at or
+        // WhitespaceTrading.executeAutomationOrder returns NO_TP for any report timestamped at or
         // before that stamp. Same behaviour as handleRemoveCollateral today, by design.
         assertGt(_tradeInfo().tpLastUpdated, stampBefore, "correcting tp re-stamps tpLastUpdated");
         assertEq(uint256(_tradeInfo().tpLastUpdated), block.timestamp, "the stamp is the current block");
@@ -587,12 +587,12 @@ contract CloseBondTest is SystemFixture {
 
         // Park A's take-profit just above spot so a keeper can trip it in this block.
         vm.prank(trader);
-        IOstiumTrading(d.trading).updateTp(0, 0, uint192(uint256(int256(BTC_65K))) + 100e18);
+        IWhitespaceTrading(d.trading).updateTp(0, 0, uint192(uint256(int256(BTC_65K))) + 100e18);
 
         // A close for A goes in flight.
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, FULL, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, FULL, uint192(uint256(int256(BTC_65K))), 100);
         (uint256 orderIdA, uint32 timestampA) = _lastPriceRequest();
 
         // A is retired underneath it by its own TP. Nothing rejects this: executeAutomationOrder
@@ -615,7 +615,7 @@ contract CloseBondTest is SystemFixture {
 
         assertEq(
             uint8(_lastCloseCancelReason()),
-            uint8(IOstiumTradingCallbacks.CancelReason.WRONG_TRADE),
+            uint8(IWhitespaceTradingCallbacks.CancelReason.WRONG_TRADE),
             "a report for a retired trade must cancel WRONG_TRADE, not MARKET_CLOSED"
         );
         assertEq(_devFees(), devBefore, "B must not pay A's bond");
@@ -627,7 +627,7 @@ contract CloseBondTest is SystemFixture {
     /// Every close path in sequence, asserted on the values that actually move.
     ///
     /// The charge moves no tokens at all — it decrements `collateral` and increments `devFees`,
-    /// both inside `OstiumTradingStorage` — so a balance-conservation check across trader, storage
+    /// both inside `WhitespaceTradingStorage` — so a balance-conservation check across trader, storage
     /// and vault cannot fail for any defect in this change and is not the assertion here. These
     /// are: `devFees`, the position's `collateral` and `leverage`, and the pair's group
     /// collateral, step by step. Conservation is still checked at the end, as the weaker
@@ -741,12 +741,12 @@ contract CloseBondTest is SystemFixture {
         _openAndFill(1000e6);
 
         // The widest stop the contract accepts: openPrice - openPrice * maxSl_P / leverage.
-        uint8 maxSlP = IOstiumTradingCallbacks(d.callbacks).maxSl_P();
+        uint8 maxSlP = IWhitespaceTradingCallbacks(d.callbacks).maxSl_P();
         uint192 openPrice = _openPrice();
         uint192 widestSl = uint192(uint256(openPrice) - (uint256(openPrice) * maxSlP) / _openLeverage());
 
         vm.prank(trader);
-        IOstiumTrading(d.trading).updateSl(0, 0, widestSl);
+        IWhitespaceTrading(d.trading).updateSl(0, 0, widestSl);
         uint192 slBefore = _openSl();
         assertGt(slBefore, 0, "precondition: the stop must be armed before the charge");
 
@@ -771,7 +771,7 @@ contract CloseBondTest is SystemFixture {
         _openAtLeverage(_maxLeverage(), 1000e6);
         _drainTraderUsdw();
 
-        // lastTradePrice is only written by an executed trade (OstiumOpenPnl.updateAccTotalPnl),
+        // lastTradePrice is only written by an executed trade (WhitespaceOpenPnl.updateAccTotalPnl),
         // so move it with a 1% partial close at the lower price. That also leaves a position
         // behind to charge, which is what the cancel below needs.
         _requestCloseAndFillAt(FULL / 100, BTC_65K * 97 / 100);
@@ -790,7 +790,7 @@ contract CloseBondTest is SystemFixture {
     ///      for an `OracleFeeBondCharged` check run afterward.
     function _requestCloseAndDeliverMarketClosed(uint16 pct) internal {
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(
+        IWhitespaceTrading(d.trading).closeTradeMarket(
             0, 0, pct, uint192(uint256(int256(BTC_65K))), 100
         );
         (uint256 orderId, uint32 timestamp) = _lastPriceRequest();
@@ -859,7 +859,7 @@ contract CloseBondTest is SystemFixture {
     /// @dev `MarketCloseExecutedV2`'s indexer handler sets collateral to what the close alone
     ///      leaves; this event must carry the number that comes after it, so an indexer applying
     ///      both events in log order (as `MarketCloseExecutedV2` fires first on-chain — see
-    ///      OstiumTradingCallbacks.sol) lands on the right final state either way.
+    ///      WhitespaceTradingCallbacks.sol) lands on the right final state either way.
     function test_chargingTheBondEmitsOracleFeeBondChargedOnPartialClose() public {
         _configureAll();
         _fundTrader(10_000e6);

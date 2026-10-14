@@ -9,7 +9,7 @@ import { padGas } from '@/lib/gas';
 import { confirmTx } from '@/lib/tx';
 import { useSessionKey } from './useSessionKey';
 
-/** PRECISION_2 percent, PERCENT_BASE per contracts/src/vendor/ostium/OstiumTrading.sol:28. */
+/** PRECISION_2 percent, PERCENT_BASE per contracts/src/vendor/ostium/WhitespaceTrading.sol:28. */
 export const FULL_CLOSE_PERCENT = 10000;
 
 export interface CloseTradeParams {

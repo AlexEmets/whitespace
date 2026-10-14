@@ -3,8 +3,8 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 
-import {OstiumRegistry} from "../../src/vendor/ostium/OstiumRegistry.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
+import {WhitespaceRegistry} from "../../src/vendor/ostium/WhitespaceRegistry.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 
 /// @notice The wire format across the language boundary: bytes produced by the JavaScript
@@ -47,7 +47,7 @@ contract PublisherVerifierWireTest is Test {
     function setUp() public {
         vm.chainId(CHAIN_ID);
 
-        OstiumRegistry registry = new OstiumRegistry(gov, address(0xDE7), address(0xA11), address(0x0E1));
+        WhitespaceRegistry registry = new WhitespaceRegistry(gov, address(0xDE7), address(0xA11), address(0x0E1));
 
         address[] memory signers = new address[](3);
         signers[0] = vm.addr(K1);
@@ -56,7 +56,7 @@ contract PublisherVerifierWireTest is Test {
 
         deployCodeTo(
             "WhitespaceVerifier.sol:WhitespaceVerifier",
-            abi.encode(IOstiumRegistry(address(registry)), signers, uint256(3)),
+            abi.encode(IWhitespaceRegistry(address(registry)), signers, uint256(3)),
             VERIFIER_ADDR
         );
         verifier = WhitespaceVerifier(VERIFIER_ADDR);

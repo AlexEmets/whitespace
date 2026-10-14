@@ -1,12 +1,12 @@
 /**
  * Pure bigint mirror of the margin/liquidation-price math in
- * contracts/src/vendor/ostium/OstiumPairInfos.sol. No network, no I/O, no floats —
+ * contracts/src/vendor/ostium/WhitespacePairInfos.sol. No network, no I/O, no floats —
  * every function here takes and returns bigint, and every arithmetic step is written
  * in the same left-to-right order as the Solidity source so integer truncation
  * (Solidity's `/` truncates toward zero for both int and uint; JS BigInt `/` does the
  * same) lands identically.
  *
- * Read this alongside OstiumPairInfos.sol:775-882 (getTradeLiquidationPrice,
+ * Read this alongside WhitespacePairInfos.sol:775-882 (getTradeLiquidationPrice,
  * getTradeLiquidationPricePure, getTradeValuePure, getTradeLiquidationMargin) and
  * TradingCallbacksLib.sol:41-79 (_currentPercentProfit). Line numbers as of the vendor
  * commit pinned in contracts/VENDOR.md.
@@ -15,7 +15,7 @@
  *
  * 0. IMPORTANT, found while building this module: `getTradeLiquidationPrice` /
  *    `getTradeLiquidationPricePure` is NOT literally the on-chain trigger condition. The
- *    real trigger, in OstiumTradingCallbacks.executeAutomationCloseOrderCallback:504, is
+ *    real trigger, in WhitespaceTradingCallbacks.executeAutomationCloseOrderCallback:504, is
  *    `isLiquidated = tvResult.tradeValue < tvResult.liqMarginValue`, computed by
  *    `pairInfos.getTradeValue(...)`. `getTradeLiquidationPrice` is a *separately solved*
  *    closed-form inverse (openPrice ± distance) that is never called anywhere in the
@@ -42,7 +42,7 @@
  *    On-chain these ultimately come from getPendingAccRolloverFees /
  *    getPendingAccFundingFees, which replay a Hill-function funding-rate curve and a
  *    Padé/power-of-two exponential approximation over accumulated per-block state
- *    (OstiumPairInfos.sol:561-716). That machinery is stateful (depends on every pair's
+ *    (WhitespacePairInfos.sol:561-716). That machinery is stateful (depends on every pair's
  *    funding history since its last touch) and numerically delicate — reimplementing it
  *    off-chain is exactly the kind of "wrong exponent never reverts" trap this project
  *    has hit twice already. This module treats rolloverFee/fundingFee as *inputs*,
@@ -57,7 +57,7 @@
  *    with synthetic fee values and (b) composing those exact view-call results into a
  *    final tradeValue — never for guessing fees from scratch.
  * 2. `liqMarginThresholdP` and `maxNegativePnlOnOpenP` are governance-mutable
- *    (`OstiumPairInfos.setLiqMarginThresholdP`). This module takes the current value as
+ *    (`WhitespacePairInfos.setLiqMarginThresholdP`). This module takes the current value as
  *    a parameter; a caller with a stale cached value will diverge. The chain reader
  *    re-reads `pairInfos.liqMarginThresholdP()` each cycle rather than caching it
  *    indefinitely.
@@ -83,12 +83,12 @@ export const PRECISION_6 = 10n ** 6n;
 /** 2-decimal leverage/percent precision (e.g. leverage=1000 means 10.00x). */
 export const PRECISION_2 = 100n;
 
-/** OstiumPairInfos.sol:27 — MAX_FUNDING_FEE et al. live there too, but the only cap
+/** WhitespacePairInfos.sol:27 — MAX_FUNDING_FEE et al. live there too, but the only cap
  * this module needs is the PnL cap used by _currentPercentProfit. */
 export const MAX_GAIN_P = 900n; // 900% PnL cap, TradingCallbacksLib.sol:22
 
 /**
- * Mirrors OstiumPairInfos.getTradeLiquidationMargin (OstiumPairInfos.sol:875-882)
+ * Mirrors WhitespacePairInfos.getTradeLiquidationMargin (WhitespacePairInfos.sol:875-882)
  * exactly. All inputs are uint-shaped (non-negative) bigints, matching the contract's
  * uint256/uint32/uint8 argument types.
  *
@@ -96,7 +96,7 @@ export const MAX_GAIN_P = 900n; // 900% PnL cap, TradingCallbacksLib.sol:22
  * @param {bigint} p.collateral PRECISION_6
  * @param {bigint} p.leverage PRECISION_2 (e.g. 1000n = 10.00x)
  * @param {bigint} p.maxLeverage PRECISION_2
- * @param {bigint} p.liqMarginThresholdP plain percent, e.g. 25n for 25% (OstiumPairInfos.liqMarginThresholdP())
+ * @param {bigint} p.liqMarginThresholdP plain percent, e.g. 25n for 25% (WhitespacePairInfos.liqMarginThresholdP())
  * @returns {bigint} PRECISION_6
  */
 export function getTradeLiquidationMargin({ collateral, leverage, maxLeverage, liqMarginThresholdP }) {
@@ -132,7 +132,7 @@ export function currentPercentProfit({ openPrice, currentPrice, buy, leverage, i
 }
 
 /**
- * Mirrors OstiumPairInfos.getTradeValuePure (OstiumPairInfos.sol:859-873) exactly,
+ * Mirrors WhitespacePairInfos.getTradeValuePure (WhitespacePairInfos.sol:859-873) exactly,
  * including the two *sequential* truncating divisions (`/ PRECISION_6 / 100n`, not one
  * division by their product — see file header note 4) and the floor-at-zero.
  *
@@ -150,7 +150,7 @@ export function getTradeValuePure({ collateral, percentProfit, rolloverFee, fund
 }
 
 /**
- * Mirrors OstiumPairInfos.getTradeLiquidationPricePure (OstiumPairInfos.sol:806-825)
+ * Mirrors WhitespacePairInfos.getTradeLiquidationPricePure (WhitespacePairInfos.sol:806-825)
  * exactly, including the sequential `/ collateral / leverage` divisions.
  *
  * @param {object} p
@@ -186,7 +186,7 @@ export function getTradeLiquidationPricePure({
 
 /**
  * The contract's actual liquidation predicate
- * (OstiumTradingCallbacks.executeAutomationCloseOrderCallback:504,
+ * (WhitespaceTradingCallbacks.executeAutomationCloseOrderCallback:504,
  * `isLiquidated = tvResult.tradeValue < tvResult.liqMarginValue`) — strict less-than.
  * At exact equality the position is NOT liquidatable; this is the boundary the tests in
  * test/marginEngine.test.mjs pin down.
@@ -224,7 +224,7 @@ export function isLiquidatableByPrice(buy, currentPrice, liquidationPrice) {
 }
 
 /**
- * Mirrors OstiumPairInfos.getTradeFundingFeePure (OstiumPairInfos.sol:762-773) exactly.
+ * Mirrors WhitespacePairInfos.getTradeFundingFeePure (WhitespacePairInfos.sol:762-773) exactly.
  * Pure and exact — safe to reimplement, unlike the accrual curve that produces its
  * inputs (see file header note 1). Combine with two `view` calls
  * (`pairInfos.getPendingAccFundingFees(pairIndex)` for `endAccFundingFeesPerOi`, and the

@@ -5,21 +5,21 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 import {SystemFixture} from "../helpers/SystemFixture.sol";
-import {OstiumTradesUpKeep} from "../../src/vendor/ostium/OstiumTradesUpKeep.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumForwarded} from "../../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {IOstiumAutomationCompatible} from
-    "../../src/vendor/ostium/interfaces/IOstiumAutomationCompatible.sol";
+import {WhitespaceTradesUpKeep} from "../../src/vendor/ostium/WhitespaceTradesUpKeep.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceForwarded} from "../../src/vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {IWhitespaceAutomationCompatible} from
+    "../../src/vendor/ostium/interfaces/IWhitespaceAutomationCompatible.sol";
 
 /// @notice Design spec §8 invariant 4 — **a position below maintenance margin is always
 ///         liquidatable** — and the §8 adversarial "liquidation races" scenario.
 ///
 /// @dev    This suite splits deliberately into two halves, because the answer differs.
 ///
-///         **Half 1 — as deployed, invariant 4 is FALSE.** `OstiumTrading.executeAutomationOrder`
+///         **Half 1 — as deployed, invariant 4 is FALSE.** `WhitespaceTrading.executeAutomationOrder`
 ///         is the only liquidation entry point in the system, and it is gated `onlyTradesUpKeep`
 ///         against `registry.getContractAddress('tradesUpKeep')`. `Deploy.s.sol` never deploys or
 ///         registers that contract, so the registry lookup reverts and NO address can liquidate
@@ -28,11 +28,11 @@ import {IOstiumAutomationCompatible} from
 ///         is not merely that liquidation is permissioned, it is that it is impossible.
 ///
 ///         **Half 2 — with the upkeep deployed, the contract logic is sound.** The remaining
-///         tests deploy and register `OstiumTradesUpKeep`, then prove liquidation fires, that it
+///         tests deploy and register `WhitespaceTradesUpKeep`, then prove liquidation fires, that it
 ///         is allowlisted rather than permissionless (contradicting spec §5.3), and that the
 ///         three races resolve safely.
 ///
-///         `OstiumTradesUpKeep` is vendored and is NOT modified here; it is deployed by the test,
+///         `WhitespaceTradesUpKeep` is vendored and is NOT modified here; it is deployed by the test,
 ///         which is what `Deploy.s.sol` would have to start doing to make invariant 4 true.
 contract LiquidationTest is SystemFixture {
     address internal trader = address(0x7AA);
@@ -43,7 +43,7 @@ contract LiquidationTest is SystemFixture {
     uint32 internal constant LEVERAGE = 1000; // 10.00x, PRECISION_2
     uint16 internal constant TRIGGER_TIMEOUT = 30; // blocks — Deploy.s.sol
 
-    OstiumTradesUpKeep internal tradesUpKeep;
+    WhitespaceTradesUpKeep internal tradesUpKeep;
 
     function setUp() public {
         _deployConfiguredSystem();
@@ -67,27 +67,27 @@ contract LiquidationTest is SystemFixture {
 
         // 1. The registry has no `tradesUpKeep` entry at all.
         vm.expectRevert();
-        IOstiumRegistry(d.registry).getContractAddress("tradesUpKeep");
+        IWhitespaceRegistry(d.registry).getContractAddress("tradesUpKeep");
 
         // 2. The only liquidation entry point is therefore unreachable — for anyone.
         address[3] memory callers = [liquidatorA, trader, gov];
         for (uint256 i = 0; i < callers.length; i++) {
             vm.prank(callers[i]);
             vm.expectRevert();
-            IOstiumTrading(d.trading).executeAutomationOrder(
-                IOstiumTradingStorage.LimitOrder.LIQ, trader, 0, 0, block.timestamp
+            IWhitespaceTrading(d.trading).executeAutomationOrder(
+                IWhitespaceTradingStorage.LimitOrder.LIQ, trader, 0, 0, block.timestamp
             );
         }
     }
 
-    /// @notice The mirror: once `OstiumTradesUpKeep` is deployed and registered, the same call
+    /// @notice The mirror: once `WhitespaceTradesUpKeep` is deployed and registered, the same call
     ///         resolves and the gate becomes a real allowlist rather than an impossibility.
     ///         Proves the failure above is the missing deployment, not a bug in the vendored gate.
     function test_registeringTheUpkeepMakesTheEntryPointReachable() public {
         _deployAndRegisterTradesUpKeep();
 
         assertEq(
-            IOstiumRegistry(d.registry).getContractAddress("tradesUpKeep"),
+            IWhitespaceRegistry(d.registry).getContractAddress("tradesUpKeep"),
             address(tradesUpKeep),
             "the registry must resolve tradesUpKeep once registered"
         );
@@ -95,10 +95,10 @@ contract LiquidationTest is SystemFixture {
         // Still gated — but now with a named error instead of a registry revert.
         vm.prank(liquidatorA);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.NotTradesUpKeep.selector, liquidatorA)
+            abi.encodeWithSelector(IWhitespaceTrading.NotTradesUpKeep.selector, liquidatorA)
         );
-        IOstiumTrading(d.trading).executeAutomationOrder(
-            IOstiumTradingStorage.LimitOrder.LIQ, trader, 0, 0, block.timestamp
+        IWhitespaceTrading(d.trading).executeAutomationOrder(
+            IWhitespaceTradingStorage.LimitOrder.LIQ, trader, 0, 0, block.timestamp
         );
     }
 
@@ -115,7 +115,7 @@ contract LiquidationTest is SystemFixture {
         _openPositionAtBaseline(trader, COLLATERAL);
 
         vm.prank(liquidatorB); // never registered as a forwarder
-        vm.expectRevert(abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, liquidatorB));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, liquidatorB));
         tradesUpKeep.performUpkeep(_liqPayload(trader, block.timestamp));
     }
 
@@ -185,7 +185,7 @@ contract LiquidationTest is SystemFixture {
         // The trader requests a close first.
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
         (uint256 closeOrderId, uint32 closeTs) = _lastPriceRequest();
 
         // A liquidator triggers against the same, still-open position.
@@ -226,17 +226,17 @@ contract LiquidationTest is SystemFixture {
         // The trader cannot add margin to save the position...
         vm.prank(trader);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
+            abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
         );
-        IOstiumTrading(d.trading).topUpCollateral(0, 0, 500e6);
+        IWhitespaceTrading(d.trading).topUpCollateral(0, 0, 500e6);
 
         // ...and cannot exit it either. This is the part that turns a nuisance into a hostage
         // situation: the position stays exposed to the market while the trader is locked out.
         vm.prank(trader);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
+            abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
         );
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
     }
 
     /// @notice The freeze expires after `triggerTimeout` blocks without any price delivery — so a
@@ -253,7 +253,7 @@ contract LiquidationTest is SystemFixture {
 
         uint256 collateralBefore = _collateralOf(trader, 0);
         vm.prank(trader);
-        IOstiumTrading(d.trading).topUpCollateral(0, 0, 500e6);
+        IWhitespaceTrading(d.trading).topUpCollateral(0, 0, 500e6);
 
         // Strictly greater rather than `+ 500e6`: `topUpCollateral` settles accrued rollover and
         // funding fees in the same call, so the net credit is slightly under the deposit. The
@@ -282,22 +282,22 @@ contract LiquidationTest is SystemFixture {
         _deployAndRegisterTradesUpKeep();
         _openPositionAtBaseline(trader, COLLATERAL);
 
-        IOstiumTradingStorage storageT = IOstiumTradingStorage(d.tradingStorage);
+        IWhitespaceTradingStorage storageT = IWhitespaceTradingStorage(d.tradingStorage);
 
         // Cycle 1.
         vm.prank(liquidatorA);
         tradesUpKeep.performUpkeep(_liqPayload(trader, block.timestamp));
         uint256 firstStamp =
-            storageT.orderTriggerBlock(trader, 0, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+            storageT.orderTriggerBlock(trader, 0, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         assertEq(firstStamp, _blockNow(), "the trigger stamps the current block");
 
         // Inside the window the trader cannot exit.
         vm.roll(block.number + TRIGGER_TIMEOUT - 1);
         vm.prank(trader);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
+            abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
         );
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
 
         // Expiry, then immediate re-trigger — the renewal.
         vm.roll(block.number + 1);
@@ -305,15 +305,15 @@ contract LiquidationTest is SystemFixture {
         tradesUpKeep.performUpkeep(_liqPayload(trader, block.timestamp));
 
         uint256 secondStamp =
-            storageT.orderTriggerBlock(trader, 0, 0, IOstiumTradingStorage.LimitOrder.LIQ);
+            storageT.orderTriggerBlock(trader, 0, 0, IWhitespaceTradingStorage.LimitOrder.LIQ);
         assertEq(secondStamp, firstStamp + TRIGGER_TIMEOUT, "the freeze is re-armed at expiry");
 
         // And the trader is locked out again, on a fresh 30-block clock.
         vm.prank(trader);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
+            abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, uint16(0), uint8(0))
         );
-        IOstiumTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
+        IWhitespaceTrading(d.trading).closeTradeMarket(0, 0, 0, uint192(uint256(int256(BTC_65K))), 100);
     }
 
     /// @notice The measured limit itself, isolated: a second trigger inside the window does not
@@ -335,7 +335,7 @@ contract LiquidationTest is SystemFixture {
         vm.roll(block.number + TRIGGER_TIMEOUT / 2);
         uint256 collateralBefore = _collateralOf(trader, 0);
         vm.prank(trader);
-        IOstiumTrading(d.trading).topUpCollateral(0, 0, 500e6);
+        IWhitespaceTrading(d.trading).topUpCollateral(0, 0, 500e6);
 
         assertGt(
             _collateralOf(trader, 0),
@@ -366,11 +366,11 @@ contract LiquidationTest is SystemFixture {
         // `Initializable` component. (Phase 2 notes the proxy buys nothing here — no vendored
         // contract is UUPS — but matching the deployment shape is what makes this test evidence
         // about the real system rather than about a differently-shaped one.)
-        tradesUpKeep = OstiumTradesUpKeep(
+        tradesUpKeep = WhitespaceTradesUpKeep(
             address(
                 new ERC1967Proxy(
-                    address(new OstiumTradesUpKeep()),
-                    abi.encodeCall(OstiumTradesUpKeep.initialize, (IOstiumRegistry(d.registry)))
+                    address(new WhitespaceTradesUpKeep()),
+                    abi.encodeCall(WhitespaceTradesUpKeep.initialize, (IWhitespaceRegistry(d.registry)))
                 )
             )
         );
@@ -380,20 +380,20 @@ contract LiquidationTest is SystemFixture {
         names[0] = "tradesUpKeep";
         addrs[0] = address(tradesUpKeep);
         vm.prank(gov);
-        IOstiumRegistry(d.registry).registerContracts(names, addrs);
+        IWhitespaceRegistry(d.registry).registerContracts(names, addrs);
 
         vm.prank(address(this)); // registry owner == onlyTimelock
         tradesUpKeep.registerForwarder(liquidatorA);
     }
 
     function _liqPayload(address who, uint256 timestamp) internal pure returns (bytes memory) {
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory trades =
-            new IOstiumAutomationCompatible.SimplifiedTradeId[](1);
-        trades[0] = IOstiumAutomationCompatible.SimplifiedTradeId({
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory trades =
+            new IWhitespaceAutomationCompatible.SimplifiedTradeId[](1);
+        trades[0] = IWhitespaceAutomationCompatible.SimplifiedTradeId({
             trader: who,
             pairId: 0,
             index: 0,
-            limitOrder: IOstiumTradingStorage.LimitOrder.LIQ
+            limitOrder: IWhitespaceTradingStorage.LimitOrder.LIQ
         });
         return abi.encode(trades, timestamp);
     }

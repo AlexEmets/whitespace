@@ -65,7 +65,7 @@ const EST_LIQ_PRICE_RAW = 58500900000000000000000n;
 
 vi.mock('wagmi', () => ({
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
-  // The order form's Est. liq. price is a real read against OstiumPairInfos
+  // The order form's Est. liq. price is a real read against WhitespacePairInfos
   // (useEstimatedLiquidationPrice). Mocked at the wagmi boundary so the hook's own
   // enable-gating still executes. Honouring `query.enabled` here matters: wagmi would
   // never invoke the contract for a disabled read, and a mock that answers anyway would
@@ -233,8 +233,8 @@ describe('<OpenPositionForm>', () => {
   });
 
   /**
-   * `OstiumTrading.openTrade` does not move the collateral — `OstiumTradingStorage` does,
-   * via `safeTransferFrom` at OstiumTradingStorage.sol:486, so the token sees
+   * `WhitespaceTrading.openTrade` does not move the collateral — `WhitespaceTradingStorage` does,
+   * via `safeTransferFrom` at WhitespaceTradingStorage.sol:486, so the token sees
    * TradingStorage as the spender. Approving Trading instead granted an allowance nothing
    * spends: the form showed a ready "Buy · Long" and the transaction reverted on chain
    * with `ERC20InsufficientAllowance(tradingStorage, 0, collateral)` (real failure

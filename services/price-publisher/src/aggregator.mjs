@@ -184,7 +184,7 @@ export function computeIndex(ticks, now, bounds = PUBLISHER_BOUNDS, weightOf = (
 }
 
 /** Order types that open new exposure — blocked in degraded mode. Names match the
- * on-chain IOstiumPriceUpKeep.OrderType enum. */
+ * on-chain IWhitespacePriceUpKeep.OrderType enum. */
 export const OPEN_ORDER_TYPES = new Set(['MARKET_OPEN', 'LIMIT_OPEN']);
 
 /**

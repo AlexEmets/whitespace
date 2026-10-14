@@ -13,9 +13,9 @@ import { COLLATERAL_ADDRESS, VAULT_ADDRESS } from '@/lib/deployment';
  * the balance. `useVault` covers the deposit/withdraw *lifecycle* and has no notion of an
  * LP's current position at all.
  *
- * `OstiumVault` is an `ERC4626Upgradeable`, so an LP's position is `balanceOf` (shares)
+ * `WhitespaceVault` is an `ERC4626Upgradeable`, so an LP's position is `balanceOf` (shares)
  * valued through `convertToAssets` (USDW). Both are inherited ERC-4626/ERC-20 views, and
- * `OstiumVault.decimals()` is overridden to a hard `6` (OstiumVault.sol:371) — shares
+ * `WhitespaceVault.decimals()` is overridden to a hard `6` (WhitespaceVault.sol:371) — shares
  * carry the same scale as the collateral, so both values format at COLLATERAL_DECIMALS.
  *
  * The ABI is declared here rather than added to `src/lib/abi.ts` because that file is not
@@ -23,10 +23,10 @@ import { COLLATERAL_ADDRESS, VAULT_ADDRESS } from '@/lib/deployment';
  * there.
  */
 
-// source: OstiumVault is ERC4626Upgradeable — `balanceOf`/`totalSupply` from ERC-20,
+// source: WhitespaceVault is ERC4626Upgradeable — `balanceOf`/`totalSupply` from ERC-20,
 // `convertToAssets`/`totalAssets` from ERC-4626. `decimals()` is overridden to 6
-// (OstiumVault.sol:371-373); `_convertToAssets` prices shares off `shareToAssetsPrice`
-// (OstiumVault.sol:379-385).
+// (WhitespaceVault.sol:371-373); `_convertToAssets` prices shares off `shareToAssetsPrice`
+// (WhitespaceVault.sol:379-385).
 const VAULT_SHARES_ABI = parseAbi([
   'function balanceOf(address owner) view returns (uint256)',
   'function convertToAssets(uint256 shares) view returns (uint256)',

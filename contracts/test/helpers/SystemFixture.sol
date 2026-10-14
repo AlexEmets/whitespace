@@ -9,9 +9,9 @@ import {OperateScript} from "../../script/Operate.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
 import {ReportLib} from "./ReportLib.sol";
 
 /// @notice The full production system, deployed and configured exactly as phase 1 deployed it and
@@ -25,7 +25,7 @@ import {ReportLib} from "./ReportLib.sol";
 ///         setup that could quietly diverge from it.
 ///
 ///         **This fixture installs the HARDENED oracle.** Chain 1874 does not have it — the live
-///         deployment still points at the vendored 1-of-N `OstiumVerifier` (see
+///         deployment still points at the vendored 1-of-N `WhitespaceVerifier` (see
 ///         `docs/decisions/phase-7-hardening.md`, finding H-2). Tests here therefore describe the
 ///         intended production shape, not the currently deployed one.
 abstract contract SystemFixture is Test {
@@ -198,8 +198,8 @@ abstract contract SystemFixture is Test {
     {
         vm.recordLogs();
         vm.prank(who);
-        IOstiumTrading(d.trading).openTrade(
-            IOstiumTradingStorage.Trade({
+        IWhitespaceTrading(d.trading).openTrade(
+            IWhitespaceTradingStorage.Trade({
                 collateral: collateral,
                 openPrice: uint192(uint256(int256(BTC_65K))),
                 tp: 0,
@@ -211,8 +211,8 @@ abstract contract SystemFixture is Test {
                 buy: buy,
                 isDayTrade: false
             }),
-            IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
-            IOstiumTradingStorage.OpenOrderType.MARKET,
+            IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0}),
+            IWhitespaceTradingStorage.OpenOrderType.MARKET,
             100
         );
         return _lastPriceRequest();
@@ -220,11 +220,11 @@ abstract contract SystemFixture is Test {
 
     function _deliver(uint256 orderId, bytes memory report) internal {
         vm.prank(keeper);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     function _collateralOf(address who, uint8 index) internal view returns (uint256 collateral) {
-        (collateral,,,,,,,,,) = IOstiumTradingStorage(d.tradingStorage).openTrades(who, 0, index);
+        (collateral,,,,,,,,,) = IWhitespaceTradingStorage(d.tradingStorage).openTrades(who, 0, index);
     }
 
     /// @dev Opens a position at $65,000 and delivers a valid report, which also establishes the

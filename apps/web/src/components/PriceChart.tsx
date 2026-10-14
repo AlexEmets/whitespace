@@ -440,7 +440,7 @@ interface Layout {
  * the live MARK price: real, and the level the protocol actually prices against.
  *
  * That constraint is being lifted separately by `src/hooks/useLiquidationPrice.ts`, which
- * reads the figure off OstiumPairInfos. Once it has landed, the position overlay is a
+ * reads the figure off WhitespacePairInfos. Once it has landed, the position overlay is a
  * small addition — this component already has the primitive (see the mark line and its
  * axis chip below); it needs the trader's open positions for this pair and one more line
  * per position. It is deliberately not wired here rather than done against a hook that is

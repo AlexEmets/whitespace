@@ -6,17 +6,17 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {USDW} from "../src/mocks/USDW.sol";
-import {IOstiumRegistry} from "../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPairsStorage} from "../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumTradingStorage} from "../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPairInfos} from "../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
-import {IOstiumTradingCallbacks} from "../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
-import {IOstiumVerifier} from "../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
-import {IOstiumVault} from "../src/vendor/ostium/interfaces/IOstiumVault.sol";
-import {IOstiumForwarded} from "../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
-import {OstiumPairInfos} from "../src/vendor/ostium/OstiumPairInfos.sol";
-import {OstiumTradesUpKeep} from "../src/vendor/ostium/OstiumTradesUpKeep.sol";
+import {IWhitespaceRegistry} from "../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePairsStorage} from "../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespaceTradingStorage} from "../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePairInfos} from "../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
+import {IWhitespaceTradingCallbacks} from "../src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
+import {IWhitespaceVerifier} from "../src/vendor/ostium/interfaces/IWhitespaceVerifier.sol";
+import {IWhitespaceVault} from "../src/vendor/ostium/interfaces/IWhitespaceVault.sol";
+import {IWhitespaceForwarded} from "../src/vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {WhitespaceVault} from "../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespacePairInfos} from "../src/vendor/ostium/WhitespacePairInfos.sol";
+import {WhitespaceTradesUpKeep} from "../src/vendor/ostium/WhitespaceTradesUpKeep.sol";
 import {WhitespaceVerifier} from "../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../src/oracle/WhitespacePriceUpKeep.sol";
 
@@ -47,7 +47,7 @@ contract OperateScript is Script {
         uint256 lpAmount;
     }
 
-    // Values chosen to satisfy the vendored modifiers with headroom; see OstiumPairsStorage.sol
+    // Values chosen to satisfy the vendored modifiers with headroom; see WhitespacePairsStorage.sol
     // for MIN_LEVERAGE/MAX_LEVERAGE/MAX_ORACLE_FEE and the addGroup/addFee/addPair checks.
     bytes32 internal constant GROUP_NAME = "Crypto";
     uint16 internal constant GROUP_MIN_LEVERAGE = 100; // 1.00x, == MIN_LEVERAGE
@@ -65,7 +65,7 @@ contract OperateScript is Script {
     string internal constant PAIR_ORACLE = "BTC/USD"; // determines the registry key below
     uint32 internal constant PAIR_MAX_LEVERAGE = 10_000; // 100.00x
 
-    // OstiumPriceRouter.sol:81-84 and OstiumTradingCallbacks.sol:83-85 both resolve the
+    // WhitespacePriceRouter.sol:81-84 and WhitespaceTradingCallbacks.sol:83-85 both resolve the
     // per-oracle upkeep registry key as bytes32(abi.encodePacked(pair.oracle, "PriceUpkeep")).
     // With PAIR_ORACLE == "BTC/USD" that is fixed at deploy time, so it is safe to inline here.
     bytes32 internal constant PRICE_UPKEEP_KEY = "BTC/USDPriceUpkeep";
@@ -144,12 +144,12 @@ contract OperateScript is Script {
     ///         itself, each skipped independently if already present.
     /// @dev Caller must be `registry.gov()` (checked by `pairsStorage`'s `onlyGov` modifiers).
     function addMarket(Config memory c) public returns (uint16 pairIndex) {
-        IOstiumPairsStorage ps = IOstiumPairsStorage(c.pairsStorage);
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(c.pairsStorage);
 
         if (ps.groupsCount() == 0) {
             _relay();
             ps.addGroup(
-                IOstiumPairsStorage.Group({
+                IWhitespacePairsStorage.Group({
                     name: GROUP_NAME,
                     minLeverage: GROUP_MIN_LEVERAGE,
                     maxLeverage: GROUP_MAX_LEVERAGE,
@@ -161,7 +161,7 @@ contract OperateScript is Script {
         if (ps.feesCount() == 0) {
             _relay();
             ps.addFee(
-                IOstiumPairsStorage.Fee({
+                IWhitespacePairsStorage.Fee({
                     name: FEE_NAME,
                     minLevPos: FEE_MIN_LEV_POS,
                     oracleFee: FEE_ORACLE_FEE,
@@ -178,7 +178,7 @@ contract OperateScript is Script {
 
         _relay();
         ps.addPair(
-            IOstiumPairsStorage.Pair({
+            IWhitespacePairsStorage.Pair({
                 from: PAIR_FROM,
                 to: PAIR_TO,
                 feed: PAIR_FEED,
@@ -197,7 +197,7 @@ contract OperateScript is Script {
     }
 
     /// @dev A freshly listed pair has an all-zero `PairFundingFeesV2`, and `springFactor` is a
-    ///      DIVISOR in `OstiumPairInfos.getPendingAccFundingFees` — so the first trade on an
+    ///      DIVISOR in `WhitespacePairInfos.getPendingAccFundingFees` — so the first trade on an
     ///      unconfigured pair panics with division-by-zero inside `storeTradeInitialAccFees`,
     ///      taking the whole `performUpkeep` delivery down with it. `addPair` does not set these,
     ///      so configuration must. Gated on the stored `springFactor` rather than on "we just
@@ -211,17 +211,17 @@ contract OperateScript is Script {
     ///      `sFactorUpScaleP >= 100e2`, `sFactorDownScaleP <= 100e2`, and both hill scales
     ///      `<= MAX_HILL_SCALE (250)`.
     function _setFundingParams(Config memory c, uint16 pairIndex) internal {
-        IOstiumPairInfos pairInfos =
-            IOstiumPairInfos(IOstiumRegistry(c.registry).getContractAddress("pairInfos"));
+        IWhitespacePairInfos pairInfos =
+            IWhitespacePairInfos(IWhitespaceRegistry(c.registry).getContractAddress("pairInfos"));
         // Through the concrete contract: the interface getter is not `view`, so under
         // `--broadcast` this read would be sent as a transaction.
-        (,,,,, uint64 springFactor,,,,,,) = OstiumPairInfos(address(pairInfos)).pairFundingFees(pairIndex);
+        (,,,,, uint64 springFactor,,,,,,) = WhitespacePairInfos(address(pairInfos)).pairFundingFees(pairIndex);
         if (springFactor != 0) return;
 
         _relay();
         pairInfos.setPairFundingFees(
             pairIndex,
-            IOstiumPairInfos.PairFundingFeesV2({
+            IWhitespacePairInfos.PairFundingFeesV2({
                 accPerOiLong: 0,
                 accPerOiShort: 0,
                 lastFundingRate: 0,
@@ -240,7 +240,7 @@ contract OperateScript is Script {
 
     /// @dev `isPairListed` has no reverse (from,to) -> index lookup, so on the idempotent
     ///      skip path we scan the (small, script-managed) pair list for the match.
-    function _findPairIndex(IOstiumPairsStorage ps) internal view returns (uint16) {
+    function _findPairIndex(IWhitespacePairsStorage ps) internal view returns (uint16) {
         uint16 count = ps.pairsCount();
         for (uint16 i = 0; i < count; i++) {
             (bytes32 from, bytes32 to,,,,,,,) = ps.pairs(i);
@@ -253,17 +253,17 @@ contract OperateScript is Script {
 
     /// @notice Lets the vault pull settled losses and fees out of the callbacks contract.
     /// @dev Caller must be `registry.gov()` (`setVaultMaxAllowance` is `onlyGov`).
-    ///      `OstiumVault.receiveAssets` does `transferFrom(callbacks, vault, amount)`, so without
+    ///      `WhitespaceVault.receiveAssets` does `transferFrom(callbacks, vault, amount)`, so without
     ///      this allowance every CLOSE reverts `ERC20InsufficientAllowance` — opens succeed, which
     ///      makes it a trap: positions can be entered and then not exited. Nothing in
     ///      `Deploy.s.sol` sets it, because the vault address is only knowable after both are
     ///      deployed.
     function approveVaultAllowance(Config memory c) public {
-        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(c.registry);
         address callbacks = registry.getContractAddress("callbacks");
         if (IERC20(c.usdw).allowance(callbacks, c.vault) > 0) return;
         _relay();
-        IOstiumTradingCallbacks(callbacks).setVaultMaxAllowance();
+        IWhitespaceTradingCallbacks(callbacks).setVaultMaxAllowance();
     }
 
     /// @notice Lifts the pair's open-interest ceiling off zero, so trades can actually open.
@@ -272,17 +272,17 @@ contract OperateScript is Script {
     ///      `tradingStorage` is resolved through the registry rather than added to `Config`,
     ///      matching how the vendored contracts locate each other.
     function setMaxOi(Config memory c, uint16 pairIndex) public {
-        IOstiumTradingStorage ts =
-            IOstiumTradingStorage(IOstiumRegistry(c.registry).getContractAddress("tradingStorage"));
+        IWhitespaceTradingStorage ts =
+            IWhitespaceTradingStorage(IWhitespaceRegistry(c.registry).getContractAddress("tradingStorage"));
         if (ts.openInterest(pairIndex, 2) > 0) return;
         _relay();
         ts.setMaxOpenInterest(pairIndex, PAIR_MAX_OI);
     }
 
     /// @notice Authorises `c.signer` to sign price reports the verifier will accept.
-    /// @dev Caller must be `registry.gov()` (checked by `OstiumVerifier`'s `onlyGov`).
+    /// @dev Caller must be `registry.gov()` (checked by `WhitespaceVerifier`'s `onlyGov`).
     function authoriseSigner(Config memory c) public {
-        IOstiumVerifier verifier = IOstiumVerifier(c.verifier);
+        IWhitespaceVerifier verifier = IWhitespaceVerifier(c.verifier);
         if (verifier.isAuthorizedSigner(c.signer)) return;
         _relay();
         verifier.registerAuthorizedSigner(c.signer);
@@ -292,18 +292,18 @@ contract OperateScript is Script {
     /// @dev Caller must be `IOwnable(c.registry).owner()` — `registerForwarder` is
     ///      `onlyTimelock`, which resolves to the registry's `owner()` in this codebase.
     function authoriseForwarder(Config memory c) public {
-        IOstiumForwarded upkeep = IOstiumForwarded(c.priceUpKeep);
+        IWhitespaceForwarded upkeep = IWhitespaceForwarded(c.priceUpKeep);
         if (upkeep.isForwarder(c.keeper)) return;
         _relay();
         upkeep.registerForwarder(c.keeper);
     }
 
     /// @notice Registers `c.priceUpKeep` under the oracle-derived registry key.
-    /// @dev Caller must be `registry.gov()` (checked by `OstiumRegistry`'s `onlyGov`).
+    /// @dev Caller must be `registry.gov()` (checked by `WhitespaceRegistry`'s `onlyGov`).
     ///      `getContractAddress` reverts `NotFound` rather than returning zero for an unknown
     ///      name, so the "already done?" check is a try/catch on the read, not a zero compare.
     function registerUpkeep(Config memory c) public {
-        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(c.registry);
         try registry.getContractAddress(PRICE_UPKEEP_KEY) returns (address) {
             return;
         } catch {
@@ -338,7 +338,7 @@ contract OperateScript is Script {
     ///         doubling the vault's liquidity.
     function mintToLp(Config memory c) public {
         USDW usdw = USDW(c.usdw);
-        OstiumVault vault = OstiumVault(c.vault);
+        WhitespaceVault vault = WhitespaceVault(c.vault);
         if (vault.currentBalance() > 0) return;
         uint32 id = vault.targetSettlementId(true);
         if (usdw.balanceOf(c.lp) + vault.pendingDepositRequest(c.lp, id) >= c.lpAmount) return;
@@ -348,11 +348,11 @@ contract OperateScript is Script {
 
     /// @notice Requests an LP deposit of `c.lpAmount` into the vault.
     /// @dev Caller must be `c.lp`. The approve target is the vault itself, because
-    ///      `OstiumVault.requestDeposit` executes `safeTransferFrom` from inside its own code,
+    ///      `WhitespaceVault.requestDeposit` executes `safeTransferFrom` from inside its own code,
     ///      making the vault the ERC-20 `msg.sender` for that transfer.
     ///
     ///      `currentBalance()` only becomes non-zero once `settle()` mints shares into the
-    ///      vault's own escrow (`OstiumVault.sol:608-654`) — it is zero for the whole window
+    ///      vault's own escrow (`WhitespaceVault.sol:608-654`) — it is zero for the whole window
     ///      between a successful `requestDeposit` and the following `forceSettlement`. Skipping
     ///      solely on `currentBalance() > 0` would therefore re-request (and double-pull USDW
     ///      from the LP) on a run resumed inside that window. Instead: resume by returning the
@@ -362,10 +362,10 @@ contract OperateScript is Script {
     ///      target id, and the vault already has liquidity from an earlier cycle" — once no
     ///      request is outstanding.
     function requestLpDeposit(Config memory c) public returns (uint32 settlementId) {
-        IOstiumVault vault = IOstiumVault(c.vault);
+        IWhitespaceVault vault = IWhitespaceVault(c.vault);
         settlementId = vault.targetSettlementId(true);
 
-        if (vault.getDepositStatus(c.lp, settlementId) != IOstiumVault.RequestStatus.NONE) {
+        if (vault.getDepositStatus(c.lp, settlementId) != IWhitespaceVault.RequestStatus.NONE) {
             return settlementId; // already requested; resume instead of re-requesting
         }
         if (vault.currentBalance() > 0) return 0; // nothing pending, and liquidity already landed
@@ -378,11 +378,11 @@ contract OperateScript is Script {
     }
 
     /// @notice Forces settlement so the pending LP deposit converts into claimable shares.
-    /// @dev Caller must be `registry.gov()` (checked by `OstiumVault`'s `onlyGov`).
+    /// @dev Caller must be `registry.gov()` (checked by `WhitespaceVault`'s `onlyGov`).
     ///      `maxSettlementInterval` is 86400s, so this is the escape hatch instead of waiting a
     ///      day for a natural settlement. Skipped once `currentBalance() > 0`.
     function settle(Config memory c) public {
-        IOstiumVault vault = IOstiumVault(c.vault);
+        IWhitespaceVault vault = IWhitespaceVault(c.vault);
         if (vault.currentBalance() > 0) return;
         _relay();
         vault.forceSettlement();
@@ -399,7 +399,7 @@ contract OperateScript is Script {
     ///      vault's own address and `pendingDepositRequest[c.lp][settlementId]` was never
     ///      cleared. The correct "already done?" read is the LP's OWN claim status:
     ///      `getDepositStatus` returns CLAIMABLE only after settlement has processed this
-    ///      exact `settlementId` for this exact owner (`OstiumVault.sol:577-584`).
+    ///      exact `settlementId` for this exact owner (`WhitespaceVault.sol:577-584`).
     ///
     ///      `settlementId == 0` means this was resumed by a fresh process after a *different*
     ///      call to `requestLpDeposit` already fell through to its `currentBalance() > 0` branch
@@ -417,9 +417,9 @@ contract OperateScript is Script {
     ///      this derived id's `pendingDepositRequest` was already cleared by the first pass's
     ///      claim, so `getDepositStatus` reads NONE there too and this still correctly skips.
     function claimLpDeposit(Config memory c, uint32 settlementId) public {
-        IOstiumVault vault = IOstiumVault(c.vault);
+        IWhitespaceVault vault = IWhitespaceVault(c.vault);
         uint32 id = settlementId == 0 ? vault.targetSettlementId(true) - 1 : settlementId; // == lastSettlementId
-        if (vault.getDepositStatus(c.lp, id) != IOstiumVault.RequestStatus.CLAIMABLE) return;
+        if (vault.getDepositStatus(c.lp, id) != IWhitespaceVault.RequestStatus.CLAIMABLE) return;
         _relay();
         vault.claimDeposit(id);
     }
@@ -474,7 +474,7 @@ contract OperateScript is Script {
     ///      an unseeded verifier accepts nothing. Gov's adoption of the address IS the trust
     ///      decision — read `signerCount`/`threshold` off the instance before believing it.
     function installHardenedVerifier(OracleConfig memory c) public returns (address verifier) {
-        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(c.registry);
         (bool found, address current) = _lookup(registry, VERIFIER_KEY);
         if (found && _isHardenedVerifier(current)) return current;
 
@@ -537,7 +537,7 @@ contract OperateScript is Script {
         returns (address upkeep)
     {
         require(feedKeys.length > 0, "installHardenedUpkeep: no feed keys");
-        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(c.registry);
 
         address outdated;
         for (uint256 i = 0; i < feedKeys.length; i++) {
@@ -569,13 +569,13 @@ contract OperateScript is Script {
     ///      instance takes its first price per feed as a fresh baseline, which is the point of
     ///      the upgrade for a wedged feed. Orders still pending on the old instance time out and
     ///      are reclaimed by their traders, exactly as in the original vendored -> hardened move.
-    function _carryOverEmergencyState(IOstiumRegistry registry, WhitespacePriceUpKeep old, address upkeep) internal {
+    function _carryOverEmergencyState(IWhitespaceRegistry registry, WhitespacePriceUpKeep old, address upkeep) internal {
         WhitespacePriceUpKeep next = WhitespacePriceUpKeep(upkeep);
         if (old.paused()) {
             _relay();
             next.pause();
         }
-        IOstiumPairsStorage ps = IOstiumPairsStorage(registry.getContractAddress("pairsStorage"));
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(registry.getContractAddress("pairsStorage"));
         uint16 count = ps.pairsCount();
         for (uint16 i = 0; i < count; i++) {
             bytes32 feed = ps.pairFeed(i);
@@ -593,7 +593,7 @@ contract OperateScript is Script {
     ///      the two upkeeps are allowlisted independently: forwarding rights on the retired one
     ///      are deliberately not carried over.
     function authoriseHardenedForwarder(OracleConfig memory c) public {
-        IOstiumForwarded upkeep = IOstiumForwarded(_requireHardenedUpkeep(c.registry));
+        IWhitespaceForwarded upkeep = IWhitespaceForwarded(_requireHardenedUpkeep(c.registry));
         if (upkeep.isForwarder(c.keeper)) return;
         _relay();
         upkeep.registerForwarder(c.keeper);
@@ -624,7 +624,7 @@ contract OperateScript is Script {
 
     /// @dev `getContractAddress` reverts `NotFound` rather than returning zero, so "is this key
     ///      set?" is a try/catch on the read — the same shape `registerUpkeep` already uses.
-    function _lookup(IOstiumRegistry registry, bytes32 key)
+    function _lookup(IWhitespaceRegistry registry, bytes32 key)
         internal
         view
         returns (bool found, address addr)
@@ -637,7 +637,7 @@ contract OperateScript is Script {
     }
 
     /// @dev Distinguishes a hardened instance from the vendored one by probing for a getter only
-    ///      the hardened one has. `OstiumVerifier` has no `threshold()` and no fallback, so the
+    ///      the hardened one has. `WhitespaceVerifier` has no `threshold()` and no fallback, so the
     ///      staticcall reverts there. Deliberately low-level rather than `try/catch`: a
     ///      `try` statement does not catch a return-data DECODING failure, so a contract
     ///      answering that selector with short data would take the whole run down instead of
@@ -649,7 +649,7 @@ contract OperateScript is Script {
         return ok && ret.length == 32;
     }
 
-    /// @dev Same probe for the upkeep. `OstiumPrivatePriceUpKeep` has no `maxAge()`.
+    /// @dev Same probe for the upkeep. `WhitespacePrivatePriceUpKeep` has no `maxAge()`.
     function _isHardenedUpkeep(address a) internal view returns (bool) {
         (bool ok, bytes memory ret) = a.staticcall(abi.encodeCall(WhitespacePriceUpKeep(a).maxAge, ()));
         return ok && ret.length == 32;
@@ -665,13 +665,13 @@ contract OperateScript is Script {
     }
 
     function _requireHardenedVerifier(address registry) internal view returns (address verifier) {
-        (bool found, address current) = _lookup(IOstiumRegistry(registry), VERIFIER_KEY);
+        (bool found, address current) = _lookup(IWhitespaceRegistry(registry), VERIFIER_KEY);
         require(found && _isHardenedVerifier(current), "hardened verifier not installed");
         return current;
     }
 
     function _requireHardenedUpkeep(address registry) internal view returns (address upkeep) {
-        (bool found, address current) = _lookup(IOstiumRegistry(registry), PRICE_UPKEEP_KEY);
+        (bool found, address current) = _lookup(IWhitespaceRegistry(registry), PRICE_UPKEEP_KEY);
         require(found && _isHardenedUpkeep(current), "hardened upkeep not installed");
         return current;
     }
@@ -805,7 +805,7 @@ contract OperateScript is Script {
     // =======================================================================================
     // Phase D — liquidation
     //
-    // `Deploy.s.sol` never deploys `OstiumTradesUpKeep`, and `OstiumTrading.sol:123` gates the
+    // `Deploy.s.sol` never deploys `WhitespaceTradesUpKeep`, and `WhitespaceTrading.sol:123` gates the
     // liquidation entrypoint on `msg.sender == registry.getContractAddress('tradesUpKeep')`.
     // With that key unset the comparison can only ever fail, so on the deployed 1874 system
     // NO address — not gov, not the owner, not a bot — can liquidate an underwater position.
@@ -820,13 +820,13 @@ contract OperateScript is Script {
 
     /// @param registry   The system registry. The upkeep resolves everything else through it.
     /// @param liquidator The forwarder allowed to call `performUpkeep`. Liquidation here is
-    ///                   allowlisted, not permissionless — see `OstiumTradesUpKeep.sol:55`.
+    ///                   allowlisted, not permissionless — see `WhitespaceTradesUpKeep.sol:55`.
     struct LiquidationConfig {
         address registry;
         address liquidator;
     }
 
-    /// @dev Behind an `ERC1967Proxy` because `OstiumTradesUpKeep` is `initializer`-based with a
+    /// @dev Behind an `ERC1967Proxy` because `WhitespaceTradesUpKeep` is `initializer`-based with a
     ///      disabled constructor — unlike the two hardened oracle contracts, which are ours and
     ///      take constructor arguments. Same shape `Deploy.s.sol` uses for every vendored
     ///      contract, so this one is not an exception to how the system is assembled.
@@ -834,18 +834,18 @@ contract OperateScript is Script {
         return address(new ERC1967Proxy(implementation, initCall));
     }
 
-    /// @notice Deploys `OstiumTradesUpKeep` and registers it under the `tradesUpKeep` key.
+    /// @notice Deploys `WhitespaceTradesUpKeep` and registers it under the `tradesUpKeep` key.
     /// @dev Caller must be `registry.gov()`. Idempotent on the registry read: a replayed run
     ///      neither redeploys nor re-registers, because re-pointing the key would silently
     ///      strip the forwarder allowlist the incumbent had accumulated.
     function installTradesUpKeep(LiquidationConfig memory c) public returns (address upkeep) {
-        IOstiumRegistry registry = IOstiumRegistry(c.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(c.registry);
         (bool found, address current) = _lookup(registry, TRADES_UPKEEP_KEY);
         if (found && current != address(0)) return current;
 
         upkeep = _proxy(
-            address(new OstiumTradesUpKeep()),
-            abi.encodeCall(OstiumTradesUpKeep.initialize, (registry))
+            address(new WhitespaceTradesUpKeep()),
+            abi.encodeCall(WhitespaceTradesUpKeep.initialize, (registry))
         );
 
         _relay();
@@ -854,17 +854,17 @@ contract OperateScript is Script {
 
     /// @notice Allowlists `c.liquidator` as a forwarder on the trades upkeep.
     /// @dev Caller must be `IOwnable(c.registry).owner()` — `registerForwarder` is
-    ///      `onlyTimelock` (`OstiumTradesUpKeep.sol:74`), the same authority the price
+    ///      `onlyTimelock` (`WhitespaceTradesUpKeep.sol:74`), the same authority the price
     ///      upkeep's forwarder list requires.
     function authoriseLiquidator(LiquidationConfig memory c) public {
-        OstiumTradesUpKeep upkeep = OstiumTradesUpKeep(payable(_requireTradesUpKeep(c.registry)));
+        WhitespaceTradesUpKeep upkeep = WhitespaceTradesUpKeep(payable(_requireTradesUpKeep(c.registry)));
         if (upkeep.isForwarder(c.liquidator)) return;
         _relay();
         upkeep.registerForwarder(c.liquidator);
     }
 
     function _requireTradesUpKeep(address registry) internal view returns (address upkeep) {
-        (bool found, address current) = _lookup(IOstiumRegistry(registry), TRADES_UPKEEP_KEY);
+        (bool found, address current) = _lookup(IWhitespaceRegistry(registry), TRADES_UPKEEP_KEY);
         require(found && current != address(0), "trades upkeep not installed");
         return current;
     }
@@ -961,22 +961,22 @@ contract OperateScript is Script {
     // ORDER, per market: register the upkeep key FIRST, then list the pair, then lift its OI
     // ceiling. Registering a key for a pair that does not exist yet is inert — nothing resolves
     // `<oracle>PriceUpkeep` until some pair carries that oracle string — whereas the reverse
-    // order leaves a window in which the pair is listed and `OstiumPriceRouter.sol:81-84` cannot
+    // order leaves a window in which the pair is listed and `WhitespacePriceRouter.sol:81-84` cannot
     // resolve its upkeep, so every `openTrade` on it reverts `NotFound` inside
-    // `OstiumRegistry.sol:118-121`. That window is loud rather than lossy, but it is free not to
+    // `WhitespaceRegistry.sol:118-121`. That window is loud rather than lossy, but it is free not to
     // have.
     //
     // NOT per-pair, and therefore not repeated here: `approveVaultAllowance` (one allowance on
-    // the one collateral token, `OstiumTradingCallbacks.setVaultMaxAllowance`) and the LP
+    // the one collateral token, `WhitespaceTradingCallbacks.setVaultMaxAllowance`) and the LP
     // deposit. Both are properties of the system, both are already satisfied on 1874 — but note
-    // that `groupMaxCollateral` (`OstiumPairsStorage.sol:268-271`) is
+    // that `groupMaxCollateral` (`WhitespacePairsStorage.sol:268-271`) is
     // `maxCollateralP * vault.currentBalance() / 100_00`, so a vault drained to zero silently
     // cancels every trade on EVERY market in the group, new ones included.
     // =======================================================================================
 
     /// @param registry    The system registry. `pairsStorage`, `pairInfos` and `tradingStorage`
     ///                    are all resolved through it — the way the vendored contracts locate
-    ///                    each other (`OstiumPriceRouter.sol:81`) and the way `setMaxOi` above
+    ///                    each other (`WhitespacePriceRouter.sol:81`) and the way `setMaxOi` above
     ///                    already does — so it is the only address the operator supplies.
     /// @param name        The market as ONE string, e.g. `"ETH/USD"`. `from`, `to`, `feed` and
     ///                    `oracle` are all DERIVED from it rather than supplied separately,
@@ -988,7 +988,7 @@ contract OperateScript is Script {
     ///                        (`packages/shared/src/markets.mjs`), which is byte-identical to
     ///                        Solidity's `bytes32("ETH/USD")`.
     ///                      - `oracle` alone determines the upkeep registry key
-    ///                        (`OstiumPriceRouter.sol:81-84`), and a key that differs by one
+    ///                        (`WhitespacePriceRouter.sol:81-84`), and a key that differs by one
     ///                        character lists cleanly and only fails at the first trade.
     ///                      - `from`/`to` are re-joined as `` `${from}/${to}` `` by
     ///                        `services/api/src/publisher.ts:106-108` to find a market row's
@@ -997,8 +997,8 @@ contract OperateScript is Script {
     ///                    One source string makes all three agree by construction.
     /// @param maxLeverage PRECISION_2, so `10_000` is 100.00x. Must be `<= MAX_LEVERAGE`
     ///                    (100000) and `>= groups[groupIndex].minLeverage`, per `_pairOk`
-    ///                    (`OstiumPairsStorage.sol:107-117`). Zero is legal and means "inherit
-    ///                    the group's `maxLeverage`" (`OstiumPairsStorage.sol:262-266`).
+    ///                    (`WhitespacePairsStorage.sol:107-117`). Zero is legal and means "inherit
+    ///                    the group's `maxLeverage`" (`WhitespacePairsStorage.sol:262-266`).
     /// @param maxOi       PRECISION_6 open-interest ceiling. Zero is the trap `setMaxOi`
     ///                    documents at length: trades are CANCELLED, not reverted.
     /// @param groupIndex  Existing group. Not created here — see `addMarketFor`.
@@ -1021,7 +1021,7 @@ contract OperateScript is Script {
     ///
     ///      Exactly one `/` is required. Zero would leave `to` empty and list a pair whose `to`
     ///      is `bytes32(0)`; two would make the split ambiguous. Neither is caught by `addPair`,
-    ///      which validates leverage and nothing else (`OstiumPairsStorage.sol:142-160`), so it
+    ///      which validates leverage and nothing else (`WhitespacePairsStorage.sol:142-160`), so it
     ///      is caught here — before a transaction is built, not after a market is live.
     ///
     ///      The whole name is bounded to 32 bytes as well, not just each half: it is also used
@@ -1065,11 +1065,11 @@ contract OperateScript is Script {
     }
 
     /// @dev The parameterised twin of `_findPairIndex`: same linear scan, same reason (there is
-    ///      no reverse (from,to) -> index lookup in `OstiumPairsStorage`), but for a pair whose
+    ///      no reverse (from,to) -> index lookup in `WhitespacePairsStorage`), but for a pair whose
     ///      symbols are not known at compile time. Written as a twin rather than folded into
     ///      `_findPairIndex` so that function — reached from `addMarket` on the idempotent skip
     ///      path — keeps its exact body and its exact revert string.
-    function _findPairIndexFor(IOstiumPairsStorage ps, bytes32 from, bytes32 to)
+    function _findPairIndexFor(IWhitespacePairsStorage ps, bytes32 from, bytes32 to)
         internal
         view
         returns (uint16)
@@ -1086,7 +1086,7 @@ contract OperateScript is Script {
 
     /// @notice Lists an arbitrary pair and configures its funding params, idempotently.
     /// @dev Caller must be `registry.gov()` — `addPair` is `onlyGov`
-    ///      (`OstiumPairsStorage.sol:144`), as is `setPairFundingFees`.
+    ///      (`WhitespacePairsStorage.sol:144`), as is `setPairFundingFees`.
     ///
     ///      Unlike `addMarket`, this does NOT lazily create the group and the fee tier. Any
     ///      system that has ever listed a market already has them (measured on 1874:
@@ -1095,7 +1095,7 @@ contract OperateScript is Script {
     ///      adding a market. The two sentinels the contract itself uses are asserted instead, so
     ///      a misconfigured index names the missing thing rather than surfacing as the
     ///      vendored `GroupNotListed(index)`: `groupListed` is `groups[i].minLeverage != 0`
-    ///      (`OstiumPairsStorage.sol:80-82`), `feeListed` is `fees[i].name != bytes32(0)`
+    ///      (`WhitespacePairsStorage.sol:80-82`), `feeListed` is `fees[i].name != bytes32(0)`
     ///      (`:89-91`).
     ///
     ///      Sharing one group and one fee tier across every crypto market is the intended shape,
@@ -1107,11 +1107,11 @@ contract OperateScript is Script {
     ///      `tradeSizeRef: 0` and `overnightMaxLeverage: 0` match `addMarket`'s choices and are
     ///      both meaningful at zero: `tradeSizeRef` has no reader anywhere in `src/`, and
     ///      `overnightMaxLeverage == 0` means "no day/overnight distinction", which
-    ///      `TradingLib.sol:28-31` resolves to `pairMaxLeverage` and `OstiumTrading.sol:227`
+    ///      `TradingLib.sol:28-31` resolves to `pairMaxLeverage` and `WhitespaceTrading.sol:227`
     ///      resolves to `isDayTrade = false`. Neither is a divisor.
     function addMarketFor(MarketConfig memory m) public returns (uint16 pairIndex) {
-        IOstiumPairsStorage ps =
-            IOstiumPairsStorage(IOstiumRegistry(m.registry).getContractAddress("pairsStorage"));
+        IWhitespacePairsStorage ps =
+            IWhitespacePairsStorage(IWhitespaceRegistry(m.registry).getContractAddress("pairsStorage"));
         (bytes32 from, bytes32 to) = _splitFeedName(m.name);
 
         (,, uint16 groupMinLeverage,) = ps.groups(m.groupIndex);
@@ -1124,7 +1124,7 @@ contract OperateScript is Script {
         } else {
             _relay();
             ps.addPair(
-                IOstiumPairsStorage.Pair({
+                IWhitespacePairsStorage.Pair({
                     from: from,
                     to: to,
                     feed: bytes32(bytes(m.name)),
@@ -1161,11 +1161,11 @@ contract OperateScript is Script {
     ///      `TradingCallbacksLib.withinExposureLimits` fails, the open transaction SUCCEEDS, the
     ///      collateral is refunded minus the oracle fee, and no position and no error exist.
     ///      A second, louder consequence applies once a position does open: a zero ceiling makes
-    ///      `openInterestCap` zero in `OstiumPairInfos.getOiDelta` (`:597-604`), whose final line
+    ///      `openInterestCap` zero in `WhitespacePairInfos.getOiDelta` (`:597-604`), whose final line
     ///      divides by it — `Panic(0x12)` on any path that settles funding.
     function setMaxOiFor(MarketConfig memory m, uint16 pairIndex) public {
-        IOstiumTradingStorage ts =
-            IOstiumTradingStorage(IOstiumRegistry(m.registry).getContractAddress("tradingStorage"));
+        IWhitespaceTradingStorage ts =
+            IWhitespaceTradingStorage(IWhitespaceRegistry(m.registry).getContractAddress("tradingStorage"));
         if (ts.openInterest(pairIndex, 2) > 0) return;
         _relay();
         ts.setMaxOpenInterest(pairIndex, m.maxOi);
@@ -1177,7 +1177,7 @@ contract OperateScript is Script {
     ///
     ///      This is the step with no equivalent in `addMarket`, and the one whose absence is
     ///      invisible: a pair lists successfully with no key registered, and only the first
-    ///      `openTrade` on it fails — reverting inside `OstiumRegistry.getContractAddress`
+    ///      `openTrade` on it fails — reverting inside `WhitespaceRegistry.getContractAddress`
     ///      (`:118-121`), which reverts `NotFound(bytes32)` rather than returning zero.
     ///
     ///      The address is READ from the registry, never supplied. `installHardenedUpkeep`
@@ -1194,7 +1194,7 @@ contract OperateScript is Script {
     ///      side effect. It also needs the full `OracleConfig` — signers, threshold, guardian —
     ///      none of which listing a market has any business requiring.
     function registerUpkeepFor(MarketConfig memory m) public {
-        IOstiumRegistry registry = IOstiumRegistry(m.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(m.registry);
         bytes32 key = _upkeepKey(m.name);
         (bool found,) = _lookup(registry, key);
         if (found) return;
@@ -1209,7 +1209,7 @@ contract OperateScript is Script {
     ///      the hardened oracle yet, and in that case the correct answer for a new feed is still
     ///      "the same instance BTC/USD uses". Requiring hardening here would refuse to list a
     ///      market on a system that trades perfectly well.
-    function _incumbentUpkeep(IOstiumRegistry registry) internal view returns (address) {
+    function _incumbentUpkeep(IWhitespaceRegistry registry) internal view returns (address) {
         (bool found, address current) = _lookup(registry, PRICE_UPKEEP_KEY);
         require(found && current != address(0), "no incumbent upkeep to reuse: run() or runOracle() first");
         return current;
@@ -1230,7 +1230,7 @@ contract OperateScript is Script {
     ///      each written exactly as it appears in `packages/shared/src/markets.mjs`. It has NO
     ///      default, unlike `ORACLE_FEEDS`: a default would let an unset variable list a market
     ///      nobody asked for, and there is no unlisting — `removePair`
-    ///      (`OstiumPairsStorage.sol:188-199`) requires zero traders and still never frees the
+    ///      (`WhitespacePairsStorage.sol:188-199`) requires zero traders and still never frees the
     ///      index. Replay is safe: every step below returns early when its work is already done.
     ///
     ///      The four optional variables apply to EVERY market in one run. Markets needing

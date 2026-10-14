@@ -6,13 +6,13 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {TestnetFixture} from "./TestnetFixture.sol";
 import {ReportLib} from "./ReportLib.sol";
-import {OstiumTrading} from "../../src/vendor/ostium/OstiumTrading.sol";
-import {OstiumTradingCallbacks} from "../../src/vendor/ostium/OstiumTradingCallbacks.sol";
-import {OstiumPairInfos} from "../../src/vendor/ostium/OstiumPairInfos.sol";
-import {OstiumVault} from "../../src/vendor/ostium/OstiumVault.sol";
-import {OstiumOpenPnl} from "../../src/vendor/ostium/OstiumOpenPnl.sol";
-import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
+import {WhitespaceTrading} from "../../src/vendor/ostium/WhitespaceTrading.sol";
+import {WhitespaceTradingCallbacks} from "../../src/vendor/ostium/WhitespaceTradingCallbacks.sol";
+import {WhitespacePairInfos} from "../../src/vendor/ostium/WhitespacePairInfos.sol";
+import {WhitespaceVault} from "../../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespaceOpenPnl} from "../../src/vendor/ostium/WhitespaceOpenPnl.sol";
+import {IWhitespacePairsStorage} from "../../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
 
 /// @notice Typed handles and request/deliver helpers on top of `TestnetFixture`, shared by the
 ///         Trading, Vault, PairInfos and TradesUpKeep suites and the invariant handler.
@@ -20,13 +20,13 @@ import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumT
 ///         request, then a 3-of-5 signed report delivered by the keeper through the hardened
 ///         upkeep. Nothing here writes contract storage directly.
 abstract contract TestnetTrading is TestnetFixture {
-    OstiumTrading internal trading;
-    OstiumTradingCallbacks internal callbacks;
-    OstiumPairInfos internal pairInfos;
-    OstiumVault internal vault;
-    OstiumOpenPnl internal openPnl;
-    IOstiumTradingStorage internal ts;
-    IOstiumPairsStorage internal ps;
+    WhitespaceTrading internal trading;
+    WhitespaceTradingCallbacks internal callbacks;
+    WhitespacePairInfos internal pairInfos;
+    WhitespaceVault internal vault;
+    WhitespaceOpenPnl internal openPnl;
+    IWhitespaceTradingStorage internal ts;
+    IWhitespacePairsStorage internal ps;
     IERC20 internal usdw;
 
     uint256 internal constant ORACLE_FEE = 0.1e6; // $0.10, DeployTestnet.s.sol
@@ -45,13 +45,13 @@ abstract contract TestnetTrading is TestnetFixture {
     /// @dev Binds the typed handles to an already-populated `d` (e.g. in an invariant handler
     ///      that is handed the deployment rather than deploying its own).
     function _bindTestnet() internal {
-        trading = OstiumTrading(d.trading);
-        callbacks = OstiumTradingCallbacks(d.callbacks);
-        pairInfos = OstiumPairInfos(d.pairInfos);
-        vault = OstiumVault(d.vault);
-        openPnl = OstiumOpenPnl(d.openPnl);
-        ts = IOstiumTradingStorage(d.tradingStorage);
-        ps = IOstiumPairsStorage(d.pairsStorage);
+        trading = WhitespaceTrading(d.trading);
+        callbacks = WhitespaceTradingCallbacks(d.callbacks);
+        pairInfos = WhitespacePairInfos(d.pairInfos);
+        vault = WhitespaceVault(d.vault);
+        openPnl = WhitespaceOpenPnl(d.openPnl);
+        ts = IWhitespaceTradingStorage(d.tradingStorage);
+        ps = IWhitespacePairsStorage(d.pairsStorage);
         usdw = IERC20(d.collateral);
     }
 
@@ -114,7 +114,7 @@ abstract contract TestnetTrading is TestnetFixture {
         uint192 openPrice,
         uint192 tp,
         uint192 sl
-    ) internal pure returns (IOstiumTradingStorage.Trade memory t) {
+    ) internal pure returns (IWhitespaceTradingStorage.Trade memory t) {
         // Field by field, not a struct literal: a 10-field literal evaluates every field onto
         // the stack before allocating, which is too deep once this is inlined into a caller
         // that already holds a few locals.
@@ -140,7 +140,7 @@ abstract contract TestnetTrading is TestnetFixture {
     }
 
     /// @dev Kept separate from `_openAt` so neither function is too deep for the stack.
-    function _fillAt(IOstiumTradingStorage.Trade memory t, int192 price) internal {
+    function _fillAt(IWhitespaceTradingStorage.Trade memory t, int192 price) internal {
         (uint256 orderId, uint32 timestamp) = _requestOpen(t, 500);
         _deliverAt(orderId, t.pairIndex, timestamp, price);
     }
@@ -155,13 +155,13 @@ abstract contract TestnetTrading is TestnetFixture {
         uint192 target,
         uint192 tp,
         uint192 sl,
-        IOstiumTradingStorage.OpenOrderType kind
+        IWhitespaceTradingStorage.OpenOrderType kind
     ) internal returns (uint8 index) {
         index = ts.firstEmptyOpenLimitIndex(who, pairIndex);
         _submit(_tradeFull(who, pairIndex, collateral, leverage, buy, target, tp, sl), kind);
     }
 
-    function _submit(IOstiumTradingStorage.Trade memory t, IOstiumTradingStorage.OpenOrderType kind) internal {
+    function _submit(IWhitespaceTradingStorage.Trade memory t, IWhitespaceTradingStorage.OpenOrderType kind) internal {
         vm.prank(t.trader);
         trading.openTrade(t, _noBuilder(), kind, 0);
     }
@@ -198,7 +198,7 @@ abstract contract TestnetTrading is TestnetFixture {
         address who,
         uint16 pairIndex,
         uint8 index,
-        IOstiumTradingStorage.LimitOrder kind,
+        IWhitespaceTradingStorage.LimitOrder kind,
         uint256 priceTimestamp
     ) internal returns (Vm.Log[] memory) {
         return _performPayload(forwarder, _automationPayload(who, pairIndex, index, kind, priceTimestamp));
@@ -212,7 +212,7 @@ abstract contract TestnetTrading is TestnetFixture {
         address who,
         uint16 pairIndex,
         uint8 index,
-        IOstiumTradingStorage.LimitOrder kind
+        IWhitespaceTradingStorage.LimitOrder kind
     ) internal returns (uint256 orderId, uint32 timestamp) {
         bytes memory payload = _automationPayload(who, pairIndex, index, kind, vm.getBlockTimestamp());
         vm.recordLogs();
@@ -243,7 +243,7 @@ abstract contract TestnetTrading is TestnetFixture {
     // -------------------------------------------------------------------------------------
 
     /// @notice The taker opening fee on `collateral` at `lev` (PRECISION_2), exactly as
-    ///         `OstiumPairInfos._getBaseOpeningFee` charges it on the pre-fee notional.
+    ///         `WhitespacePairInfos._getBaseOpeningFee` charges it on the pre-fee notional.
     function _takerFee(uint256 collateral, uint32 lev) internal pure returns (uint256) {
         return collateral * lev / 100 * TAKER_FEE_P / 1e6 / 100;
     }

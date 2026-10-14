@@ -5,8 +5,8 @@
  * MIN_HEALTHY_VENUES healthy venues, "closes allowed, opens blocked". That rule lives in
  * services/price-publisher/src/aggregator.mjs (`canSignForOrderType` /
  * `OPEN_ORDER_TYPES`) and, critically, treats a liquidation's price request the SAME as
- * any other close: a LIQ trigger asks OstiumTrading.executeAutomationOrder for
- * `OrderType.LIMIT_CLOSE` (never OPEN — see OstiumTrading.sol:624-631), which is NOT in
+ * any other close: a LIQ trigger asks WhitespaceTrading.executeAutomationOrder for
+ * `OrderType.LIMIT_CLOSE` (never OPEN — see WhitespaceTrading.sol:624-631), which is NOT in
  * `OPEN_ORDER_TYPES`. So the publisher will happily sign a report for a liquidation
  * close even while degraded (fewer than 3 healthy venues) — that is correct for an
  * ordinary trader-initiated close (a trader must always be able to exit), but wrong for

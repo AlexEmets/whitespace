@@ -3,10 +3,10 @@ pragma solidity 0.8.24;
 
 import {TestnetTrading} from "../helpers/TestnetTrading.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
-import {IOstiumVault} from "../../src/vendor/ostium/interfaces/IOstiumVault.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
+import {IWhitespaceVault} from "../../src/vendor/ostium/interfaces/IWhitespaceVault.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
 
-/// @notice `OstiumVault` on the testnet deployment: the async request/settle/claim flow, cancel
+/// @notice `WhitespaceVault` on the testnet deployment: the async request/settle/claim flow, cancel
 ///         and reclaim, the withdraw delay, oversubscription, how trader PnL moves the share
 ///         price, the market-maker buffer, and the daily PnL circuit breaker.
 contract VaultTest is TestnetTrading {
@@ -60,13 +60,13 @@ contract VaultTest is TestnetTrading {
     }
 
     function test_requestDeposit_escrowsAssetsUntilSettlement() public {
-        vm.expectRevert(IOstiumVault.NullAmount.selector);
+        vm.expectRevert(IWhitespaceVault.NullAmount.selector);
         vm.prank(lp2);
         vault.requestDeposit(0);
 
         uint32 id = _next();
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.DepositRequestedV2(lp2, id, 5_000e6);
+        emit IWhitespaceVault.DepositRequestedV2(lp2, id, 5_000e6);
         vm.prank(lp2);
         vault.requestDeposit(5_000e6);
 
@@ -74,11 +74,11 @@ contract VaultTest is TestnetTrading {
         assertEq(_bal(d.vault), LP_AMOUNT + 5_000e6, "escrowed in the vault");
         assertEq(vault.pendingDepositRequest(lp2, id), 5_000e6, "recorded");
         assertEq(vault.totalAssetsToDeposit(id), 5_000e6, "totalled");
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.PENDING), "pending");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.PENDING), "pending");
         assertEq(vault.currentBalance(), LP_AMOUNT, "escrow is not LP capital yet");
         assertEq(vault.totalSupply(), SUPPLY, "no shares yet");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.DepositNotClaimable.selector, lp2, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.DepositNotClaimable.selector, lp2, id));
         vm.prank(lp2);
         vault.claimDeposit(id);
     }
@@ -86,14 +86,14 @@ contract VaultTest is TestnetTrading {
     function test_forcedSettlement_mintsIntoEscrowAndClaimTransfersShares() public {
         uint32 id = _deposit(lp2, 5_000e6);
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.NotGov.selector, lp2));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.NotGov.selector, lp2));
         vm.prank(lp2);
         vault.forceSettlement();
 
         _settle();
         assertEq(vault.lastSettlementId(), id, "settled");
         assertEq(vault.lastSettlementTs(), vm.getBlockTimestamp(), "timestamped");
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.CLAIMABLE), "claimable");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.CLAIMABLE), "claimable");
         assertEq(vault.settlementAllocationScaleP(id), 1e18, "fully allocated");
         assertEq(vault.settlementShareToAssetsPrice(id), 1e18, "price locked");
         assertEq(vault.totalSupply(), SUPPLY + 5_000e6, "minted");
@@ -101,14 +101,14 @@ contract VaultTest is TestnetTrading {
         assertEq(vault.currentBalance(), LP_AMOUNT + 5_000e6, "now LP capital");
 
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.DepositClaimedV2(lp2, id, 5_000e6);
+        emit IWhitespaceVault.DepositClaimedV2(lp2, id, 5_000e6);
         vm.prank(lp2);
         vault.claimDeposit(id);
         assertEq(vault.balanceOf(lp2), 5_000e6, "shares delivered");
         assertEq(vault.balanceOf(d.vault), 0, "escrow emptied");
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.NONE), "consumed");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.NONE), "consumed");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.DepositNotClaimable.selector, lp2, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.DepositNotClaimable.selector, lp2, id));
         vm.prank(lp2);
         vault.claimDeposit(id);
     }
@@ -125,7 +125,7 @@ contract VaultTest is TestnetTrading {
         vm.prank(lp3);
         vault.tryNewSettlement();
         assertEq(vault.lastSettlementId(), id, "anyone settles once the interval elapsed");
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.CLAIMABLE), "claimable");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.CLAIMABLE), "claimable");
     }
 
     /// @notice A trade close is enough to run an overdue settlement: `receiveAssets` calls
@@ -145,13 +145,13 @@ contract VaultTest is TestnetTrading {
     function test_withdraw_requestSettleClaimAtThePrice() public {
         uint32 id = vault.targetSettlementId(false);
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.WithdrawRequestedV2(lp, id, 10_000e6);
+        emit IWhitespaceVault.WithdrawRequestedV2(lp, id, 10_000e6);
         vm.prank(lp);
         vault.requestWithdraw(10_000e6);
         assertEq(vault.balanceOf(lp), SUPPLY - 10_000e6, "shares escrowed");
         assertEq(vault.balanceOf(d.vault), 10_000e6, "in the vault");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.WithdrawNotClaimable.selector, lp, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.WithdrawNotClaimable.selector, lp, id));
         vm.prank(lp);
         vault.claimWithdraw(id);
 
@@ -192,7 +192,7 @@ contract VaultTest is TestnetTrading {
         vm.expectRevert();
         vm.prank(lp);
         vault.cancelRequestWithdraw(wid, 1);
-        vm.expectRevert(IOstiumVault.NullAmount.selector);
+        vm.expectRevert(IWhitespaceVault.NullAmount.selector);
         vm.prank(lp2);
         vault.cancelRequestDeposit(id, 0);
     }
@@ -203,15 +203,15 @@ contract VaultTest is TestnetTrading {
         vault.updateSupplyCap(SUPPLY);
         uint32 id = _deposit(lp2, 5_000e6);
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.TotalAssetsToDepositAboveMax(id, 5_000e6, 0);
+        emit IWhitespaceVault.TotalAssetsToDepositAboveMax(id, 5_000e6, 0);
         _settle();
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.RECLAIMABLE), "reclaimable");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.RECLAIMABLE), "reclaimable");
         assertEq(vault.totalSupply(), SUPPLY, "nothing minted");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.DepositNotClaimable.selector, lp2, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.DepositNotClaimable.selector, lp2, id));
         vm.prank(lp2);
         vault.claimDeposit(id);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.DepositNotReclaimable.selector, lp3, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.DepositNotReclaimable.selector, lp3, id));
         vm.prank(lp3);
         vault.reclaimDeposit(id);
 
@@ -228,9 +228,9 @@ contract VaultTest is TestnetTrading {
         vm.prank(lp);
         vault.requestWithdraw(SUPPLY);
         _settle();
-        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IOstiumVault.RequestStatus.RECLAIMABLE), "reclaimable");
+        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IWhitespaceVault.RequestStatus.RECLAIMABLE), "reclaimable");
         assertEq(vault.totalSupply(), SUPPLY, "nothing burned");
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.WithdrawNotReclaimable.selector, lp2, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.WithdrawNotReclaimable.selector, lp2, id));
         vm.prank(lp2);
         vault.reclaimWithdraw(id);
         vm.prank(lp);
@@ -239,10 +239,10 @@ contract VaultTest is TestnetTrading {
     }
 
     function test_withdrawSettlementDelay_pushesTheTargetSettlement() public {
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.WrongParams.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.WrongParams.selector));
         vm.prank(gov);
         vault.updateWithdrawSettlementDelay(11);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.NotGov.selector, lp));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.NotGov.selector, lp));
         vm.prank(lp);
         vault.updateWithdrawSettlementDelay(2);
 
@@ -255,9 +255,9 @@ contract VaultTest is TestnetTrading {
 
         _settle();
         _settle();
-        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IOstiumVault.RequestStatus.PENDING), "still pending after two");
+        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IWhitespaceVault.RequestStatus.PENDING), "still pending after two");
         _settle();
-        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IOstiumVault.RequestStatus.CLAIMABLE), "claimable after three");
+        assertEq(uint8(vault.getWithdrawStatus(lp, id)), uint8(IWhitespaceVault.RequestStatus.CLAIMABLE), "claimable after three");
         vm.prank(lp);
         vault.claimWithdraw(id);
         assertEq(_bal(lp), 1_000e6, "paid");
@@ -272,14 +272,14 @@ contract VaultTest is TestnetTrading {
         _deposit(lp3, 2_000e6);
 
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.TotalAssetsToDepositCapped(id, 6_000e6, 3_000e6);
+        emit IWhitespaceVault.TotalAssetsToDepositCapped(id, 6_000e6, 3_000e6);
         _settle();
         assertEq(vault.settlementAllocationScaleP(id), 0.5e18, "half allocated");
         assertEq(vault.totalAssetsToDeposit(id), 3_000e6, "capped");
         assertEq(vault.totalSupply(), SUPPLY + 3_000e6, "exactly the cap");
 
         vm.expectEmit(true, true, true, true, d.vault);
-        emit IOstiumVault.DepositPartiallyRefunded(lp2, id, 2_000e6);
+        emit IWhitespaceVault.DepositPartiallyRefunded(lp2, id, 2_000e6);
         vm.prank(lp2);
         vault.claimDeposit(id);
         vm.prank(lp3);
@@ -379,10 +379,10 @@ contract VaultTest is TestnetTrading {
     // =====================================================================================
 
     function test_mm_depositBuildsBufferAndWithdrawIsBoundedByIt() public {
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVault.NotMM.selector, lp));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVault.NotMM.selector, lp));
         vm.prank(lp);
         vault.mmDeposit(1e6);
-        vm.expectRevert(IOstiumVault.ZeroAmount.selector);
+        vm.expectRevert(IWhitespaceVault.ZeroAmount.selector);
         vm.prank(marketMaker);
         vault.mmDeposit(0);
 
@@ -395,11 +395,11 @@ contract VaultTest is TestnetTrading {
         assertEq(vault.lastSettlementId(), idBefore + 1, "an MM settlement");
 
         vm.startPrank(marketMaker);
-        vm.expectRevert(IOstiumVault.InsufficientBuffer.selector);
+        vm.expectRevert(IWhitespaceVault.InsufficientBuffer.selector);
         vault.mmWithdraw(5_000e6 + 1, marketMaker);
-        vm.expectRevert(IOstiumVault.NullAddr.selector);
+        vm.expectRevert(IWhitespaceVault.NullAddr.selector);
         vault.mmWithdraw(1e6, address(0));
-        vm.expectRevert(IOstiumVault.ZeroAmount.selector);
+        vm.expectRevert(IWhitespaceVault.ZeroAmount.selector);
         vault.mmWithdraw(0, marketMaker);
         vault.mmWithdraw(5_000e6, marketMaker);
         vm.stopPrank();
@@ -412,7 +412,7 @@ contract VaultTest is TestnetTrading {
         uint32 id = _deposit(lp2, 1_000e6);
         vm.prank(marketMaker);
         vault.mmDeposit(1_000e6);
-        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IOstiumVault.RequestStatus.CLAIMABLE), "settled by the MM");
+        assertEq(uint8(vault.getDepositStatus(lp2, id)), uint8(IWhitespaceVault.RequestStatus.CLAIMABLE), "settled by the MM");
     }
 
     // =====================================================================================
@@ -426,7 +426,7 @@ contract VaultTest is TestnetTrading {
         _openAt(trader, BTC, 10_000e6, 10_000, true, _basePrice(BTC));
         (uint256 id, uint32 t) = _requestClose(trader, BTC, 0, 0, uint192(uint256(int256(_px(BTC, 200)))), 500);
         bytes memory report = this.signedReportExt(BTC, t, _px(BTC, 200), true);
-        vm.expectRevert(IOstiumVault.MaxDailyPnlReached.selector);
+        vm.expectRevert(IWhitespaceVault.MaxDailyPnlReached.selector);
         _deliver(id, report);
         assertEq(ts.openTradesCount(trader, BTC), 1, "position still open");
 

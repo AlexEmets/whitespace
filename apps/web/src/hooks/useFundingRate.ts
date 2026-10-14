@@ -7,7 +7,7 @@ import { fundingRatePerHourP } from '@/lib/positionMath';
 
 /**
  * The pair's current funding rate per hour, percent at 1e18 scale (positive: longs pay
- * shorts), from `OstiumPairInfos.getPendingAccFundingFees` — the rate the accumulator is
+ * shorts), from `WhitespacePairInfos.getPendingAccFundingFees` — the rate the accumulator is
  * moving at right now, not a forecast. Funding on this protocol is continuous per block, so
  * there is no settlement countdown to show.
  */

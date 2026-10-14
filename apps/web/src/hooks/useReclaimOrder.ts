@@ -12,7 +12,7 @@ import type { OrderSummary } from '@/lib/types';
  *
  * `openTrade` takes the trader's collateral up front and emits a price request. If no
  * signed report is ever delivered — a keeper outage, a stalled oracle — the order stays
- * pending and that collateral stays locked in TradingStorage. `OstiumTrading
+ * pending and that collateral stays locked in TradingStorage. `WhitespaceTrading
  * .openTradeMarketTimeout` is the way out: past `marketOrdersTimeout` blocks it
  * unregisters the order and transfers the full collateral back.
  *

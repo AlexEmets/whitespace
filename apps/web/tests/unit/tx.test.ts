@@ -58,7 +58,7 @@ describe('confirmTx', () => {
  * `0x8a357f2b…` — a `closeTradeMarket` that reverted with
  * `ERC20InsufficientBalance(0x43Ac…B06B, 57243, 1000000)`. Closing pulls the flat
  * `pairOracleFee` (1.00 USDW) straight from the trader's wallet
- * (OstiumTrading.sol:310-311) and the wallet held 0.057243. The UI rendered
+ * (WhitespaceTrading.sol:310-311) and the wallet held 0.057243. The UI rendered
  * "Transaction reverted on chain" and nothing else, so the one fact that would have
  * explained it — the trader needs a whole USDW in hand to close — was never shown.
  *

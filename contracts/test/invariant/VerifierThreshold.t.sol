@@ -3,8 +3,8 @@ pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 
-import {OstiumRegistry} from "../../src/vendor/ostium/OstiumRegistry.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
+import {WhitespaceRegistry} from "../../src/vendor/ostium/WhitespaceRegistry.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 import {ReportLib} from "../helpers/ReportLib.sol";
 
@@ -29,12 +29,12 @@ import {ReportLib} from "../helpers/ReportLib.sol";
 contract VerifierThresholdInvariantTest is Test {
     uint256 internal constant THRESHOLD = 3;
 
-    OstiumRegistry internal registry;
+    WhitespaceRegistry internal registry;
     WhitespaceVerifier internal verifier;
     VerifyHandler internal handler;
 
     function setUp() public {
-        registry = new OstiumRegistry(address(0x60F), address(0xDE7), address(0xA11), address(0x0E1));
+        registry = new WhitespaceRegistry(address(0x60F), address(0xDE7), address(0xA11), address(0x0E1));
 
         uint256[5] memory authorized =
             [uint256(0xA11CE01), 0xA11CE02, 0xA11CE03, 0xA11CE04, 0xA11CE05];
@@ -43,7 +43,7 @@ contract VerifierThresholdInvariantTest is Test {
             signers[i] = vm.addr(authorized[i]);
         }
 
-        verifier = new WhitespaceVerifier(IOstiumRegistry(address(registry)), signers, THRESHOLD);
+        verifier = new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), signers, THRESHOLD);
         handler = new VerifyHandler(verifier, authorized, [uint256(0xBAD01), 0xBAD02, 0xBAD03]);
 
         targetContract(address(handler));

@@ -359,7 +359,7 @@ export async function onRemoveCollateralRejected(
 }
 
 // Oracle-fee bond charged out of a position's own collateral (a cancelled close or a
-// partial close) — OstiumTradingCallbacks._chargeBondFromPosition. Carries the position's
+// partial close) — WhitespaceTradingCallbacks._chargeBondFromPosition. Carries the position's
 // resulting absolute state, so this simply overwrites rather than subtracting a delta like
 // RemoveCollateralExecuted above: for the partial-close path the contract re-reads the
 // trade from storage AFTER the close has already scaled collateral down, so `collateral`

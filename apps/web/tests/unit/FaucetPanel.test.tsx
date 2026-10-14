@@ -152,7 +152,7 @@ describe('<FaucetPanel>', () => {
    * meets an approval step at all.
    *
    * The spender must be TradingStorage — it is the contract that runs `safeTransferFrom`
-   * on the collateral (OstiumTradingStorage.sol:486), so an allowance granted to anything
+   * on the collateral (WhitespaceTradingStorage.sol:486), so an allowance granted to anything
    * else is a transaction that authorises nothing.
    */
   it('arms the trading allowance with the mint, so the terminal needs one confirmation', async () => {

@@ -2,14 +2,14 @@ import { parseAbi } from 'viem';
 
 /**
  * Hand-picked write/read surface actually used by the UI, transcribed directly from
- * contracts/src/vendor/ostium/interfaces/IOstiumTrading.sol,
- * IOstiumTradingStorage.sol (the `Trade`/`BuilderFee` structs) and IOstiumVault.sol.
+ * contracts/src/vendor/ostium/interfaces/IWhitespaceTrading.sol,
+ * IWhitespaceTradingStorage.sol (the `Trade`/`BuilderFee` structs) and IWhitespaceVault.sol.
  * Not the full interface — only what apps/web calls. Do not hand-guess a signature;
  * every entry below has a `// source:` comment pointing at the exact interface line
  * shape it was read from.
  */
 
-// source: IOstiumTradingStorage.Trade / BuilderFee, IOstiumTrading.openTrade /
+// source: IWhitespaceTradingStorage.Trade / BuilderFee, IWhitespaceTrading.openTrade /
 // closeTradeMarket / openTradeMarketTimeout / closeTradeMarketTimeout, and the
 // MarketOpenOrderInitiated / MarketCloseOrderInitiatedV2 events used to recover the
 // orderId assigned to a just-submitted request.
@@ -20,7 +20,7 @@ export const TRADING_ABI = parseAbi([
   'function closeTradeMarketTimeout(uint256 _order, bool retry)',
   'function marketOrdersTimeout() view returns (uint16)',
   'function triggerTimeout() view returns (uint16)',
-  // Position management (IOstiumTrading.sol): TP/SL and isolated-margin edits.
+  // Position management (IWhitespaceTrading.sol): TP/SL and isolated-margin edits.
   'function updateTp(uint16 pairIndex, uint8 index, uint192 newTp)',
   'function updateSl(uint16 pairIndex, uint8 index, uint192 newSl)',
   'function topUpCollateral(uint16 pairIndex, uint8 index, uint256 topUpAmount)',
@@ -46,7 +46,7 @@ export const TRADING_ABI = parseAbi([
   'event MarketCloseOrderInitiatedV2(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint16 pairIndex, uint16 closePercentage)',
 ]);
 
-// source: IOstiumVault.sol async deposit/withdraw section.
+// source: IWhitespaceVault.sol async deposit/withdraw section.
 export const VAULT_ABI = parseAbi([
   'function requestDeposit(uint256 assets)',
   'function requestWithdraw(uint256 shares)',
@@ -67,7 +67,7 @@ export const VAULT_ABI = parseAbi([
   'event WithdrawRequestedV2(address indexed owner, uint32 indexed settlementId, uint256 shares)',
 ]);
 
-/** IOstiumVault.RequestStatus: NONE, PENDING, CLAIMABLE, RECLAIMABLE. */
+/** IWhitespaceVault.RequestStatus: NONE, PENDING, CLAIMABLE, RECLAIMABLE. */
 export const VAULT_REQUEST_STATUS = ['NONE', 'PENDING', 'CLAIMABLE', 'RECLAIMABLE'] as const;
 export type VaultRequestStatus = (typeof VAULT_REQUEST_STATUS)[number];
 
@@ -82,8 +82,8 @@ export const ERC20_ABI = parseAbi([
   'function claim()',
 ]);
 
-// source: IOstiumPairInfos.sol `pairOpeningFees` (PairOpeningFees struct: makerFeeP,
-// takerFeeP, usageFeeP all PRECISION_6 percent) and IOstiumPairsStorage.sol
+// source: IWhitespacePairInfos.sol `pairOpeningFees` (PairOpeningFees struct: makerFeeP,
+// takerFeeP, usageFeeP all PRECISION_6 percent) and IWhitespacePairsStorage.sol
 // `pairOracleFee` (PRECISION_6 USDC, flat fee per order). Real reads, used instead of
 // the mockup's fee figures per the phase-5 design-honesty ruling: "show fees sourced
 // from chain/API, not the mockup's numbers."
@@ -102,30 +102,30 @@ export const ERC20_ABI = parseAbi([
 //                                  means the estimate is still the contract's own formula
 //                                  rather than a reimplementation of it here.
 //
-// Both are `view` in OstiumPairInfos.sol (:775 and :806) even though other members of
-// IOstiumPairInfos are not, so both are safe reads.
+// Both are `view` in WhitespacePairInfos.sol (:775 and :806) even though other members of
+// IWhitespacePairInfos are not, so both are safe reads.
 export const PAIR_INFOS_ABI = parseAbi([
-  // `view`, though IOstiumPairInfos.sol declares it without the modifier — it is the
+  // `view`, though IWhitespacePairInfos.sol declares it without the modifier — it is the
   // auto-generated getter for `mapping(uint16 => PairOpeningFees) public pairOpeningFees`
-  // (OstiumPairInfos.sol:54), which is always view. Copying the interface's omission made
+  // (WhitespacePairInfos.sol:54), which is always view. Copying the interface's omission made
   // wagmi's useReadContract reject the whole ABI's read surface the moment a genuinely
   // `view` entry was added alongside it.
   'function pairOpeningFees(uint16 pairIndex) view returns (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilizationThresholdP, uint16 makerMaxLeverage, uint8 vaultFeePercent)',
   'function getTradeLiquidationPrice(address trader, uint16 pairIndex, uint8 index, uint256 openPrice, bool long, uint256 collateral, uint32 leverage, uint32 maxLeverage) view returns (uint256)',
   'function getTradeLiquidationPricePure(uint256 openPrice, bool long, uint256 collateral, uint32 leverage, int256 rolloverFee, int256 fundingFee, uint32 maxLeverage) view returns (uint256)',
   // Accrued holding costs of an open trade, PRECISION_6 USDW, signed: positive is owed by the
-  // trader. getTradeFundingFee also returns the pair's OI delta (OstiumPairInfos.sol:747).
+  // trader. getTradeFundingFee also returns the pair's OI delta (WhitespacePairInfos.sol:747).
   'function getTradeFundingFee(address trader, uint16 pairIndex, uint8 index, bool long, uint256 collateral, uint32 leverage) view returns (int256 fundingFee, int256 oiDelta)',
   'function getTradeRolloverFee(address trader, uint16 pairIndex, uint8 index, bool long, uint256 collateral, uint32 leverage) view returns (int256)',
   // The pair's current funding rate is the third member: int64 PRECISION_18 per block, positive
-  // when longs pay shorts (OstiumPairInfos.sol:607).
+  // when longs pay shorts (WhitespacePairInfos.sol:607).
   'function getPendingAccFundingFees(uint16 pairIndex) view returns (int256 accPerOiLong, int256 accPerOiShort, int64 fundingRatePerBlock, int256 oiDelta)',
 ]);
 
-// source: IOstiumTradingCallbacks.maxSl_P — the widest stop loss, as a percent loss of margin.
+// source: IWhitespaceTradingCallbacks.maxSl_P — the widest stop loss, as a percent loss of margin.
 export const CALLBACKS_ABI = parseAbi(['function maxSl_P() view returns (uint8)']);
 
-// source: IOstiumTradingStorage.openTradesInfo (TradeInfo struct) — initialLeverage bounds updateTp.
+// source: IWhitespaceTradingStorage.openTradesInfo (TradeInfo struct) — initialLeverage bounds updateTp.
 export const TRADING_STORAGE_ABI = parseAbi([
   'function openTradesInfo(address trader, uint16 pairIndex, uint8 index) view returns (uint256 tradeId, uint256 oiNotional, uint32 initialLeverage, uint32 tpLastUpdated, uint32 slLastUpdated, uint32 createdAt, bool deprecatedBeingMarketClosed)',
   // _type 0 = long OI, 1 = short OI (both in notional/fillPrice units, 1e18 x 1e12), 2 = the cap (PRECISION_6 USDW).
@@ -150,7 +150,7 @@ export const PAIRS_STORAGE_ABI = parseAbi([
   'function groupMaxCollateral(uint16 pairIndex) view returns (uint256)',
 ]);
 
-/** IOstiumTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. TWAP does not exist in the
+/** IWhitespaceTradingStorage.OpenOrderType: MARKET, LIMIT, STOP. TWAP does not exist in the
  * contracts. A LIMIT entry fills at a better price than its trigger (long: at or below it),
  * a STOP entry once the price breaks through it (long: at or above it). */
 export const OPEN_ORDER_TYPE_MARKET = 0;
@@ -164,8 +164,8 @@ export const OPEN_ORDER_TYPE: Record<OpenOrderKind, number> = {
 };
 
 /**
- * IOstiumTradingCallbacks.CancelReason, transcribed from
- * contracts/src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol. The keeper report
+ * IWhitespaceTradingCallbacks.CancelReason, transcribed from
+ * contracts/src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol. The keeper report
  * that cancels a pending order carries one of these; the API is expected to surface the
  * name (or the raw uint8) on the order record so the UI can explain *why* to the trader
  * rather than just saying "cancelled".

@@ -83,7 +83,7 @@ test('18/6/2 decimal scaling proven exact against the real deployed BTC/USD trad
   // Real numbers, not invented: openPrice/collateral/leverage from the executed proof
   // trade in deployments/1874-operational.json (proofTrade), maxLeverage=10000 from the
   // same file's market.maxLeverage, and liqMarginThresholdP=25 from the value actually
-  // passed to OstiumPairInfos.initializeV3 in contracts/script/Deploy.s.sol
+  // passed to WhitespacePairInfos.initializeV3 in contracts/script/Deploy.s.sol
   // (LIQ_MARGIN_THRESHOLD_P). rolloverFee/fundingFee=0 (a freshly opened trade, matching
   // the proof trade's own history). Expected values were computed independently with a
   // one-off bigint script mirroring the Solidity line-for-line (not by calling this
@@ -136,7 +136,7 @@ test('rolloverFee and fundingFee shift the liquidation price, as they do on-chai
   assert.ok(withFees > withoutFees);
 });
 
-test('getTradeFundingFeePure mirrors OstiumPairInfos.getTradeFundingFeePure exactly, including the +/-1 floor', () => {
+test('getTradeFundingFeePure mirrors WhitespacePairInfos.getTradeFundingFeePure exactly, including the +/-1 floor', () => {
   // accFundingDelta=1e15, collateral*leverage=1000 USDW * 1000(2dp) = 1e12;
   // 1e15 * 1e12 / 1e18 / 100 = 1e9 / 100 = 1e7.
   const fee = getTradeFundingFeePure(0n, 1_000_000_000_000_000n, 1_000_000000n, 1000n);

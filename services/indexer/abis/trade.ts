@@ -1,5 +1,5 @@
 // Shared Trade tuple component, transcribed field-for-field from
-// contracts/src/vendor/ostium/interfaces/IOstiumTradingStorage.sol (struct Trade).
+// contracts/src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol (struct Trade).
 // Reused by MarketOpenExecuted / LimitOpenExecuted below.
 export const TRADE_COMPONENTS = [
   { name: 'collateral', type: 'uint256' },

@@ -267,7 +267,7 @@ export function DocsArticle() {
             <P>
               Nothing on-chain executes them by itself. Two automation bots watch the price against every resting
               order and open position, and when a level is reached they request a freshly signed price through{' '}
-              <code>OstiumTradesUpKeep</code>, which only registered forwarders may call. Those fills therefore run
+              <code>WhitespaceTradesUpKeep</code>, which only registered forwarders may call. Those fills therefore run
               through the same two phases as a market order:
             </P>
             <List>
@@ -337,9 +337,9 @@ export function DocsArticle() {
             </P>
             <p className={styles.sourceLine}>
               Source: design spec §5.1; docs/decisions/phase-5-frontend.md (slippage unit verified against{' '}
-              <code>OstiumTrading.sol</code> <code>PERCENT_BASE = 100e2</code> and the check in{' '}
+              <code>WhitespaceTrading.sol</code> <code>PERCENT_BASE = 100e2</code> and the check in{' '}
               <code>TradingCallbacksLib.sol</code>); <code>CancelReason</code> from{' '}
-              <code>IOstiumTradingCallbacks.sol</code>.
+              <code>IWhitespaceTradingCallbacks.sol</code>.
             </p>
           </DocSection>
 
@@ -398,7 +398,7 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
             <H3>Who liquidates</H3>
             <P>
               Two independent automation bots evaluate every open position against the value test. One that fails it
-              is submitted through <code>OstiumTradesUpKeep</code> and settles at a freshly signed price, like any
+              is submitted through <code>WhitespaceTradesUpKeep</code> and settles at a freshly signed price, like any
               close. That entry point is gated to registered forwarders rather than being permissionless, so no third
               party can liquidate — or step in if both bots stop.
             </P>
@@ -590,8 +590,8 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               before closing fees, funding and rollover.
             </P>
             <p className={styles.sourceLine}>
-              Source: <code>IOstiumPairsStorage.pairOracleFee</code> and <code>IOstiumPairInfos.pairOpeningFees</code>{' '}
-              (both PRECISION_6), read live; maker/taker split in <code>OstiumPairInfos._getBaseOpeningFee</code>; fee
+              Source: <code>IWhitespacePairsStorage.pairOracleFee</code> and <code>IWhitespacePairInfos.pairOpeningFees</code>{' '}
+              (both PRECISION_6), read live; maker/taker split in <code>WhitespacePairInfos._getBaseOpeningFee</code>; fee
               deduction in <code>TradingCallbacksLib.executeRegisterTrade</code>; docs/decisions/phase-6-liquidator.md
               §2.3 (rollover/funding accrual).
             </p>

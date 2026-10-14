@@ -9,12 +9,12 @@ import {DeployTestnetScript} from "../../script/DeployTestnet.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
-import {OstiumTradesUpKeep} from "../../src/vendor/ostium/OstiumTradesUpKeep.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumAutomationCompatible} from "../../src/vendor/ostium/interfaces/IOstiumAutomationCompatible.sol";
+import {WhitespaceTradesUpKeep} from "../../src/vendor/ostium/WhitespaceTradesUpKeep.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceAutomationCompatible} from "../../src/vendor/ostium/interfaces/IWhitespaceAutomationCompatible.sol";
 import {ReportLib} from "./ReportLib.sol";
 
 /// @notice The system exactly as `DeployTestnetScript.deployTestnet()` builds it for chain 1874 —
@@ -59,7 +59,7 @@ abstract contract TestnetFixture is Test {
     SystemDeployer.Deployment internal d;
     WhitespaceVerifier internal verifier;
     WhitespacePriceUpKeep internal upkeep;
-    OstiumTradesUpKeep internal tradesUpKeep;
+    WhitespaceTradesUpKeep internal tradesUpKeep;
 
     function _signerAddresses() internal pure returns (address[] memory s) {
         s = new address[](5);
@@ -103,10 +103,10 @@ abstract contract TestnetFixture is Test {
     }
 
     function _bindDeployed() internal {
-        IOstiumRegistry registry = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry registry = IWhitespaceRegistry(d.registry);
         verifier = WhitespaceVerifier(registry.getContractAddress("ostiumVerifier"));
         upkeep = WhitespacePriceUpKeep(registry.getContractAddress("BTC/USDPriceUpkeep"));
-        tradesUpKeep = OstiumTradesUpKeep(registry.getContractAddress("tradesUpKeep"));
+        tradesUpKeep = WhitespaceTradesUpKeep(registry.getContractAddress("tradesUpKeep"));
     }
 
     // -------------------------------------------------------------------------------------
@@ -150,7 +150,7 @@ abstract contract TestnetFixture is Test {
 
     function _deliver(uint256 orderId, bytes memory report) internal {
         vm.prank(keeper);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(abi.encode(report, orderId));
     }
 
     /// @dev `PriceRequestedV2(uint256 indexed orderId, OrderType, bytes32 feed, uint256 timestamp)`.
@@ -182,9 +182,9 @@ abstract contract TestnetFixture is Test {
     function _trade(address who, uint16 pairIndex, uint256 collateral, uint32 leverage, bool buy, uint8 index)
         internal
         view
-        returns (IOstiumTradingStorage.Trade memory)
+        returns (IWhitespaceTradingStorage.Trade memory)
     {
-        return IOstiumTradingStorage.Trade({
+        return IWhitespaceTradingStorage.Trade({
             collateral: collateral,
             openPrice: uint192(uint256(int256(_basePrice(pairIndex)))),
             tp: 0,
@@ -198,18 +198,18 @@ abstract contract TestnetFixture is Test {
         });
     }
 
-    function _noBuilder() internal pure returns (IOstiumTradingStorage.BuilderFee memory) {
-        return IOstiumTradingStorage.BuilderFee({builder: address(0), builderFee: 0});
+    function _noBuilder() internal pure returns (IWhitespaceTradingStorage.BuilderFee memory) {
+        return IWhitespaceTradingStorage.BuilderFee({builder: address(0), builderFee: 0});
     }
 
     /// @notice Requests a market open; returns the order to deliver a price for.
-    function _requestOpen(IOstiumTradingStorage.Trade memory t, uint256 slippageP)
+    function _requestOpen(IWhitespaceTradingStorage.Trade memory t, uint256 slippageP)
         internal
         returns (uint256 orderId, uint32 timestamp)
     {
         vm.recordLogs();
         vm.prank(t.trader);
-        IOstiumTrading(d.trading).openTrade(t, _noBuilder(), IOstiumTradingStorage.OpenOrderType.MARKET, slippageP);
+        IWhitespaceTrading(d.trading).openTrade(t, _noBuilder(), IWhitespaceTradingStorage.OpenOrderType.MARKET, slippageP);
         return _lastPriceRequest();
     }
 
@@ -222,10 +222,10 @@ abstract contract TestnetFixture is Test {
     function _openTrade(address who, uint16 pairIndex, uint8 index)
         internal
         view
-        returns (IOstiumTradingStorage.Trade memory t)
+        returns (IWhitespaceTradingStorage.Trade memory t)
     {
         (t.collateral, t.openPrice, t.tp, t.sl, t.trader, t.leverage, t.pairIndex, t.index, t.buy, t.isDayTrade) =
-            IOstiumTradingStorage(d.tradingStorage).openTrades(who, pairIndex, index);
+            IWhitespaceTradingStorage(d.tradingStorage).openTrades(who, pairIndex, index);
     }
 
     // -------------------------------------------------------------------------------------
@@ -236,12 +236,12 @@ abstract contract TestnetFixture is Test {
         address who,
         uint16 pairIndex,
         uint8 index,
-        IOstiumTradingStorage.LimitOrder kind,
+        IWhitespaceTradingStorage.LimitOrder kind,
         uint256 timestamp
     ) internal pure returns (bytes memory) {
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory trades =
-            new IOstiumAutomationCompatible.SimplifiedTradeId[](1);
-        trades[0] = IOstiumAutomationCompatible.SimplifiedTradeId({
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory trades =
+            new IWhitespaceAutomationCompatible.SimplifiedTradeId[](1);
+        trades[0] = IWhitespaceAutomationCompatible.SimplifiedTradeId({
             trader: who,
             pairId: pairIndex,
             index: index,
@@ -256,7 +256,7 @@ abstract contract TestnetFixture is Test {
         address who,
         uint16 pairIndex,
         uint8 index,
-        IOstiumTradingStorage.LimitOrder kind
+        IWhitespaceTradingStorage.LimitOrder kind
     ) internal returns (uint256 orderId, uint32 timestamp) {
         vm.recordLogs();
         vm.prank(forwarder);

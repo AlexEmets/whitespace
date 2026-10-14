@@ -72,7 +72,7 @@ test('connect -> deposit -> open -> pending -> filled -> close', async ({ page, 
     await page.getByTestId('funding-request').click();
     await expect(page.getByTestId('funding-settlement-status')).toContainText('PENDING');
 
-    // Simulate the vault's async settlement running (IOstiumVault RequestStatus:
+    // Simulate the vault's async settlement running (IWhitespaceVault RequestStatus:
     // PENDING -> CLAIMABLE) — off the UI's control, exactly like the real contract.
     state.depositStatus.set(1, 2);
 

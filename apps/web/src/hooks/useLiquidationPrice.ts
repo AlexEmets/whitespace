@@ -11,7 +11,7 @@ import { PAIR_INFOS_ADDRESS } from '@/lib/deployment';
  *
  * Both the positions table and the order form used to show an em-dash with the note
  * "requires on-chain funding/rollover state this app does not currently read". That was
- * true of the app, not of the chain: `OstiumPairInfos` exposes the number directly, and
+ * true of the app, not of the chain: `WhitespacePairInfos` exposes the number directly, and
  * liquidation price is the single figure a leveraged trader most needs. Reimplementing
  * the formula in TypeScript was never the alternative — a liquidation price that is
  * subtly wrong is worse than one that is absent, which is why the dash was there.

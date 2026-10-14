@@ -12,7 +12,7 @@ import type { MarketSummary } from '@/lib/types';
  * Centre header: market name, the real per-market max leverage (design-honesty ruling:
  * "Isolated · <maxLeverage> max", not the mockup's "Cross · 50x max" — Ostium positions
  * are isolated, not cross), mark/index price, and the stat cells. FUNDING is the pair's
- * live per-block rate read from OstiumPairInfos, expressed per hour. 24H VOLUME is derived
+ * live per-block rate read from WhitespacePairInfos, expressed per hour. 24H VOLUME is derived
  * from real candle data (useMarket24h), not fabricated.
  */
 export function MarketHeaderBar({ market }: { market: MarketSummary | undefined }) {

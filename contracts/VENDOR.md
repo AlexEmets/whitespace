@@ -25,8 +25,20 @@ Byte-identical to upstream through phase 1. Every divergence since is recorded h
 
 | File | Change | Rationale | Where |
 |---|---|---|---|
-| `OstiumTrading.sol`, `OstiumTradingCallbacks.sol`, `OstiumTradingStorage.sol`, `lib/TradingCallbacksLib.sol`, `interfaces/IOstiumTradingCallbacks.sol`, `interfaces/IOstiumTradingStorage.sol` | The close oracle-fee bond is charged from the position on a cancelled or partial close instead of pulled from the wallet at request time; `refundOracleFee` removed; `OracleFeeBondCharged` event | Traders who spent their balance on margin could not close (tx `0x8a357f2b…`) | branch `feat/close-bond-from-position`, spec `docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md` |
+| `WhitespaceTrading.sol`, `WhitespaceTradingCallbacks.sol`, `WhitespaceTradingStorage.sol`, `lib/TradingCallbacksLib.sol`, `interfaces/IWhitespaceTradingCallbacks.sol`, `interfaces/IWhitespaceTradingStorage.sol` | The close oracle-fee bond is charged from the position on a cancelled or partial close instead of pulled from the wallet at request time; `refundOracleFee` removed; `OracleFeeBondCharged` event | Traders who spent their balance on margin could not close (tx `0x8a357f2b…`) | branch `feat/close-bond-from-position`, spec `docs/superpowers/specs/2026-09-22-close-without-wallet-balance-design.md` |
 | `lib/TradingCallbacksLib.sol` | `withinExposureLimits` takes the fill price and charges a short's notional at `price / fillPrice` | A short admitted exactly at `maxOi` landed above it after price impact | `test/unit/Findings.t.sol`, `docs/decisions/testnet-perfect-contract-tests.md` |
+| all `Ostium*`/`IOstium*` contracts, interfaces and files | **Rebrand.** Every `Ostium<X>` contract/interface identifier renamed to `Whitespace<X>` and the source files renamed to match (e.g. `OstiumTrading.sol` → `WhitespaceTrading.sol`). The verified contract name an explorer shows for an open/close transaction, and for the vault, is therefore `WhitespaceTrading`/`WhitespaceVault`, not `Ostium*`. The two engine oracle contracts that would otherwise collide with the project's own `src/oracle/` ones are renamed `WhitespaceEngineVerifier`/`WhitespaceEnginePriceUpKeep`. Pure identifier rename — function selectors, event topics and runtime logic are unchanged. | Remove the Ostium brand from the on-chain (explorer) surface | this file's history |
+
+### Rebrand note
+
+The directory is deliberately left at `src/vendor/ostium/` and the upstream `LICENSE`
+(`Copyright (c) 2025 0xOstium`) is kept verbatim: MIT permits renaming and relicensing the code
+but **requires** the copyright notice and licence text be retained, so the provenance recorded in
+this file and that LICENSE must not be deleted. Standalone "Ostium" mentions in provenance prose
+(this file, NatSpec attribution) are intentionally preserved for the same reason. "Byte-identical
+to upstream" above refers to the pre-rebrand state; after the rebrand every file differs from
+upstream by the mechanical identifier rename, which is why the on-disk path still names the
+vendored origin.
 
 ### Deliberately NOT modified
 
@@ -36,7 +48,7 @@ correct on 1874, 2625 and 1875. Keeping it byte-identical preserves the ability 
 upstream fixes. See `test/ChainUtils.t.sol`, which pins this behaviour.
 
 That is the path **on disk**. Vendored sources import the same file as `src/lib/ChainUtils.sol`
-(e.g. `OstiumTrading.sol:3`), which resolves only because `remappings.txt` maps
+(e.g. `WhitespaceTrading.sol:3`), which resolves only because `remappings.txt` maps
 `src/lib/` → `src/vendor/ostium/lib/`. There is no `src/lib/` directory. The same aliasing
 applies to `src/interfaces/` and `src/abstract/`; when a path in this file or a report does not
 exist under `contracts/`, check `remappings.txt` before concluding it is wrong.
@@ -45,20 +57,20 @@ exist under `contracts/`, check `remappings.txt` before concluding it is wrong.
 
 ## EIP-170 headroom — read this before touching `foundry.toml`
 
-**`OstiumTrading` has 162 bytes of margin against the 24,576-byte EIP-170 runtime limit.**
+**`WhitespaceTrading` has 162 bytes of margin against the 24,576-byte EIP-170 runtime limit.**
 
 Measured on this branch with `forge build --sizes` (solc 0.8.24, `evm_version = shanghai`,
 `optimizer_runs = 200`, `via_ir = true`, `bytecode_hash = "none"`, `cbor_metadata = false`):
 
 | Contract | Runtime size | Margin | Margin % |
 |---|---|---|---|
-| `OstiumTrading` | 24,414 B | **162 B** | 0.66% |
-| `OstiumTradingCallbacks` | 22,851 B | 1,725 B | 7.0% |
-| `OstiumPairInfos` | 22,112 B | 2,464 B | 10.0% |
-| `OstiumTradingStorage` | 19,034 B | 5,542 B | 22.6% |
-| `OstiumVault` | 19,120 B | 5,456 B | 22.2% |
+| `WhitespaceTrading` | 24,414 B | **162 B** | 0.66% |
+| `WhitespaceTradingCallbacks` | 22,851 B | 1,725 B | 7.0% |
+| `WhitespacePairInfos` | 22,112 B | 2,464 B | 10.0% |
+| `WhitespaceTradingStorage` | 19,034 B | 5,542 B | 22.6% |
+| `WhitespaceVault` | 19,120 B | 5,456 B | 22.2% |
 
-`OstiumTrading` is the entry point for every user-facing action, so an overflow here is not a
+`WhitespaceTrading` is the entry point for every user-facing action, so an overflow here is not a
 peripheral failure — it is the branch's most central contract becoming undeployable.
 
 Changes that consume this margin, in rough order of how easily they do it:
@@ -69,7 +81,7 @@ Changes that consume this margin, in rough order of how easily they do it:
   `cbor_metadata = true`. Either appends a CBOR trailer to every artifact. (Both are also
   asserted by `tools/evm-compat/toolchain.mjs`, which fails the build if they change.)
 - **Disabling `via_ir`**, changing `solc_version`, or changing `evm_version` — all alter codegen.
-- **Adding code to `OstiumTrading` itself**, or inlining anything currently in `TradingLib`.
+- **Adding code to `WhitespaceTrading` itself**, or inlining anything currently in `TradingLib`.
 
 `forge build --sizes` exits non-zero on an overflow; plain `forge build` and `forge test` do
 **not**. CI runs `--sizes`, and so does `pnpm build:contracts`, so a local build gates this too —

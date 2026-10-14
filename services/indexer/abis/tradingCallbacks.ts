@@ -1,5 +1,5 @@
 // Event fragments transcribed from
-// contracts/src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol.
+// contracts/src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol.
 // MarketOpenExecuted and MarketCloseExecutedV2 were verified byte-for-byte
 // against real decoded logs from Whitechain testnet 1874 (orderId=2 open,
 // orderId=3/tradeId=2 close) — see test/decode.test.ts. Their topic0 values
@@ -127,7 +127,7 @@ export const tradingCallbacksAbi = [
     ],
   },
   // --- Fee events (fee_charge). The callbacks' OracleFeeCharged has no pairIndex, unlike
-  // the same-named declaration in IOstiumTrading, which Trading never emits.
+  // the same-named declaration in IWhitespaceTrading, which Trading never emits.
   {
     type: 'event',
     name: 'DevFeeCharged',

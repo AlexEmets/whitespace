@@ -6,22 +6,22 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {USDW} from "../src/mocks/USDW.sol";
-import {OstiumRegistry} from "../src/vendor/ostium/OstiumRegistry.sol";
-import {OstiumVerifier} from "../src/vendor/ostium/OstiumVerifier.sol";
-import {OstiumTradingStorage} from "../src/vendor/ostium/OstiumTradingStorage.sol";
-import {OstiumPairsStorage} from "../src/vendor/ostium/OstiumPairsStorage.sol";
-import {OstiumPairInfos} from "../src/vendor/ostium/OstiumPairInfos.sol";
-import {OstiumTrading} from "../src/vendor/ostium/OstiumTrading.sol";
-import {OstiumTradingCallbacks} from "../src/vendor/ostium/OstiumTradingCallbacks.sol";
-import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
-import {OstiumOpenPnl} from "../src/vendor/ostium/OstiumOpenPnl.sol";
-import {OstiumPriceRouter} from "../src/vendor/ostium/OstiumPriceRouter.sol";
-import {OstiumPrivatePriceUpKeep} from "../src/vendor/ostium/OstiumPrivatePriceUpKeep.sol";
-import {IOstiumRegistry} from "../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPairInfos} from "../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
+import {WhitespaceRegistry} from "../src/vendor/ostium/WhitespaceRegistry.sol";
+import {WhitespaceEngineVerifier} from "../src/vendor/ostium/WhitespaceEngineVerifier.sol";
+import {WhitespaceTradingStorage} from "../src/vendor/ostium/WhitespaceTradingStorage.sol";
+import {WhitespacePairsStorage} from "../src/vendor/ostium/WhitespacePairsStorage.sol";
+import {WhitespacePairInfos} from "../src/vendor/ostium/WhitespacePairInfos.sol";
+import {WhitespaceTrading} from "../src/vendor/ostium/WhitespaceTrading.sol";
+import {WhitespaceTradingCallbacks} from "../src/vendor/ostium/WhitespaceTradingCallbacks.sol";
+import {WhitespaceVault} from "../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespaceOpenPnl} from "../src/vendor/ostium/WhitespaceOpenPnl.sol";
+import {WhitespacePriceRouter} from "../src/vendor/ostium/WhitespacePriceRouter.sol";
+import {WhitespacePrivatePriceUpKeep} from "../src/vendor/ostium/WhitespacePrivatePriceUpKeep.sol";
+import {IWhitespaceRegistry} from "../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePairInfos} from "../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
 
 /// @notice Throwaway role holder used only while a deployment is in flight.
-/// @dev    `OstiumRegistry.registerContracts` is `onlyGov`, but the registry constructor
+/// @dev    `WhitespaceRegistry.registerContracts` is `onlyGov`, but the registry constructor
 ///         makes it impossible for the deploying account to be gov: `setGov`, `setDev` and
 ///         `setManager` all revert with `HasAlreadyRole` when the incoming address equals
 ///         `owner()`, and during construction `owner()` is the deployer itself
@@ -91,7 +91,7 @@ abstract contract SystemDeployer is Script {
     uint16 internal constant MARKET_ORDERS_TIMEOUT = 30;    // blocks
     uint16 internal constant TRIGGER_TIMEOUT = 30;          // blocks
 
-    // OstiumVault.initialize parameters. Each bound below is enforced by the vault's
+    // WhitespaceVault.initialize parameters. Each bound below is enforced by the vault's
     // own require block; the values were chosen to satisfy it with headroom.
     uint256 internal constant MAX_ACC_OPEN_PNL_DELTA = 1e18;      // PRECISION_18
     uint256 internal constant MAX_DAILY_ACC_PNL_DELTA = 1e17;     // must be >= MIN 1e13
@@ -107,7 +107,7 @@ abstract contract SystemDeployer is Script {
 
     /// @notice Deploy the full system, wire the registry, and replay the migration chain.
     /// @param r Role assignments. `gov`, `dev`, `manager` and `owner` MUST be four distinct
-    ///          addresses — OstiumRegistry reverts with `HasAlreadyRole` on any collision.
+    ///          addresses — WhitespaceRegistry reverts with `HasAlreadyRole` on any collision.
     /// @param marketOrdersTimeout Blocks before a trader may reclaim an unfilled market order.
     function _deployAll(Roles memory r, uint16 marketOrdersTimeout) internal returns (Deployment memory d) {
         require(
@@ -129,55 +129,55 @@ abstract contract SystemDeployer is Script {
         // the broadcasting EOA under `vm.broadcast`, where `address(this)` would be wrong.
         // The registry constructor checks every incoming role against `owner()`, which during
         // construction is that same account (`Ownable(msg.sender)`), so a collision must be
-        // rejected here rather than surfacing as `HasAlreadyRole` deep inside OstiumRegistry.
+        // rejected here rather than surfacing as `HasAlreadyRole` deep inside WhitespaceRegistry.
         address deployer = bootstrap.driver();
         require(
             r.gov != deployer && r.dev != deployer && r.manager != deployer,
             "roles must differ from deployer"
         );
 
-        OstiumRegistry registry =
-            new OstiumRegistry(address(bootstrap), r.dev, r.manager, address(bootstrap));
+        WhitespaceRegistry registry =
+            new WhitespaceRegistry(address(bootstrap), r.dev, r.manager, address(bootstrap));
         d.registry = address(registry);
-        IOstiumRegistry reg = IOstiumRegistry(d.registry);
+        IWhitespaceRegistry reg = IWhitespaceRegistry(d.registry);
 
         d.collateral = address(new USDW(r.owner));
 
         // Verifier is not upgradeable upstream: it takes the registry in its constructor.
-        d.verifier = address(new OstiumVerifier(reg));
+        d.verifier = address(new WhitespaceEngineVerifier(reg));
 
         d.tradingStorage = _erc1967(
-            address(new OstiumTradingStorage()),
-            abi.encodeCall(OstiumTradingStorage.initialize, (reg, d.collateral))
+            address(new WhitespaceTradingStorage()),
+            abi.encodeCall(WhitespaceTradingStorage.initialize, (reg, d.collateral))
         );
         d.pairsStorage = _erc1967(
-            address(new OstiumPairsStorage()),
-            abi.encodeCall(OstiumPairsStorage.initialize, (reg))
+            address(new WhitespacePairsStorage()),
+            abi.encodeCall(WhitespacePairsStorage.initialize, (reg))
         );
         d.pairInfos = _erc1967(
-            address(new OstiumPairInfos()),
+            address(new WhitespacePairInfos()),
             abi.encodeCall(
-                OstiumPairInfos.initialize,
+                WhitespacePairInfos.initialize,
                 (reg, r.manager, LIQ_MARGIN_THRESHOLD_P, MAX_NEGATIVE_PNL_ON_OPEN_P)
             )
         );
         d.callbacks = _erc1967(
-            address(new OstiumTradingCallbacks()),
-            abi.encodeCall(OstiumTradingCallbacks.initialize, (reg))
+            address(new WhitespaceTradingCallbacks()),
+            abi.encodeCall(WhitespaceTradingCallbacks.initialize, (reg))
         );
         d.openPnl = _erc1967(
-            address(new OstiumOpenPnl()),
-            abi.encodeCall(OstiumOpenPnl.initialize, (reg))
+            address(new WhitespaceOpenPnl()),
+            abi.encodeCall(WhitespaceOpenPnl.initialize, (reg))
         );
         d.priceRouter = _erc1967(
-            address(new OstiumPriceRouter()),
+            address(new WhitespacePriceRouter()),
             abi.encodeCall(
-                OstiumPriceRouter.initialize, (reg, MAX_TS_VALIDITY, FIRST_ORDER_ID)
+                WhitespacePriceRouter.initialize, (reg, MAX_TS_VALIDITY, FIRST_ORDER_ID)
             )
         );
         // Deployed but DELIBERATELY NOT REGISTERED, and `priceUpKeep` is this struct's local
         // field name, not a registry key. The registry key for a price upkeep is per-oracle
-        // and is not a constant: OstiumPriceRouter.sol:81-84 and OstiumTradingCallbacks.sol
+        // and is not a constant: WhitespacePriceRouter.sol:81-84 and WhitespaceTradingCallbacks.sol
         // :83-85 both resolve it as
         //     bytes32(abi.encodePacked(pairsStorage.oracle(pairIndex), 'PriceUpkeep'))
         // i.e. `<pair.oracle>` + "PriceUpkeep". That string is undeterminable until pairs
@@ -188,24 +188,24 @@ abstract contract SystemDeployer is Script {
         // pinned by test_priceUpKeepIsNotRegisteredUnderItsStructName in
         // test/integration/DeployLocal.t.sol; see docs/runbooks/deploy-testnet.md.
         d.priceUpKeep = _erc1967(
-            address(new OstiumPrivatePriceUpKeep()),
-            abi.encodeCall(OstiumPrivatePriceUpKeep.initialize, (reg))
+            address(new WhitespacePrivatePriceUpKeep()),
+            abi.encodeCall(WhitespacePrivatePriceUpKeep.initialize, (reg))
         );
         d.trading = _erc1967(
-            address(new OstiumTrading()),
+            address(new WhitespaceTrading()),
             abi.encodeCall(
-                OstiumTrading.initialize,
+                WhitespaceTrading.initialize,
                 (reg, MAX_ALLOWED_COLLATERAL, marketOrdersTimeout, TRIGGER_TIMEOUT)
             )
         );
 
         // Vault: note _asset comes FIRST and _registry second, and the parameter list
-        // is eight items long. Verified against src/vendor/ostium/OstiumVault.sol:109.
+        // is eight items long. Verified against src/vendor/ostium/WhitespaceVault.sol:109.
         uint16[2] memory withdrawLockThresholdsP = [uint16(10), uint16(20)];
         d.vault = _erc1967(
-            address(new OstiumVault()),
+            address(new WhitespaceVault()),
             abi.encodeCall(
-                OstiumVault.initialize,
+                WhitespaceVault.initialize,
                 (
                     d.collateral,
                     d.registry,
@@ -233,8 +233,8 @@ abstract contract SystemDeployer is Script {
 
         // Registration runs as gov, then the bootstrap relinquishes both of its roles.
         // Order matters: `setGov` is `onlyOwner`, so it must precede the ownership handover.
-        bootstrap.exec(d.registry, abi.encodeCall(IOstiumRegistry.registerContracts, (names, addrs)));
-        bootstrap.exec(d.registry, abi.encodeCall(IOstiumRegistry.setGov, (r.gov)));
+        bootstrap.exec(d.registry, abi.encodeCall(IWhitespaceRegistry.registerContracts, (names, addrs)));
+        bootstrap.exec(d.registry, abi.encodeCall(IWhitespaceRegistry.setGov, (r.gov)));
         bootstrap.exec(d.registry, abi.encodeCall(Ownable.transferOwnership, (r.owner)));
 
         _replayMigrations(d, r.marketMaker);
@@ -249,22 +249,22 @@ abstract contract SystemDeployer is Script {
         uint32[] memory noLeverages = new uint32[](0);
         uint256[] memory noUints = new uint256[](0);
         int256[] memory noInts = new int256[](0);
-        IOstiumPairInfos.PairFundingFeesV2[] memory noFees =
-            new IOstiumPairInfos.PairFundingFeesV2[](0);
+        IWhitespacePairInfos.PairFundingFeesV2[] memory noFees =
+            new IWhitespacePairInfos.PairFundingFeesV2[](0);
 
-        OstiumPairsStorage(d.pairsStorage).initializeV2(noPairs, noLeverages);
+        WhitespacePairsStorage(d.pairsStorage).initializeV2(noPairs, noLeverages);
 
-        OstiumOpenPnl(d.openPnl).initializeV2(OPEN_ROLLOVER_FEE, noPairs, noUints, noUints);
+        WhitespaceOpenPnl(d.openPnl).initializeV2(OPEN_ROLLOVER_FEE, noPairs, noUints, noUints);
 
-        OstiumPairInfos(d.pairInfos).initializeV2(noFees);
-        OstiumPairInfos(d.pairInfos).initializeV3(
+        WhitespacePairInfos(d.pairInfos).initializeV2(noFees);
+        WhitespacePairInfos(d.pairInfos).initializeV3(
             LIQ_MARGIN_THRESHOLD_P, MAX_NEGATIVE_PNL_ON_OPEN_P
         );
-        OstiumPairInfos(d.pairInfos).initializeV4(noPairs, noInts, noUints);
+        WhitespacePairInfos(d.pairInfos).initializeV4(noPairs, noInts, noUints);
 
-        OstiumVault(d.vault).initializeV2();
-        OstiumVault(d.vault).initializeV3();
-        OstiumVault(d.vault).initializeV4(marketMaker);
+        WhitespaceVault(d.vault).initializeV2();
+        WhitespaceVault(d.vault).initializeV3();
+        WhitespaceVault(d.vault).initializeV4(marketMaker);
     }
 
 }

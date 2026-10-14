@@ -127,7 +127,7 @@ export function getDynamicTradePriceImpact({ price, ask, bid, isOpen, buy, colla
 
 /**
  * TradingCallbacksLib.calculatePostFeeCollateral (:624-649) — the collateral a limit
- * entry's impact is sized on (OstiumTradingCallbacks.sol:442-444).
+ * entry's impact is sized on (WhitespaceTradingCallbacks.sol:442-444).
  *
  * @param {{ collateral: bigint, leverage: bigint, takerFeeP: bigint, oracleFee: bigint,
  *           builder: string, builderFee: bigint }} p

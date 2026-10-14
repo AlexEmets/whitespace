@@ -41,7 +41,7 @@ const PRICE_UPKEEP_ABI = parseAbi([
   'function maxDeviationBps() view returns (uint16)',
 ]);
 
-// source: OstiumPairInfos.sol — `liqMarginThresholdP` is the governance-mutable percentage
+// source: WhitespacePairInfos.sol — `liqMarginThresholdP` is the governance-mutable percentage
 // in the liquidation predicate (docs/decisions/phase-6-liquidator.md §2.1/§2.4).
 const PAIR_INFOS_RISK_ABI = parseAbi(['function liqMarginThresholdP() view returns (uint8)']);
 

@@ -5,7 +5,7 @@ import type { EventMeta } from './event.js';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any;
 
-// IOstiumVault.SettlementType
+// IWhitespaceVault.SettlementType
 const SETTLEMENT_TYPE_LABELS = ['acct', 'mm'] as const;
 
 export function settlementTypeLabel(ordinal: number): string {

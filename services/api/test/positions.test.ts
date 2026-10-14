@@ -96,7 +96,7 @@ describe('GET /positions/:address/history', () => {
   });
 
   it('formats percentProfit as a 6-decimal percent, the unit the contract uses', async () => {
-    // OstiumPairInfos.getTradeValuePure: value = collateral + collateral * percentProfit / 1e6 / 100,
+    // WhitespacePairInfos.getTradeValuePure: value = collateral + collateral * percentProfit / 1e6 / 100,
     // so percentProfit is a percent with 6 decimals. The proof trade's raw -30768 is -0.030768 %:
     // 999 USDW * -0.030768 % = -0.307372 USDW, exactly its realised PnL above. Formatted at 18 dp
     // it read '-0.000000000000030768', 1e12 too small.

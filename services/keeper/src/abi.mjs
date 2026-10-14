@@ -1,7 +1,7 @@
 /**
- * The slice of IOstiumPriceUpKeep the keeper needs, mirrored from
- * contracts/src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol and
- * IOstiumForwarded.sol. Read-only reference to the contract source — nothing under
+ * The slice of IWhitespacePriceUpKeep the keeper needs, mirrored from
+ * contracts/src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol and
+ * IWhitespaceForwarded.sol. Read-only reference to the contract source — nothing under
  * contracts/ is written by this service.
  */
 

@@ -45,7 +45,7 @@ export function useChainPendingOrders(address: `0x${string}` | undefined): Order
     if (!r || r.status !== 'success') return;
     const [block, , , trade] = r.result as readonly [bigint, bigint, number, { collateral: bigint; trader: string; leverage: number; pairIndex: number; buy: boolean }, number];
     if (trade.trader === zeroAddress) return; // resolved between the two reads
-    // A close order stores the trade with leverage 0 (OstiumTrading.closeTradeMarketTimeout
+    // A close order stores the trade with leverage 0 (WhitespaceTrading.closeTradeMarketTimeout
     // tells the two apart the same way).
     const isClose = Number(trade.leverage) === 0;
     out.push({

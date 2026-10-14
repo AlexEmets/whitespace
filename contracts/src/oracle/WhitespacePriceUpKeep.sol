@@ -3,24 +3,24 @@ pragma solidity 0.8.24;
 
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
-import {IOstiumRegistry} from "../vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumVerifier} from "../vendor/ostium/interfaces/IOstiumVerifier.sol";
-import {IOstiumPriceUpKeep} from "../vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
-import {IOstiumForwarded} from "../vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {IOstiumPairsStorage} from "../vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumTradingCallbacks} from "../vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
+import {IWhitespaceRegistry} from "../vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespaceVerifier} from "../vendor/ostium/interfaces/IWhitespaceVerifier.sol";
+import {IWhitespacePriceUpKeep} from "../vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
+import {IWhitespaceForwarded} from "../vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {IWhitespacePairsStorage} from "../vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespaceTradingCallbacks} from "../vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
 import {IOwnable} from "../vendor/ostium/interfaces/IOwnable.sol";
 
 /// @title  WhitespacePriceUpKeep — price delivery with contract-side rails
-/// @notice Drop-in replacement for the vendored `OstiumPrivatePriceUpKeep` under the per-oracle
+/// @notice Drop-in replacement for the vendored `WhitespacePrivatePriceUpKeep` under the per-oracle
 ///         registry key (`"<pair.oracle>PriceUpkeep"`, e.g. `"BTC/USDPriceUpkeep"`). Implements
-///         `IOstiumPriceUpKeep` + `IOstiumForwarded`, so `OstiumPriceRouter`,
-///         `OstiumTradingCallbacks` and `Operate.s.sol` all keep working unchanged.
+///         `IWhitespacePriceUpKeep` + `IWhitespaceForwarded`, so `WhitespacePriceRouter`,
+///         `WhitespaceTradingCallbacks` and `Operate.s.sol` all keep working unchanged.
 ///
 /// @dev    **Layer 2 of the two-layer oracle defence** (design spec §6.3). Everything the
 ///         vendored upkeep does is preserved verbatim — the `onlyRouter` request, the
 ///         `PriceRequestedV2` event, the forwarder gate on `performUpkeep`, the byte-identical
-///         `order.timestamp` check, and the `fulfill` dispatch into `IOstiumTradingCallbacks`.
+///         `order.timestamp` check, and the `fulfill` dispatch into `IWhitespaceTradingCallbacks`.
 ///         What is added are four rails that hold **even when every signer is honest and the
 ///         k-of-N threshold is fully satisfied**:
 ///
@@ -54,7 +54,7 @@ import {IOwnable} from "../vendor/ostium/interfaces/IOwnable.sol";
 /// depth. Prices carry **exactly 18 decimals**; a wrong exponent reverts nowhere, it opens the
 /// position at the wrong price. The deviation rail is the only thing in the system that would
 /// notice, and only for feeds that already have a baseline.
-contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
+contract WhitespacePriceUpKeep is IWhitespacePriceUpKeep, IWhitespaceForwarded {
     using SafeCast for uint256;
 
     uint256 private constant BPS_DENOMINATOR = 10_000;
@@ -66,7 +66,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     /// @dev How long an accepted price stays a deviation baseline. See `_checkPrice`.
     uint32 public constant DEFAULT_BASELINE_MAX_AGE = 15 minutes;
 
-    IOstiumRegistry public immutable registry;
+    IWhitespaceRegistry public immutable registry;
 
     mapping(uint256 orderId => Order) public orders;
     mapping(address => bool) public isForwarder;
@@ -144,7 +144,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
         if (msg.sender != registry.getContractAddress("priceRouter")) revert NotRouter(msg.sender);
     }
 
-    constructor(IOstiumRegistry _registry, address _guardian) {
+    constructor(IWhitespaceRegistry _registry, address _guardian) {
         if (address(_registry) == address(0) || _guardian == address(0)) revert WrongParams();
         registry = _registry;
         guardian = _guardian;
@@ -179,7 +179,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
         if (paused) revert IsPaused();
         if (orders[orderId].initiated) revert AlreadyInitiated(orderId);
 
-        bytes32 feed = IOstiumPairsStorage(registry.getContractAddress("pairsStorage")).pairFeed(pairIndex);
+        bytes32 feed = IWhitespacePairsStorage(registry.getContractAddress("pairsStorage")).pairFeed(pairIndex);
         if (isFeedHalted[feed]) revert FeedHalted(feed);
 
         orders[orderId] = Order(timestamp.toUint32(), pairIndex, orderType, true, feed);
@@ -207,12 +207,12 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
         bytes32 expectedFeedId = order.feedId;
         if (expectedFeedId == bytes32(0)) {
             expectedFeedId =
-                IOstiumPairsStorage(registry.getContractAddress("pairsStorage")).pairFeed(order.pairIndex);
+                IWhitespacePairsStorage(registry.getContractAddress("pairsStorage")).pairFeed(order.pairIndex);
         }
         if (isFeedHalted[expectedFeedId]) revert FeedHalted(expectedFeedId);
 
         bytes memory verifierResponse =
-            IOstiumVerifier(registry.getContractAddress("ostiumVerifier")).verify(report);
+            IWhitespaceVerifier(registry.getContractAddress("ostiumVerifier")).verify(report);
 
         bytes32 reportFeedId;
         uint32 timestamp;
@@ -301,7 +301,7 @@ contract WhitespacePriceUpKeep is IOstiumPriceUpKeep, IOstiumForwarded {
     function fulfill(PriceUpKeepAnswer memory a) internal {
         Order memory r = orders[a.orderId];
 
-        IOstiumTradingCallbacks c = IOstiumTradingCallbacks(registry.getContractAddress("callbacks"));
+        IWhitespaceTradingCallbacks c = IWhitespaceTradingCallbacks(registry.getContractAddress("callbacks"));
 
         if (r.orderType == OrderType.MARKET_OPEN) {
             c.openTradeMarketCallback(a);

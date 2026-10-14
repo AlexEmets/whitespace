@@ -4,9 +4,9 @@ pragma solidity 0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import {SystemFixture} from "../helpers/SystemFixture.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
 
 /// @notice Design spec §8 adversarial scenario: **keeper censorship**. A keeper that simply never
@@ -22,7 +22,7 @@ import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol"
 ///         | Bound | Value | Unit | Enforced by |
 ///         |---|---|---|---|
 ///         | `maxAge` | 10 | **seconds** | `WhitespacePriceUpKeep.performUpkeep` |
-///         | `marketOrdersTimeout` | 30 | **blocks** | `OstiumTrading.openTradeMarketTimeout` |
+///         | `marketOrdersTimeout` | 30 | **blocks** | `WhitespaceTrading.openTradeMarketTimeout` |
 ///
 ///         Chain 1874 produces one block per second (design spec §2.1, measured), so the two are
 ///         comparable there and the gap is ~20 s. These tests model that 1 s/block relationship
@@ -76,7 +76,7 @@ contract KeeperCensorshipTest is SystemFixture {
                 WhitespacePriceUpKeep.StaleReport.selector, timestamp, block.timestamp, MAX_AGE
             )
         );
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(
             abi.encode(_signed(timestamp, BTC_65K), orderId)
         );
     }
@@ -90,8 +90,8 @@ contract KeeperCensorshipTest is SystemFixture {
         _advance(MAX_AGE + 1);
 
         vm.prank(keeper);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.InvalidPrice.selector, orderId));
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.InvalidPrice.selector, orderId));
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(
             abi.encode(_signed(uint32(block.timestamp), BTC_65K), orderId)
         );
     }
@@ -106,8 +106,8 @@ contract KeeperCensorshipTest is SystemFixture {
         assertEq(_blockNow(), openBlock + MARKET_ORDERS_TIMEOUT - 1);
 
         vm.prank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WaitTimeout.selector, orderId));
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WaitTimeout.selector, orderId));
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
     }
 
     /// @notice **The measurement.** Between `maxAge` and `marketOrdersTimeout` the order is
@@ -135,14 +135,14 @@ contract KeeperCensorshipTest is SystemFixture {
                     WhitespacePriceUpKeep.StaleReport.selector, timestamp, block.timestamp, MAX_AGE
                 )
             );
-            IOstiumPriceUpKeep(address(upkeep)).performUpkeep(
+            IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(
                 abi.encode(_signed(timestamp, BTC_65K), orderId)
             );
 
             // Door 2: refund. Shut — the block timeout has not elapsed.
             vm.prank(trader);
-            vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WaitTimeout.selector, orderId));
-            IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+            vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WaitTimeout.selector, orderId));
+            IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
 
             assertEq(_blockNow(), openBlock + n, "block accounting drifted");
             stuckBlocks++;
@@ -176,7 +176,7 @@ contract KeeperCensorshipTest is SystemFixture {
         _advance(MARKET_ORDERS_TIMEOUT);
 
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
 
         uint256 refunded = IERC20(d.collateral).balanceOf(trader) - (balanceBefore - escrowed);
         assertEq(refunded, COLLATERAL, "the full stored collateral must come back");
@@ -196,7 +196,7 @@ contract KeeperCensorshipTest is SystemFixture {
         (uint256 orderId,) = _openMarketTrade(trader, COLLATERAL, 1000, true);
         _advance(MARKET_ORDERS_TIMEOUT);
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
 
         (uint256 orderId2, uint32 ts2) = _openMarketTrade(trader, COLLATERAL, 1000, true);
         _deliver(orderId2, _signed(ts2, BTC_65K));
@@ -213,9 +213,9 @@ contract KeeperCensorshipTest is SystemFixture {
         address attacker = address(0xBAD);
         vm.prank(attacker);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumTrading.NotYourOrder.selector, orderId, trader)
+            abi.encodeWithSelector(IWhitespaceTrading.NotYourOrder.selector, orderId, trader)
         );
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
     }
 
     // -------------------------------------------------------------------------------------
@@ -229,14 +229,14 @@ contract KeeperCensorshipTest is SystemFixture {
 
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(
+        IWhitespaceTrading(d.trading).closeTradeMarket(
             0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
         );
         (orderId,) = _lastPriceRequest();
     }
 
     function _devFees() internal view returns (uint256) {
-        return IOstiumTradingStorage(d.tradingStorage).devFees();
+        return IWhitespaceTradingStorage(d.tradingStorage).devFees();
     }
 
     /// @notice **The measurement.** `closeTradeMarketTimeout` must move no USDW at all.
@@ -259,7 +259,7 @@ contract KeeperCensorshipTest is SystemFixture {
 
         _advance(MARKET_ORDERS_TIMEOUT);
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+        IWhitespaceTrading(d.trading).closeTradeMarketTimeout(orderId, false);
 
         assertEq(IERC20(d.collateral).balanceOf(trader), traderBefore, "the trader must be paid nothing");
         assertEq(
@@ -285,14 +285,14 @@ contract KeeperCensorshipTest is SystemFixture {
         for (uint256 n = 0; n < 10; n++) {
             vm.recordLogs();
             vm.prank(trader);
-            IOstiumTrading(d.trading).closeTradeMarket(
+            IWhitespaceTrading(d.trading).closeTradeMarket(
                 0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
             );
             (uint256 orderId,) = _lastPriceRequest();
 
             _advance(MARKET_ORDERS_TIMEOUT);
             vm.prank(trader);
-            IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+            IWhitespaceTrading(d.trading).closeTradeMarketTimeout(orderId, false);
         }
 
         assertEq(IERC20(d.collateral).balanceOf(trader), traderBefore, "ten cycles must pay out nothing");
@@ -315,12 +315,12 @@ contract KeeperCensorshipTest is SystemFixture {
         uint256 fees = _devFees();
         assertGt(fees, 0, "precondition: opening must have accrued a fee to sweep");
         vm.prank(gov);
-        IOstiumTradingStorage(d.tradingStorage).claimFees(fees);
+        IWhitespaceTradingStorage(d.tradingStorage).claimFees(fees);
         assertEq(_devFees(), 0, "precondition: devFees must be empty, the state that used to brick this");
 
         _advance(MARKET_ORDERS_TIMEOUT);
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+        IWhitespaceTrading(d.trading).closeTradeMarketTimeout(orderId, false);
 
         assertGt(_collateralOf(trader, 0), 0, "the position must survive the timeout");
     }
@@ -333,11 +333,11 @@ contract KeeperCensorshipTest is SystemFixture {
 
         _advance(MARKET_ORDERS_TIMEOUT);
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarketTimeout(orderId, false);
+        IWhitespaceTrading(d.trading).closeTradeMarketTimeout(orderId, false);
 
         vm.recordLogs();
         vm.prank(trader);
-        IOstiumTrading(d.trading).closeTradeMarket(
+        IWhitespaceTrading(d.trading).closeTradeMarket(
             0, 0, 0, uint192(uint256(int256(BTC_65K))), 100
         );
         (uint256 orderId2, uint32 ts2) = _lastPriceRequest();
@@ -355,7 +355,7 @@ contract KeeperCensorshipTest is SystemFixture {
     ///         unreclaimable through this path — the refund door is welded shut on top of the
     ///         censorship window.
     ///
-    /// @dev    Reported, not fixed: `OstiumTrading` is vendored and byte-identical to upstream
+    /// @dev    Reported, not fixed: `WhitespaceTrading` is vendored and byte-identical to upstream
     ///         `8390ce49`. This test pins the behaviour so it cannot regress silently and so an
     ///         auditor sees it stated rather than inferred.
     function test_govDoneFlagStrandsPendingCollateralPermanently() public {
@@ -363,11 +363,11 @@ contract KeeperCensorshipTest is SystemFixture {
         _advance(MARKET_ORDERS_TIMEOUT); // past the timeout: the refund is otherwise available
 
         vm.prank(gov);
-        IOstiumTrading(d.trading).done();
+        IWhitespaceTrading(d.trading).done();
 
         vm.prank(trader);
-        vm.expectRevert(IOstiumTrading.IsDone.selector);
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        vm.expectRevert(IWhitespaceTrading.IsDone.selector);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
 
         // And delivery cannot rescue it either: the callback is `notDone` as well.
         assertEq(_collateralOf(trader, 0), 0, "no position exists to close instead");
@@ -381,11 +381,11 @@ contract KeeperCensorshipTest is SystemFixture {
         _advance(MARKET_ORDERS_TIMEOUT);
 
         vm.prank(manager);
-        IOstiumTrading(d.trading).pause();
+        IWhitespaceTrading(d.trading).pause();
 
         uint256 before = IERC20(d.collateral).balanceOf(trader);
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
 
         assertEq(
             IERC20(d.collateral).balanceOf(trader) - before,
@@ -413,7 +413,7 @@ contract KeeperCensorshipTest is SystemFixture {
 
         vm.prank(keeper);
         vm.expectRevert(WhitespacePriceUpKeep.IsPaused.selector);
-        IOstiumPriceUpKeep(address(upkeep)).performUpkeep(
+        IWhitespacePriceUpKeep(address(upkeep)).performUpkeep(
             abi.encode(_signed(timestamp, BTC_65K), orderId)
         );
 
@@ -422,7 +422,7 @@ contract KeeperCensorshipTest is SystemFixture {
 
         uint256 before = IERC20(d.collateral).balanceOf(trader);
         vm.prank(trader);
-        IOstiumTrading(d.trading).openTradeMarketTimeout(orderId);
+        IWhitespaceTrading(d.trading).openTradeMarketTimeout(orderId);
         assertEq(
             IERC20(d.collateral).balanceOf(trader) - before,
             COLLATERAL,

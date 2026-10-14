@@ -8,7 +8,7 @@
  * The `/orders/:address` and WS payload shapes for order status are not fully specified
  * by D3 beyond "pending (requested, not yet executed) orders" — the fields below are
  * this app's documented assumption, reconciled against the two-phase lifecycle described
- * in design §5.1 and the `CancelReason` enum in IOstiumTradingCallbacks.sol. See
+ * in design §5.1 and the `CancelReason` enum in IWhitespaceTradingCallbacks.sol. See
  * docs/decisions/phase-5-frontend.md for the note to reconcile with the API team.
  */
 
@@ -109,7 +109,7 @@ export interface OrderSummary {
   expired: boolean;
   /** Unix seconds when the order stopped being pending; null while it still is. */
   resolvedAt: number | null;
-  /** Non-null only once status is 'cancelled'. Raw IOstiumTradingCallbacks.CancelReason
+  /** Non-null only once status is 'cancelled'. Raw IWhitespaceTradingCallbacks.CancelReason
    * name, e.g. "SLIPPAGE". */
   cancelReason: string | null;
   /** Non-null only once status is 'executed'. */

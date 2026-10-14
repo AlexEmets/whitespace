@@ -69,7 +69,7 @@ export function buildReportDataV2({
 
 /**
  * Signs one report with one key, EIP-191 personal_sign over keccak256(reportData) —
- * the same scheme OstiumVerifier.verify recovers with. Returns a flat 65-byte
+ * the same scheme WhitespaceVerifier.verify recovers with. Returns a flat 65-byte
  * signature (r||s||v) and the address it will recover to, rather than the account's
  * own signMessage() string, so callers never have to re-slice it.
  *

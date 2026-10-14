@@ -1,6 +1,6 @@
 /**
- * IOstiumPriceUpKeep.OrderType, mirrored from
- * contracts/src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol:
+ * IWhitespacePriceUpKeep.OrderType, mirrored from
+ * contracts/src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol:
  *   enum OrderType { MARKET_OPEN, MARKET_CLOSE, LIMIT_OPEN, LIMIT_CLOSE, REMOVE_COLLATERAL }
  * Kept here, not re-declared per service, so a change on either side is caught by one
  * source going out of sync rather than two silently drifting.

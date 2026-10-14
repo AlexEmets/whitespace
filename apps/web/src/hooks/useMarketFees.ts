@@ -7,9 +7,9 @@ import { PAIRS_STORAGE_ADDRESS, PAIR_INFOS_ADDRESS } from '@/lib/deployment';
 /**
  * Real fee figures read directly from the chain, not the design mockup's numbers. The
  * read API (D3) does not expose a fee field, so this goes straight to
- * `IOstiumPairInfos.pairOpeningFees` (maker/taker %, PRECISION_6) and
- * `IOstiumPairsStorage.pairOracleFee` (flat USDC fee per order, PRECISION_6) — the exact
- * values contracts/src/vendor/ostium/OstiumTrading.sol charges. No wallet connection is
+ * `IWhitespacePairInfos.pairOpeningFees` (maker/taker %, PRECISION_6) and
+ * `IWhitespacePairsStorage.pairOracleFee` (flat USDC fee per order, PRECISION_6) — the exact
+ * values contracts/src/vendor/ostium/WhitespaceTrading.sol charges. No wallet connection is
  * required; these are public reads against the configured chain.
  */
 export function useMarketFees(pairIndex: number | null) {

@@ -79,7 +79,7 @@ function PositionManager({ position }: { position: PositionSummary }) {
         : updateSlError({ buy: position.buy, openPrice, leverage, maxSlP: BigInt(maxSl.data), newSl: slRaw });
 
   // Removing margin raises leverage, and the keeper report that applies it deletes a stop loss
-  // the new leverage puts beyond maxSl_P (OstiumTradingCallbacks.handleRemoveCollateral ->
+  // the new leverage puts beyond maxSl_P (WhitespaceTradingCallbacks.handleRemoveCollateral ->
   // correctToNullSl). It used to say "Removal requested" and then leave the position with no
   // stop. It also takes the oracle fee from the WALLET, which nothing mentioned.
   const fees = useMarketFees(position.pairIndex);

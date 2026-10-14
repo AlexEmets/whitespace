@@ -1,13 +1,13 @@
 /**
- * Pure ABI encoding for OstiumTradesUpKeep.performUpkeep's payload — no network, so
+ * Pure ABI encoding for WhitespaceTradesUpKeep.performUpkeep's payload — no network, so
  * unit-testable directly (see test/performData.test.mjs, round-tripped with viem's own
  * decoder as an independent check).
  *
- * IOstiumAutomationCompatible.SimplifiedTradeId (interfaces/IOstiumAutomationCompatible.sol):
+ * IWhitespaceAutomationCompatible.SimplifiedTradeId (interfaces/IWhitespaceAutomationCompatible.sol):
  *   struct SimplifiedTradeId { address trader; uint256 pairId; uint256 index; LimitOrder limitOrder; }
- * OstiumTradesUpKeep.performUpkeep decodes `abi.decode(performData, (SimplifiedTradeId[], uint256))`
+ * WhitespaceTradesUpKeep.performUpkeep decodes `abi.decode(performData, (SimplifiedTradeId[], uint256))`
  * — an array (so one tx can trigger several candidates at once) plus a single shared
- * `timestamp`, forwarded into `OstiumTrading.executeAutomationOrder`'s `priceTimestamp`
+ * `timestamp`, forwarded into `WhitespaceTrading.executeAutomationOrder`'s `priceTimestamp`
  * argument and, from there, into `priceRouter.getPrice(...)`. That timestamp becomes the
  * `timestamp` field the resulting PriceRequestedV2 log carries — the existing keeper
  * (services/keeper, unmodified) picks that log up and delivers a signed report for it
@@ -33,7 +33,7 @@ const VALID_LIMIT_ORDERS = new Set([LimitOrder.TP, LimitOrder.SL, LimitOrder.LIQ
 /**
  * One performUpkeep payload: many triggers of any automation kind, one shared timestamp.
  * Only TP/SL/LIQ/OPEN are accepted: executeAutomationOrder reverts WrongParams on
- * REMOVE_COLLATERAL / PENDING_CLOSE (OstiumTrading.sol:574-579), and a revert of one
+ * REMOVE_COLLATERAL / PENDING_CLOSE (WhitespaceTrading.sol:574-579), and a revert of one
  * entry reverts the whole batch.
  *
  * @param {{ trader: `0x${string}`, pairIndex: number, index: number, limitOrder: number }[]} trades

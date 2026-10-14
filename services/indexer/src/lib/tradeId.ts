@@ -3,7 +3,7 @@
 // LimitOpenExecuted handling.
 //
 // Neither MarketOpenExecuted nor LimitOpenExecuted (in
-// contracts/src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol)
+// contracts/src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol)
 // includes an explicit `tradeId` field — only the request's `orderId` and
 // the resulting `Trade` struct (which itself has no id field either).
 //

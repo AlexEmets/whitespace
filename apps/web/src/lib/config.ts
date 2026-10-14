@@ -11,7 +11,7 @@ export const PRICE_DECIMALS_NUM = Number(PRICE_DECIMALS);
  * not export a collateral-decimals constant, so this is the one place it is pinned. */
 export const COLLATERAL_DECIMALS = 6;
 
-/** Leverage PRECISION_2, per IOstiumTradingStorage.Trade.leverage (e.g. 1000 = 10.00x). */
+/** Leverage PRECISION_2, per IWhitespaceTradingStorage.Trade.leverage (e.g. 1000 = 10.00x). */
 export const LEVERAGE_DECIMALS = 2;
 
 export const CHAIN_ID = 1874;

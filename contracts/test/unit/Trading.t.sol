@@ -4,28 +4,28 @@ pragma solidity 0.8.24;
 import {Vm} from "forge-std/Test.sol";
 
 import {TestnetTrading} from "../helpers/TestnetTrading.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumTradingCallbacks} from "../../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
-import {IOstiumPairsStorage} from "../../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceTradingCallbacks} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
+import {IWhitespacePairsStorage} from "../../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
 import {WhitespacePriceUpKeep} from "../../src/oracle/WhitespacePriceUpKeep.sol";
-import {IOstiumPriceUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumPriceUpKeep.sol";
+import {IWhitespacePriceUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespacePriceUpKeep.sol";
 
-/// @notice `OstiumTrading` + `OstiumTradingCallbacks` on the system exactly as the testnet deploy
+/// @notice `WhitespaceTrading` + `WhitespaceTradingCallbacks` on the system exactly as the testnet deploy
 ///         script builds it: every request check, every cancel reason the testnet configuration
-///         can reach, limit/stop orders through `OstiumTradesUpKeep`, TP/SL automation,
+///         can reach, limit/stop orders through `WhitespaceTradesUpKeep`, TP/SL automation,
 ///         collateral top-up/removal, partial and full close, the timeouts, pause/done, the
 ///         per-pair trade cap and market isolation.
 contract TradingTest is TestnetTrading {
     address internal trader = address(0x7AA);
     address internal other = address(0x7AB);
 
-    IOstiumTradingStorage.LimitOrder internal constant OPEN = IOstiumTradingStorage.LimitOrder.OPEN;
-    IOstiumTradingStorage.LimitOrder internal constant TP = IOstiumTradingStorage.LimitOrder.TP;
-    IOstiumTradingStorage.LimitOrder internal constant SL = IOstiumTradingStorage.LimitOrder.SL;
-    IOstiumTradingStorage.OpenOrderType internal constant MARKET = IOstiumTradingStorage.OpenOrderType.MARKET;
-    IOstiumTradingStorage.OpenOrderType internal constant LIMIT = IOstiumTradingStorage.OpenOrderType.LIMIT;
-    IOstiumTradingStorage.OpenOrderType internal constant STOP = IOstiumTradingStorage.OpenOrderType.STOP;
+    IWhitespaceTradingStorage.LimitOrder internal constant OPEN = IWhitespaceTradingStorage.LimitOrder.OPEN;
+    IWhitespaceTradingStorage.LimitOrder internal constant TP = IWhitespaceTradingStorage.LimitOrder.TP;
+    IWhitespaceTradingStorage.LimitOrder internal constant SL = IWhitespaceTradingStorage.LimitOrder.SL;
+    IWhitespaceTradingStorage.OpenOrderType internal constant MARKET = IWhitespaceTradingStorage.OpenOrderType.MARKET;
+    IWhitespaceTradingStorage.OpenOrderType internal constant LIMIT = IWhitespaceTradingStorage.OpenOrderType.LIMIT;
+    IWhitespaceTradingStorage.OpenOrderType internal constant STOP = IWhitespaceTradingStorage.OpenOrderType.STOP;
 
     /// @dev The position most tests open: 1,000 USDW at 10x into an empty BTC market (taker).
     ///      Taker fee: 10,000 notional * 0.03% = 3 USDW (half dev, half vault).
@@ -62,7 +62,7 @@ contract TradingTest is TestnetTrading {
 
         _deliverAt(orderId, BTC, t, _basePrice(BTC));
 
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         uint256 fill = _spreadFill(_basePrice(BTC), true, true);
         assertEq(fill, 65_006.5e18, "one basis point above mid");
         assertEq(tr.openPrice, fill, "long fills at the ask");
@@ -85,7 +85,7 @@ contract TradingTest is TestnetTrading {
 
     function test_marketOpen_shortFillsAtTheBid() public {
         _open(trader, BTC, 1_000e6, 1_000, false);
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.openPrice, _spreadFill(_basePrice(BTC), false, true), "short fills at the bid");
         assertEq(tr.openPrice, 64_993.5e18, "one basis point below mid");
         assertEq(_oi(BTC, false), POS * 1e12 * 1_000 / 100 * 1e18 / tr.openPrice, "short OI");
@@ -96,7 +96,7 @@ contract TradingTest is TestnetTrading {
     // Market open — request checks
     // =====================================================================================
 
-    function _openReverts(IOstiumTradingStorage.Trade memory t, IOstiumTradingStorage.OpenOrderType kind, uint256 slip, bytes memory err)
+    function _openReverts(IWhitespaceTradingStorage.Trade memory t, IWhitespaceTradingStorage.OpenOrderType kind, uint256 slip, bytes memory err)
         internal
     {
         vm.expectRevert(err);
@@ -106,7 +106,7 @@ contract TradingTest is TestnetTrading {
 
     function test_openTrade_rejectsMalformedRequests() public {
         uint192 p = _upx(BTC);
-        bytes memory wrong = abi.encodeWithSelector(IOstiumTrading.WrongParams.selector);
+        bytes memory wrong = abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector);
         // zero open price
         _openReverts(_tradeFull(trader, BTC, 1_000e6, 1_000, true, 0, 0, 0), MARKET, 100, wrong);
         // market slippage must be in (0, 100%)
@@ -120,7 +120,7 @@ contract TradingTest is TestnetTrading {
         vm.prank(trader);
         trading.openTrade(
             _tradeFull(trader, BTC, 1_000e6, 1_000, true, p, 0, 0),
-            IOstiumTradingStorage.BuilderFee({builder: other, builderFee: 500_001}),
+            IWhitespaceTradingStorage.BuilderFee({builder: other, builderFee: 500_001}),
             MARKET,
             100
         );
@@ -129,7 +129,7 @@ contract TradingTest is TestnetTrading {
             _tradeFull(trader, 4, 1_000e6, 1_000, true, p, 0, 0),
             MARKET,
             100,
-            abi.encodeWithSelector(IOstiumTrading.PairNotListed.selector, uint16(4))
+            abi.encodeWithSelector(IWhitespaceTrading.PairNotListed.selector, uint16(4))
         );
         assertEq(_bal(d.tradingStorage), 0, "nothing escrowed by any rejected request");
     }
@@ -138,19 +138,19 @@ contract TradingTest is TestnetTrading {
         uint192 p = _upx(BTC);
         _openReverts(
             _tradeFull(trader, BTC, 1_000e6, 0, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(0))
+            abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(0))
         );
         _openReverts(
             _tradeFull(trader, BTC, 1_000e6, 99, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(99))
+            abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(99))
         );
         _openReverts(
             _tradeFull(trader, BTC, 1_000e6, 10_001, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(10_001))
+            abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(10_001))
         );
         _openReverts(
             _tradeFull(trader, WBT, 1_000e6, 2_501, true, _upx(WBT), 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(2_501))
+            abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(2_501))
         );
         // the bounds themselves are accepted: 1x and 100x on BTC, 25x on WBT
         _requestOpen(_tradeFull(trader, BTC, 1_000e6, 100, true, p, 0, 0), 100);
@@ -164,7 +164,7 @@ contract TradingTest is TestnetTrading {
         uint192 p = _upx(BTC);
         _openReverts(
             _tradeFull(trader, BTC, 1_000_000e6 + 1, 100, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.AboveMaxAllowedCollateral.selector)
+            abi.encodeWithSelector(IWhitespaceTrading.AboveMaxAllowedCollateral.selector)
         );
         // BelowFees when taker fee + oracle fee >= collateral. At 1x the taker fee on c is
         // floor(c * 3 / 10_000): 0.100030 USDW pays 0.000030 + 0.100000 == all of it and reverts;
@@ -173,11 +173,11 @@ contract TradingTest is TestnetTrading {
         assertEq(_takerFee(atFees, 100) + ORACLE_FEE, atFees, "fees consume exactly the collateral");
         _openReverts(
             _tradeFull(trader, BTC, atFees, 100, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.BelowFees.selector)
+            abi.encodeWithSelector(IWhitespaceTrading.BelowFees.selector)
         );
         _openReverts(
             _tradeFull(trader, BTC, atFees + 1, 100, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.BelowMinLevPos.selector)
+            abi.encodeWithSelector(IWhitespaceTrading.BelowMinLevPos.selector)
         );
     }
 
@@ -192,7 +192,7 @@ contract TradingTest is TestnetTrading {
         assertEq(_postFee(minimum - 1, 100), 10e6 - 1, "one micro-USDW short");
         _openReverts(
             _tradeFull(trader, BTC, minimum - 1, 100, true, p, 0, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.BelowMinLevPos.selector)
+            abi.encodeWithSelector(IWhitespaceTrading.BelowMinLevPos.selector)
         );
         _requestOpen(_tradeFull(trader, BTC, minimum, 100, true, p, 0, 0), 100);
         assertEq(ts.pendingMarketOpenCount(trader, BTC), 1, "exactly $10 post-fee is accepted");
@@ -200,8 +200,8 @@ contract TradingTest is TestnetTrading {
 
     function test_openTrade_rejectsTpAndSlOnTheWrongSide() public {
         uint192 p = _upx(BTC);
-        bytes memory wrongTp = abi.encodeWithSelector(IOstiumTrading.WrongTP.selector);
-        bytes memory wrongSl = abi.encodeWithSelector(IOstiumTrading.WrongSL.selector);
+        bytes memory wrongTp = abi.encodeWithSelector(IWhitespaceTrading.WrongTP.selector);
+        bytes memory wrongSl = abi.encodeWithSelector(IWhitespaceTrading.WrongSL.selector);
         _openReverts(_tradeFull(trader, BTC, 1_000e6, 1_000, true, p, p, 0), MARKET, 100, wrongTp);
         _openReverts(_tradeFull(trader, BTC, 1_000e6, 1_000, false, p, p, 0), MARKET, 100, wrongTp);
         _openReverts(_tradeFull(trader, BTC, 1_000e6, 1_000, true, p, 0, p), MARKET, 100, wrongSl);
@@ -219,7 +219,7 @@ contract TradingTest is TestnetTrading {
         _requestOpen(_trade(trader, ETH, 100e6, 1_000, true, 0), 100);
         _openReverts(
             _trade(trader, SOL, 100e6, 1_000, true, 0), MARKET, 100,
-            abi.encodeWithSelector(IOstiumTrading.MaxPendingMarketOrdersReached.selector, trader)
+            abi.encodeWithSelector(IWhitespaceTrading.MaxPendingMarketOrdersReached.selector, trader)
         );
         assertEq(ts.pendingOrderIdsCount(trader), 2, "cap holds across pairs");
     }
@@ -234,14 +234,14 @@ contract TradingTest is TestnetTrading {
         uint256 orderId,
         uint16 pairIndex,
         uint256 collateral,
-        IOstiumTradingCallbacks.CancelReason reason,
+        IWhitespaceTradingCallbacks.CancelReason reason,
         bytes memory report
     ) internal {
         uint256 traderBefore = _bal(trader);
         uint256 devBefore = ts.devFees();
         uint256 storageBefore = _bal(d.tradingStorage);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.MarketOpenCanceled(orderId, trader, pairIndex, reason);
+        emit IWhitespaceTradingCallbacks.MarketOpenCanceled(orderId, trader, pairIndex, reason);
         _deliver(orderId, report);
         assertEq(_bal(trader), traderBefore + collateral - ORACLE_FEE, "refund minus oracle fee");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "oracle fee kept");
@@ -252,9 +252,9 @@ contract TradingTest is TestnetTrading {
 
     function test_marketOpenCancel_slippageLongAndShort() public {
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, _px(BTC, 108)));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, _px(BTC, 108)));
         (id, t) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, false, 0), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, _px(BTC, -108)));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, _px(BTC, -108)));
     }
 
     /// @notice The slippage bound is inclusive. On the 1e-14 price grid where the fixture's
@@ -275,25 +275,25 @@ contract TradingTest is TestnetTrading {
         vm.revertToState(snap);
 
         (id, t) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, next));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.SLIPPAGE, _report(BTC, t, next));
     }
 
     function test_marketOpenCancel_tpReached() public {
         (uint256 id, uint32 t) =
             _requestOpen(_tradeFull(trader, BTC, 1_000e6, 1_000, true, _upx(BTC), 65_500e18, 0), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.TP_REACHED, _report(BTC, t, 65_600e18));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.TP_REACHED, _report(BTC, t, 65_600e18));
     }
 
     function test_marketOpenCancel_slReached() public {
         (uint256 id, uint32 t) =
             _requestOpen(_tradeFull(trader, BTC, 1_000e6, 1_000, true, _upx(BTC), 0, 64_500e18), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.SL_REACHED, _report(BTC, t, 64_400e18));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.SL_REACHED, _report(BTC, t, 64_400e18));
     }
 
     /// @notice WBT's 100k OI ceiling: 5,000 USDW at 25x is 125k of notional.
     function test_marketOpenCancel_exposureLimitsOnOpenInterest() public {
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, WBT, 5_000e6, 2_500, true, 0), 500);
-        _assertOpenCanceled(id, WBT, 5_000e6, IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS, _report(WBT, t, _basePrice(WBT)));
+        _assertOpenCanceled(id, WBT, 5_000e6, IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS, _report(WBT, t, _basePrice(WBT)));
         assertEq(_oi(WBT, true), 0, "no OI written");
     }
 
@@ -302,7 +302,7 @@ contract TradingTest is TestnetTrading {
     function test_marketOpenCancel_exposureLimitsOnGroupCollateral() public {
         assertEq(ps.groupMaxCollateral(BTC), 20_000e6, "20% of the 100k vault");
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 21_000e6, 200, true, 0), 500);
-        _assertOpenCanceled(id, BTC, 21_000e6, IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS, _report(BTC, t, _basePrice(BTC)));
+        _assertOpenCanceled(id, BTC, 21_000e6, IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS, _report(BTC, t, _basePrice(BTC)));
     }
 
     /// @notice Reachable at the deployed parameters: two same-block 1M round trips at 100x
@@ -320,26 +320,26 @@ contract TradingTest is TestnetTrading {
         assertEq(buyVol, 2 * _postFee(10_000e6, 10_000) * 10_000 * 1e10, "two post-fee 969,990 opens recorded");
 
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 10_000e6, 10_000, true, 0), 500);
-        _assertOpenCanceled(id, BTC, 10_000e6, IOstiumTradingCallbacks.CancelReason.PRICE_IMPACT, _report(BTC, t, _basePrice(BTC)));
+        _assertOpenCanceled(id, BTC, 10_000e6, IWhitespaceTradingCallbacks.CancelReason.PRICE_IMPACT, _report(BTC, t, _basePrice(BTC)));
     }
 
     function test_marketOpenCancel_maxLeverageWhenGovLowersItInFlight() public {
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 100e6, 10_000, true, 0), 100);
         vm.prank(gov);
         ps.setPairMaxLeverage(BTC, 5_000);
-        _assertOpenCanceled(id, BTC, 100e6, IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE, _report(BTC, t, _basePrice(BTC)));
+        _assertOpenCanceled(id, BTC, 100e6, IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE, _report(BTC, t, _basePrice(BTC)));
     }
 
     function test_marketOpenCancel_pausedCallbacks() public {
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
         vm.prank(manager);
         callbacks.pause();
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.PAUSED, _report(BTC, t, _basePrice(BTC)));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.PAUSED, _report(BTC, t, _basePrice(BTC)));
     }
 
     function test_marketOpenCancel_marketClosed() public {
         (uint256 id, uint32 t) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
-        _assertOpenCanceled(id, BTC, 1_000e6, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED, _closedReport(BTC, t));
+        _assertOpenCanceled(id, BTC, 1_000e6, IWhitespaceTradingCallbacks.CancelReason.MARKET_CLOSED, _closedReport(BTC, t));
     }
 
     // =====================================================================================
@@ -351,16 +351,16 @@ contract TradingTest is TestnetTrading {
         (uint256 id,) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
 
         _advance(MARKET_TIMEOUT - 1);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WaitTimeout.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WaitTimeout.selector, id));
         vm.prank(trader);
         trading.openTradeMarketTimeout(id);
 
         _advance(1);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotYourOrder.selector, id, trader));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotYourOrder.selector, id, trader));
         vm.prank(other);
         trading.openTradeMarketTimeout(id);
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeToTimeoutFound.selector, id + 99));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeToTimeoutFound.selector, id + 99));
         vm.prank(trader);
         trading.openTradeMarketTimeout(id + 99);
 
@@ -371,7 +371,7 @@ contract TradingTest is TestnetTrading {
         assertEq(ts.pendingMarketOpenCount(trader, BTC), 0, "pending cleared");
 
         // the stale report can no longer fill anything
-        (,,, IOstiumTradingStorage.Trade memory tr,) = _pending(id);
+        (,,, IWhitespaceTradingStorage.Trade memory tr,) = _pending(id);
         assertEq(tr.trader, address(0), "order deleted");
     }
 
@@ -379,7 +379,7 @@ contract TradingTest is TestnetTrading {
         _open(trader, BTC, 1_000e6, 1_000, true);
         (uint256 id,) = _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
         _advance(MARKET_TIMEOUT);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotOpenMarketTimeoutOrder.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotOpenMarketTimeoutOrder.selector, id));
         vm.prank(trader);
         trading.openTradeMarketTimeout(id);
     }
@@ -387,7 +387,7 @@ contract TradingTest is TestnetTrading {
     function _pending(uint256 id)
         internal
         view
-        returns (uint256, uint192, uint32, IOstiumTradingStorage.Trade memory, uint16)
+        returns (uint256, uint192, uint32, IWhitespaceTradingStorage.Trade memory, uint16)
     {
         return ts.reqID_pendingMarketOrder(id);
     }
@@ -417,7 +417,7 @@ contract TradingTest is TestnetTrading {
         assertEq(toTrader + toVault, POS, "collateral split between trader and vault, nothing lost");
         // the round trip crosses the 1bp half spread twice at 10x: ~0.2% (~2 USDW) of 996.9
         assertGt(toTrader, POS - 3e6, "a flat round trip returns ~0.2% less than collateral");
-        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "trigger cleared");
+        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.PENDING_CLOSE), 0, "trigger cleared");
     }
 
     /// @notice Closing half: half the collateral and exactly half the OI leave; the oracle-fee
@@ -431,7 +431,7 @@ contract TradingTest is TestnetTrading {
 
         _closeAt(trader, BTC, 0, 5_000, _basePrice(BTC));
 
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         // half of 996.9 is 498.45; the 0.10 bond leaves 498.35 carrying 4,984.5 of notional
         assertEq(tr.collateral, POS / 2 - ORACLE_FEE, "half left, minus the bond");
         assertEq(tr.leverage, uint32(NOTIONAL / 2 * 1e6 / (POS / 2 - ORACLE_FEE) / 1e4), "fixed notional, higher leverage");
@@ -443,7 +443,7 @@ contract TradingTest is TestnetTrading {
 
     function test_closeTradeMarket_rejectsMalformedRequests() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        bytes memory wrong = abi.encodeWithSelector(IOstiumTrading.WrongParams.selector);
+        bytes memory wrong = abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector);
         vm.startPrank(trader);
         vm.expectRevert(wrong);
         trading.closeTradeMarket(BTC, 0, 10_001, _upx(BTC), 100);
@@ -454,19 +454,19 @@ contract TradingTest is TestnetTrading {
         vm.expectRevert(wrong);
         trading.closeTradeMarket(BTC, 0, 0, _upx(BTC), 10_001);
         // the error reports the EMPTY slot's (pairIndex, index), which is always (0, 0)
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeFound.selector, trader, uint16(0), uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeFound.selector, trader, uint16(0), uint8(0)));
         trading.closeTradeMarket(ETH, 1, 0, _upx(BTC), 100);
         vm.stopPrank();
 
         _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.closeTradeMarket(BTC, 0, 0, _upx(BTC), 100);
     }
 
     function test_partialClose_rejectsARemainderBelowMinimumPosition() public {
         _open(trader, BTC, 20e6, 100, true); // ~19 USDW at 1x after fees
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.BelowMinLevPos.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.BelowMinLevPos.selector));
         vm.prank(trader);
         trading.closeTradeMarket(BTC, 0, 5_000, _upx(BTC), 100);
         // a full close of the same position is fine
@@ -481,16 +481,16 @@ contract TradingTest is TestnetTrading {
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
 
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.MarketCloseCanceled(
-            id, tradeId, trader, BTC, 0, IOstiumTradingCallbacks.CancelReason.SLIPPAGE
+        emit IWhitespaceTradingCallbacks.MarketCloseCanceled(
+            id, tradeId, trader, BTC, 0, IWhitespaceTradingCallbacks.CancelReason.SLIPPAGE
         );
         _deliverAt(id, BTC, t, _px(BTC, -200));
 
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.collateral, POS - ORACLE_FEE, "bond out of collateral");
         assertEq(tr.leverage, uint32(NOTIONAL * 1e6 / (POS - ORACLE_FEE) / 1e4), "notional held fixed");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "bond to dev fees");
-        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "can close again");
+        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.PENDING_CLOSE), 0, "can close again");
     }
 
     function test_closeCancel_marketClosedChargesTheBond() public {
@@ -498,8 +498,8 @@ contract TradingTest is TestnetTrading {
         (uint256 id, uint32 t) = _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.MarketCloseCanceled(
-            id, tradeId, trader, BTC, 0, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED
+        emit IWhitespaceTradingCallbacks.MarketCloseCanceled(
+            id, tradeId, trader, BTC, 0, IWhitespaceTradingCallbacks.CancelReason.MARKET_CLOSED
         );
         _deliver(id, _closedReport(BTC, t));
         assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS - ORACLE_FEE, "bond charged");
@@ -511,12 +511,12 @@ contract TradingTest is TestnetTrading {
         (uint256 id,) = _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
 
         _advance(MARKET_TIMEOUT - 1);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WaitTimeout.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WaitTimeout.selector, id));
         vm.prank(trader);
         trading.closeTradeMarketTimeout(id, false);
 
         _advance(1);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotYourOrder.selector, id, trader));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotYourOrder.selector, id, trader));
         vm.prank(other);
         trading.closeTradeMarketTimeout(id, false);
 
@@ -525,7 +525,7 @@ contract TradingTest is TestnetTrading {
         trading.closeTradeMarketTimeout(id, false);
         assertEq(_bal(trader), before, "no USDW moves");
         assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "position intact");
-        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.PENDING_CLOSE), 0, "unlocked");
+        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.PENDING_CLOSE), 0, "unlocked");
         assertEq(ts.pendingOrderIdsCount(trader), 0, "no pending order");
         vm.revertToState(snap);
 
@@ -543,7 +543,7 @@ contract TradingTest is TestnetTrading {
     function test_closeTimeout_refusesAnOpenOrder() public {
         (uint256 id,) = _requestOpen(_trade(trader, BTC, 1_000e6, 1_000, true, 0), 100);
         _advance(MARKET_TIMEOUT);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotCloseMarketTimeoutOrder.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotCloseMarketTimeoutOrder.selector, id));
         vm.prank(trader);
         trading.closeTradeMarketTimeout(id, false);
     }
@@ -561,7 +561,7 @@ contract TradingTest is TestnetTrading {
         assertEq(_bal(d.tradingStorage), 1_000e6, "in storage");
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0), "stored");
         assertEq(ts.openLimitOrdersCount(trader, BTC), 1, "counted");
-        IOstiumTradingStorage.OpenLimitOrder memory o = ts.getOpenLimitOrder(trader, BTC, 0);
+        IWhitespaceTradingStorage.OpenLimitOrder memory o = ts.getOpenLimitOrder(trader, BTC, 0);
         assertEq(o.targetPrice, 64_000e18, "target");
         assertEq(uint8(o.orderType), uint8(LIMIT), "kind");
         assertEq(o.createdAt, vm.getBlockTimestamp(), "createdAt");
@@ -575,7 +575,7 @@ contract TradingTest is TestnetTrading {
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         _deliverAt(id, BTC, t, 63_900e18);
 
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.openPrice, _spreadFill(63_900e18, true, true), "fills at the post-impact price, not the target");
         assertEq(tr.collateral, POS, "same fees as a market order");
         assertFalse(ts.hasOpenLimitOrder(trader, BTC, 0), "order consumed");
@@ -587,7 +587,7 @@ contract TradingTest is TestnetTrading {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.NOT_HIT);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IWhitespaceTradingCallbacks.CancelReason.NOT_HIT);
         // mid exactly at target: the ask-side fill is one basis point above it
         _deliverAt(id, BTC, t, 64_000e18);
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0), "still resting");
@@ -614,7 +614,7 @@ contract TradingTest is TestnetTrading {
         uint256 snap = vm.snapshotState();
         (uint256 id, uint32 t) = _triggerNow(liquidatorB, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.NOT_HIT);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IWhitespaceTradingCallbacks.CancelReason.NOT_HIT);
         _deliverAt(id, BTC, t, 66_000e18 - 1);
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0), "one wei below: not hit");
         vm.revertToState(snap);
@@ -642,14 +642,14 @@ contract TradingTest is TestnetTrading {
         _place(trader, BTC, 1_000e6, 1_000, true, 66_000e18, 66_050e18, 0, STOP);
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.TP_REACHED);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IWhitespaceTradingCallbacks.CancelReason.TP_REACHED);
         _deliverAt(id, BTC, t, 66_100e18);
 
         // LIMIT long ETH 2,490 with SL 2,489: a 2,488 mid fills at 2,488.2488 <= SL
         _place(trader, ETH, 1_000e6, 1_000, true, 2_490e18, 0, 2_489e18, LIMIT);
         (id, t) = _triggerNow(liquidatorA, trader, ETH, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, ETH, IOstiumTradingCallbacks.CancelReason.SL_REACHED);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, ETH, IWhitespaceTradingCallbacks.CancelReason.SL_REACHED);
         _deliverAt(id, ETH, t, 2_488e18);
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0) && ts.hasOpenLimitOrder(trader, ETH, 0), "both rest");
     }
@@ -658,7 +658,7 @@ contract TradingTest is TestnetTrading {
         _place(trader, WBT, 5_000e6, 2_500, true, 21e18, 0, 0, LIMIT);
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, WBT, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, WBT, IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, WBT, IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS);
         _deliverAt(id, WBT, t, _basePrice(WBT));
         assertTrue(ts.hasOpenLimitOrder(trader, WBT, 0), "the trader can still cancel it");
     }
@@ -667,14 +667,14 @@ contract TradingTest is TestnetTrading {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IWhitespaceTradingCallbacks.CancelReason.MARKET_CLOSED);
         _deliver(id, _closedReport(BTC, t));
 
         vm.prank(manager);
         callbacks.pause();
         (id, t) = _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IOstiumTradingCallbacks.CancelReason.PAUSED);
+        emit IWhitespaceTradingCallbacks.AutomationOpenOrderCanceled(id, trader, BTC, IWhitespaceTradingCallbacks.CancelReason.PAUSED);
         _deliverAt(id, BTC, t, 63_000e18);
         assertTrue(ts.hasOpenLimitOrder(trader, BTC, 0), "rests through both");
     }
@@ -683,10 +683,10 @@ contract TradingTest is TestnetTrading {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
         _advance(7);
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.OpenLimitUpdated(trader, BTC, 0, 63_000e18, 70_000e18, 60_000e18);
+        emit IWhitespaceTrading.OpenLimitUpdated(trader, BTC, 0, 63_000e18, 70_000e18, 60_000e18);
         vm.prank(trader);
         trading.updateOpenLimitOrder(BTC, 0, 63_000e18, 70_000e18, 60_000e18);
-        IOstiumTradingStorage.OpenLimitOrder memory o = ts.getOpenLimitOrder(trader, BTC, 0);
+        IWhitespaceTradingStorage.OpenLimitOrder memory o = ts.getOpenLimitOrder(trader, BTC, 0);
         assertEq(o.targetPrice, 63_000e18, "target");
         assertEq(o.tp, 70_000e18, "tp");
         assertEq(o.sl, 60_000e18, "sl");
@@ -697,18 +697,18 @@ contract TradingTest is TestnetTrading {
     function test_updateLimit_rejections() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector));
         trading.updateOpenLimitOrder(BTC, 0, 0, 0, 0);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoLimitFound.selector, trader, BTC, uint8(1)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoLimitFound.selector, trader, BTC, uint8(1)));
         trading.updateOpenLimitOrder(BTC, 1, 64_000e18, 0, 0);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongTP.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongTP.selector));
         trading.updateOpenLimitOrder(BTC, 0, 64_000e18, 64_000e18, 0);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongSL.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongSL.selector));
         trading.updateOpenLimitOrder(BTC, 0, 64_000e18, 0, 64_000e18);
         vm.stopPrank();
 
         _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.updateOpenLimitOrder(BTC, 0, 63_000e18, 0, 0);
         _advance(TRIGGER_TIMEOUT);
@@ -722,9 +722,9 @@ contract TradingTest is TestnetTrading {
         uint256 before = _bal(trader);
         uint256 devBefore = ts.devFees();
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.OracleFeeChargedLimitCancelled(trader, BTC, ORACLE_FEE);
+        emit IWhitespaceTrading.OracleFeeChargedLimitCancelled(trader, BTC, ORACLE_FEE);
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.OpenLimitCanceled(trader, BTC, 0);
+        emit IWhitespaceTrading.OpenLimitCanceled(trader, BTC, 0);
         vm.prank(trader);
         trading.cancelOpenLimitOrder(BTC, 0);
         assertEq(_bal(trader), before + 1_000e6 - ORACLE_FEE, "refund");
@@ -733,7 +733,7 @@ contract TradingTest is TestnetTrading {
         assertFalse(ts.hasOpenLimitOrder(trader, BTC, 0), "gone");
         assertEq(ts.limitOrderIds(trader, BTC, 0), 0, "id cleared");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoLimitFound.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoLimitFound.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.cancelOpenLimitOrder(BTC, 0);
     }
@@ -741,7 +741,7 @@ contract TradingTest is TestnetTrading {
     function test_cancelLimit_blockedWhileATriggerIsPending() public {
         _place(trader, BTC, 1_000e6, 1_000, true, 64_000e18, 0, 0, LIMIT);
         _triggerNow(liquidatorA, trader, BTC, 0, OPEN);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.cancelOpenLimitOrder(BTC, 0);
     }
@@ -776,8 +776,8 @@ contract TradingTest is TestnetTrading {
         (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, TP);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationCloseOrderCanceled(
-            id, tradeId, trader, BTC, TP, IOstiumTradingCallbacks.CancelReason.NOT_HIT
+        emit IWhitespaceTradingCallbacks.AutomationCloseOrderCanceled(
+            id, tradeId, trader, BTC, TP, IWhitespaceTradingCallbacks.CancelReason.NOT_HIT
         );
         _deliverAt(id, BTC, t, 66_000e18); // bid 65,993.4 < TP
         assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "untouched");
@@ -808,15 +808,15 @@ contract TradingTest is TestnetTrading {
         uint192 o = ts.getOpenTrade(trader, BTC, 0).openPrice;
         uint192 maxTp = o + uint192(uint256(o) * 900 / 1_000);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongTP.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongTP.selector));
         trading.updateTp(BTC, 0, maxTp + 1);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongTP.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongTP.selector));
         trading.updateTp(BTC, 0, 0);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.TpUpdated(tradeId, trader, BTC, 0, maxTp);
+        emit IWhitespaceTrading.TpUpdated(tradeId, trader, BTC, 0, maxTp);
         trading.updateTp(BTC, 0, maxTp);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
         trading.updateTp(BTC, 1, maxTp);
         vm.stopPrank();
         assertEq(ts.getOpenTrade(trader, BTC, 0).tp, maxTp, "exactly the max-gain price accepted");
@@ -826,7 +826,7 @@ contract TradingTest is TestnetTrading {
         uint192 os = ts.getOpenTrade(other, ETH, 0).openPrice;
         uint192 minTp = os - uint192(uint256(os) * 900 / 1_000);
         vm.startPrank(other);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongTP.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongTP.selector));
         trading.updateTp(ETH, 0, minTp - 1);
         trading.updateTp(ETH, 0, minTp);
         vm.stopPrank();
@@ -838,13 +838,13 @@ contract TradingTest is TestnetTrading {
         uint192 o = ts.getOpenTrade(trader, BTC, 0).openPrice;
         uint192 minSl = o - uint192(uint256(o) * 85 / 1_000);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongSL.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongSL.selector));
         trading.updateSl(BTC, 0, minSl - 1);
         trading.updateSl(BTC, 0, minSl);
         assertEq(ts.getOpenTrade(trader, BTC, 0).sl, minSl, "85% loss bound accepted");
         trading.updateSl(BTC, 0, 0);
         assertEq(ts.getOpenTrade(trader, BTC, 0).sl, 0, "zero removes the stop");
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeFound.selector, trader, BTC, uint8(3)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeFound.selector, trader, BTC, uint8(3)));
         trading.updateSl(BTC, 3, minSl);
         vm.stopPrank();
 
@@ -852,7 +852,7 @@ contract TradingTest is TestnetTrading {
         uint192 os = ts.getOpenTrade(other, ETH, 0).openPrice;
         uint192 maxSl = os + uint192(uint256(os) * 85 / 1_000);
         vm.startPrank(other);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongSL.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongSL.selector));
         trading.updateSl(ETH, 0, maxSl + 1);
         trading.updateSl(ETH, 0, maxSl);
         vm.stopPrank();
@@ -862,7 +862,7 @@ contract TradingTest is TestnetTrading {
     function test_updateTpSl_blockedByAPendingTriggerOrClose() public {
         _openWithTpSl(66_000e18, 64_000e18);
         _triggerNow(liquidatorA, trader, BTC, 0, TP);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.updateTp(BTC, 0, 67_000e18);
         // a pending TP does not lock the SL
@@ -872,9 +872,9 @@ contract TradingTest is TestnetTrading {
         _advance(TRIGGER_TIMEOUT);
         _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         trading.updateTp(BTC, 0, 67_000e18);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         trading.updateSl(BTC, 0, 63_500e18);
         vm.stopPrank();
     }
@@ -888,10 +888,10 @@ contract TradingTest is TestnetTrading {
         uint256 before = _bal(trader);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.TopUpCollateralExecuted(tradeId, trader, BTC, POS, 500);
+        emit IWhitespaceTrading.TopUpCollateralExecuted(tradeId, trader, BTC, POS, 500);
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, POS);
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.collateral, 2 * POS, "collateral doubled");
         assertEq(tr.leverage, 500, "leverage halved");
         assertEq(_bal(trader), before - POS, "charged exactly");
@@ -906,7 +906,7 @@ contract TradingTest is TestnetTrading {
         uint256 before = _bal(trader);
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, 1_050e6);
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         // 9,969 notional over 996.9 + 1,050 = 2,046.9 is 4.8703x -> the next step up is 4.88x
         uint256 expected = NOTIONAL * 100 / 488;
         assertEq(tr.leverage, 488, "rounded up from 487.03");
@@ -918,34 +918,34 @@ contract TradingTest is TestnetTrading {
     function test_topUp_rejections() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
         trading.topUpCollateral(BTC, 1, 100e6);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector));
         trading.topUpCollateral(BTC, 0, 0);
         // group collateral would exceed 20% of the vault
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.ExposureLimits.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.ExposureLimits.selector));
         trading.topUpCollateral(BTC, 0, 20_000e6);
         vm.stopPrank();
 
         vm.prank(gov);
         trading.setMaxAllowedCollateral(1_500e6);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.AboveMaxAllowedCollateral.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.AboveMaxAllowedCollateral.selector));
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, POS);
 
         _requestClose(trader, BTC, 0, 0, _upx(BTC), 100);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, 100e6);
     }
 
     function test_topUp_cannotTakeLeverageBelowTheMinimum() public {
         _open(trader, BTC, 1_000e6, 200, true); // 1,000 - 2,000 * 0.03% - 0.10 = 999.3 USDW at 2x
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.collateral, _postFee(1_000e6, 200), "fees at 2x");
         assertEq(tr.collateral, 999.3e6, "999.3 after fees");
         // 1998.6 notional over 2999.3 is 0.6664x -> rounded up to 0.67x, still below 1x
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(67)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(67)));
         vm.prank(trader);
         trading.topUpCollateral(BTC, 0, 2_000e6);
     }
@@ -962,17 +962,17 @@ contract TradingTest is TestnetTrading {
         assertEq(_bal(trader), before - ORACLE_FEE, "oracle fee paid up front from the wallet");
         assertEq(ts.devFees(), devBefore + ORACLE_FEE, "to dev fees");
         assertEq(ts.getPendingRemoveCollateral(id).removeAmount, POS / 2, "request stored");
-        assertGt(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "locked");
+        assertGt(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "locked");
 
         _deliverAt(id, BTC, t, _basePrice(BTC));
-        IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
+        IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, BTC, 0);
         assertEq(tr.collateral, POS / 2, "half removed");
         assertEq(tr.leverage, 2_000, "notional fixed, leverage doubled");
         assertEq(_bal(trader), before - ORACLE_FEE + POS / 2, "paid out");
         assertEq(ps.groupCollateral(BTC, true), POS / 2, "group collateral");
         assertEq(ts.getOpenTradeInfo(trader, BTC, 0).initialLeverage, 2_000, "initial leverage raised");
         assertEq(ts.getPendingRemoveCollateral(id).trader, address(0), "request cleared");
-        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
+        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
     }
 
     function test_removeCollateral_roundsTheAmountToAWholeLeverageStep() public {
@@ -985,58 +985,58 @@ contract TradingTest is TestnetTrading {
         assertEq(ts.getPendingRemoveCollateral(id).removeAmount, amount, "rounded down to 16.70x");
     }
 
-    function _assertRemoveRejected(uint256 id, IOstiumTradingCallbacks.CancelReason reason, bytes memory report) internal {
+    function _assertRemoveRejected(uint256 id, IWhitespaceTradingCallbacks.CancelReason reason, bytes memory report) internal {
         uint256 before = _bal(trader);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
         uint256 amount = ts.getPendingRemoveCollateral(id).removeAmount;
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.RemoveCollateralRejected(id, tradeId, trader, BTC, amount, reason);
+        emit IWhitespaceTradingCallbacks.RemoveCollateralRejected(id, tradeId, trader, BTC, amount, reason);
         _deliver(id, report);
         assertEq(_bal(trader), before, "nothing paid");
         assertEq(ts.getOpenTrade(trader, BTC, 0).collateral, POS, "position untouched");
-        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
+        assertEq(ts.orderTriggerBlock(trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.REMOVE_COLLATERAL), 0, "unlocked");
     }
 
     function test_removeCollateral_rejectedUnderLiquidation() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, POS - POS / 10); // to 100x
-        _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.UNDER_LIQUIDATION, _report(BTC, t, _px(BTC, -100)));
+        _assertRemoveRejected(id, IWhitespaceTradingCallbacks.CancelReason.UNDER_LIQUIDATION, _report(BTC, t, _px(BTC, -100)));
     }
 
     function test_removeCollateral_rejectedMarketClosedPausedAndMaxLeverage() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         (uint256 id, uint32 t) = _requestRemove(trader, BTC, 0, POS / 2);
-        _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.MARKET_CLOSED, _closedReport(BTC, t));
+        _assertRemoveRejected(id, IWhitespaceTradingCallbacks.CancelReason.MARKET_CLOSED, _closedReport(BTC, t));
 
         (id, t) = _requestRemove(trader, BTC, 0, POS / 2);
         vm.prank(gov);
         ps.setPairMaxLeverage(BTC, 1_500);
-        _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE, _report(BTC, t, _basePrice(BTC)));
+        _assertRemoveRejected(id, IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE, _report(BTC, t, _basePrice(BTC)));
         vm.prank(gov);
         ps.setPairMaxLeverage(BTC, 10_000);
 
         (id, t) = _requestRemove(trader, BTC, 0, POS / 2);
         vm.prank(manager);
         callbacks.pause();
-        _assertRemoveRejected(id, IOstiumTradingCallbacks.CancelReason.PAUSED, _report(BTC, t, _basePrice(BTC)));
+        _assertRemoveRejected(id, IWhitespaceTradingCallbacks.CancelReason.PAUSED, _report(BTC, t, _basePrice(BTC)));
     }
 
     function test_removeCollateral_requestRejections() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         vm.startPrank(trader);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NoTradeFound.selector, trader, BTC, uint8(1)));
         trading.removeCollateral(BTC, 1, 1e6);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector));
         trading.removeCollateral(BTC, 0, 0);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongParams.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector));
         trading.removeCollateral(BTC, 0, POS);
         // leaving 3 USDW under 9,969 of notional is 3,323x
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.WrongLeverage.selector, uint32(NOTIONAL * 100 / 3e6)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.WrongLeverage.selector, uint32(NOTIONAL * 100 / 3e6)));
         trading.removeCollateral(BTC, 0, POS - 3e6);
         vm.stopPrank();
 
         _requestRemove(trader, BTC, 0, 100e6);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.TriggerPending.selector, trader, BTC, uint8(0)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.TriggerPending.selector, trader, BTC, uint8(0)));
         vm.prank(trader);
         trading.removeCollateral(BTC, 0, 100e6);
     }
@@ -1047,18 +1047,18 @@ contract TradingTest is TestnetTrading {
 
     function test_pause_blocksNewExposureButNotExits() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotManager.selector, gov));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotManager.selector, gov));
         vm.prank(gov);
         trading.pause();
 
         vm.expectEmit(true, true, true, true, d.trading);
-        emit IOstiumTrading.Paused(true);
+        emit IWhitespaceTrading.Paused(true);
         vm.prank(manager);
         trading.pause();
         assertTrue(trading.isPaused(), "paused");
 
-        _openReverts(_trade(trader, ETH, 100e6, 1_000, true, 0), MARKET, 100, abi.encodeWithSelector(IOstiumTrading.IsPaused.selector));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.IsPaused.selector));
+        _openReverts(_trade(trader, ETH, 100e6, 1_000, true, 0), MARKET, 100, abi.encodeWithSelector(IWhitespaceTrading.IsPaused.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.IsPaused.selector));
         vm.prank(trader);
         trading.removeCollateral(BTC, 0, 100e6);
 
@@ -1081,14 +1081,14 @@ contract TradingTest is TestnetTrading {
     function test_done_freezesEveryTraderEntryPoint() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         _place(trader, ETH, 100e6, 1_000, true, 2_400e18, 0, 0, LIMIT);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotGov.selector, manager));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotGov.selector, manager));
         vm.prank(manager);
         trading.done();
         vm.prank(gov);
         trading.done();
         assertTrue(trading.isDone(), "done");
 
-        bytes memory isDone = abi.encodeWithSelector(IOstiumTrading.IsDone.selector);
+        bytes memory isDone = abi.encodeWithSelector(IWhitespaceTrading.IsDone.selector);
         _openReverts(_trade(trader, SOL, 100e6, 1_000, true, 0), MARKET, 100, isDone);
         vm.startPrank(trader);
         vm.expectRevert(isDone);
@@ -1128,7 +1128,7 @@ contract TradingTest is TestnetTrading {
         }
         _place(trader, BTC, 100e6, 200, true, 60_000e18, 0, 0, LIMIT);
         assertEq(ts.openTradesCount(trader, BTC), 9, "nine open");
-        bytes memory full = abi.encodeWithSelector(IOstiumTrading.MaxTradesPerPairReached.selector, trader, BTC);
+        bytes memory full = abi.encodeWithSelector(IWhitespaceTrading.MaxTradesPerPairReached.selector, trader, BTC);
         _openReverts(_trade(trader, BTC, 100e6, 200, true, 0), MARKET, 100, full);
         _openReverts(_trade(trader, BTC, 100e6, 200, true, 0), LIMIT, 0, full);
 
@@ -1154,7 +1154,7 @@ contract TradingTest is TestnetTrading {
             _open(trader, p, 1_000e6, lev[p], p % 2 == 0);
         }
         for (uint16 p = 0; p < 4; p++) {
-            IOstiumTradingStorage.Trade memory tr = ts.getOpenTrade(trader, p, 0);
+            IWhitespaceTradingStorage.Trade memory tr = ts.getOpenTrade(trader, p, 0);
             assertEq(tr.openPrice, _spreadFill(_basePrice(p), p % 2 == 0, true), "own price");
             assertEq(_oi(p, p % 2 == 0), uint256(tr.collateral) * 1e12 * lev[p] / 100 * 1e18 / tr.openPrice, "own OI");
             assertEq(_oi(p, p % 2 != 0), 0, "other side empty");
@@ -1171,7 +1171,7 @@ contract TradingTest is TestnetTrading {
 
         // an ETH report cannot fill a SOL order
         (uint256 id, uint32 t) = _requestOpen(_trade(other, SOL, 100e6, 1_000, true, 0), 100);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumPriceUpKeep.InvalidPrice.selector, id));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespacePriceUpKeep.InvalidPrice.selector, id));
         _deliver(id, _report(ETH, t, _basePrice(SOL)));
 
         // halting one feed stops only that market
@@ -1191,7 +1191,7 @@ contract TradingTest is TestnetTrading {
         assertEq(ps.groupCollateral(ETH, true), ps.groupCollateral(BTC, true), "one bucket");
         (uint256 id, uint32 t) = _requestOpen(_trade(other, ETH, 100e6, 1_000, true, 0), 100);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.MarketOpenCanceled(id, other, ETH, IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS);
+        emit IWhitespaceTradingCallbacks.MarketOpenCanceled(id, other, ETH, IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS);
         _deliverAt(id, ETH, t, _basePrice(ETH));
         // the other side of the book has its own bucket
         _open(other, ETH, 100e6, 1_000, false);

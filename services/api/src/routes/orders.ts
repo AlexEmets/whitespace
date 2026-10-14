@@ -106,7 +106,7 @@ export async function resolveOrders(address: string): Promise<unknown[]> {
     // it to replace "waiting for keeper" with "expired". Always false once resolved.
     expired: r.status === 'pending' && r.requested_at < expiryCutoff,
     requestedAt: r.requested_at,
-    // The BLOCK, not just the timestamp: `OstiumTrading.openTradeMarketTimeout` gates the
+    // The BLOCK, not just the timestamp: `WhitespaceTrading.openTradeMarketTimeout` gates the
     // trader's refund on `block.number >= requestBlock + marketOrdersTimeout`, so a client
     // deciding whether that refund is available yet needs the same unit the contract
     // compares in. Deriving it from a timestamp would be a guess about block time.

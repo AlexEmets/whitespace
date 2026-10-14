@@ -4,32 +4,32 @@ pragma solidity 0.8.24;
 import {Vm} from "forge-std/Test.sol";
 
 import {TestnetTrading} from "../helpers/TestnetTrading.sol";
-import {IOstiumTrading} from "../../src/vendor/ostium/interfaces/IOstiumTrading.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
-import {IOstiumTradingCallbacks} from "../../src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol";
-import {IOstiumTradesUpKeep} from "../../src/vendor/ostium/interfaces/IOstiumTradesUpKeep.sol";
-import {IOstiumForwarded} from "../../src/vendor/ostium/interfaces/IOstiumForwarded.sol";
-import {IOstiumAutomationCompatible} from "../../src/vendor/ostium/interfaces/IOstiumAutomationCompatible.sol";
+import {IWhitespaceTrading} from "../../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
+import {IWhitespaceTradingCallbacks} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol";
+import {IWhitespaceTradesUpKeep} from "../../src/vendor/ostium/interfaces/IWhitespaceTradesUpKeep.sol";
+import {IWhitespaceForwarded} from "../../src/vendor/ostium/interfaces/IWhitespaceForwarded.sol";
+import {IWhitespaceAutomationCompatible} from "../../src/vendor/ostium/interfaces/IWhitespaceAutomationCompatible.sol";
 
-/// @notice `OstiumTradesUpKeep` + `OstiumTrading.executeAutomationOrder` on the testnet
+/// @notice `WhitespaceTradesUpKeep` + `WhitespaceTrading.executeAutomationOrder` on the testnet
 ///         deployment: the forwarder allowlist, every `AutomationOrderStatus` the code can
 ///         return, batches with mixed outcomes, and the entries that revert a whole batch.
 contract TradesUpKeepTest is TestnetTrading {
     address internal trader = address(0x7AA);
 
-    IOstiumTradingStorage.LimitOrder internal constant TP = IOstiumTradingStorage.LimitOrder.TP;
-    IOstiumTradingStorage.LimitOrder internal constant SL = IOstiumTradingStorage.LimitOrder.SL;
-    IOstiumTradingStorage.LimitOrder internal constant LIQ = IOstiumTradingStorage.LimitOrder.LIQ;
-    IOstiumTradingStorage.LimitOrder internal constant OPEN = IOstiumTradingStorage.LimitOrder.OPEN;
+    IWhitespaceTradingStorage.LimitOrder internal constant TP = IWhitespaceTradingStorage.LimitOrder.TP;
+    IWhitespaceTradingStorage.LimitOrder internal constant SL = IWhitespaceTradingStorage.LimitOrder.SL;
+    IWhitespaceTradingStorage.LimitOrder internal constant LIQ = IWhitespaceTradingStorage.LimitOrder.LIQ;
+    IWhitespaceTradingStorage.LimitOrder internal constant OPEN = IWhitespaceTradingStorage.LimitOrder.OPEN;
 
-    uint8 internal constant S_PENDING_TRIGGER = uint8(IOstiumTrading.AutomationOrderStatus.PENDING_TRIGGER);
-    uint8 internal constant S_NO_LIMIT = uint8(IOstiumTrading.AutomationOrderStatus.NO_LIMIT);
-    uint8 internal constant S_NO_TRADE = uint8(IOstiumTrading.AutomationOrderStatus.NO_TRADE);
-    uint8 internal constant S_NO_SL = uint8(IOstiumTrading.AutomationOrderStatus.NO_SL);
-    uint8 internal constant S_NO_TP = uint8(IOstiumTrading.AutomationOrderStatus.NO_TP);
-    uint8 internal constant S_SUCCESS = uint8(IOstiumTrading.AutomationOrderStatus.SUCCESS);
-    uint8 internal constant S_PAUSED = uint8(IOstiumTrading.AutomationOrderStatus.PAUSED);
-    uint8 internal constant S_BACKDATED = uint8(IOstiumTrading.AutomationOrderStatus.BACKDATED_EXECUTION);
+    uint8 internal constant S_PENDING_TRIGGER = uint8(IWhitespaceTrading.AutomationOrderStatus.PENDING_TRIGGER);
+    uint8 internal constant S_NO_LIMIT = uint8(IWhitespaceTrading.AutomationOrderStatus.NO_LIMIT);
+    uint8 internal constant S_NO_TRADE = uint8(IWhitespaceTrading.AutomationOrderStatus.NO_TRADE);
+    uint8 internal constant S_NO_SL = uint8(IWhitespaceTrading.AutomationOrderStatus.NO_SL);
+    uint8 internal constant S_NO_TP = uint8(IWhitespaceTrading.AutomationOrderStatus.NO_TP);
+    uint8 internal constant S_SUCCESS = uint8(IWhitespaceTrading.AutomationOrderStatus.SUCCESS);
+    uint8 internal constant S_PAUSED = uint8(IWhitespaceTrading.AutomationOrderStatus.PAUSED);
+    uint8 internal constant S_BACKDATED = uint8(IWhitespaceTrading.AutomationOrderStatus.BACKDATED_EXECUTION);
 
     function setUp() public {
         _setUpTestnet();
@@ -39,11 +39,11 @@ contract TradesUpKeepTest is TestnetTrading {
     /// @dev Writes one entry field by field (a struct literal here is too deep for the stack
     ///      once inlined into the batch builders).
     function _set(
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory e,
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory e,
         uint256 slot,
         address who,
         uint16 pairIndex,
-        IOstiumTradingStorage.LimitOrder kind
+        IWhitespaceTradingStorage.LimitOrder kind
     ) internal pure {
         e[slot].trader = who;
         e[slot].pairId = pairIndex;
@@ -51,7 +51,7 @@ contract TradesUpKeepTest is TestnetTrading {
         e[slot].limitOrder = kind;
     }
 
-    function _batch(address forwarder, IOstiumAutomationCompatible.SimplifiedTradeId[] memory entries, uint256 priceTs)
+    function _batch(address forwarder, IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory entries, uint256 priceTs)
         internal
         returns (Vm.Log[] memory)
     {
@@ -61,7 +61,7 @@ contract TradesUpKeepTest is TestnetTrading {
         return vm.getRecordedLogs();
     }
 
-    function _single(IOstiumTradingStorage.LimitOrder kind, uint16 pairIndex, uint256 priceTs)
+    function _single(IWhitespaceTradingStorage.LimitOrder kind, uint16 pairIndex, uint256 priceTs)
         internal
         returns (uint8 status, bool requested)
     {
@@ -77,31 +77,31 @@ contract TradesUpKeepTest is TestnetTrading {
 
     function test_allowlist_onlyTheTimelockRegistersAndOnlyGovRemoves() public {
         address fwd = address(0xF0D);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTradesUpKeep.NotTimelock.selector, gov));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTradesUpKeep.NotTimelock.selector, gov));
         vm.prank(gov);
         tradesUpKeep.registerForwarder(fwd);
 
         vm.expectEmit(true, true, true, true, address(tradesUpKeep));
-        emit IOstiumForwarded.ForwarderAdded(fwd);
+        emit IWhitespaceForwarded.ForwarderAdded(fwd);
         vm.prank(owner);
         tradesUpKeep.registerForwarder(fwd);
         assertTrue(tradesUpKeep.isForwarder(fwd), "registered");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumForwarded.AlreadyForwarder.selector, fwd));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceForwarded.AlreadyForwarder.selector, fwd));
         vm.prank(owner);
         tradesUpKeep.registerForwarder(fwd);
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTradesUpKeep.NotGov.selector, owner));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTradesUpKeep.NotGov.selector, owner));
         vm.prank(owner);
         tradesUpKeep.unregisterForwarder(fwd);
 
         vm.expectEmit(true, true, true, true, address(tradesUpKeep));
-        emit IOstiumForwarded.ForwarderRemoved(fwd);
+        emit IWhitespaceForwarded.ForwarderRemoved(fwd);
         vm.prank(gov);
         tradesUpKeep.unregisterForwarder(fwd);
         assertFalse(tradesUpKeep.isForwarder(fwd), "removed");
 
-        vm.expectRevert(abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, fwd));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, fwd));
         vm.prank(gov);
         tradesUpKeep.unregisterForwarder(fwd);
     }
@@ -123,13 +123,13 @@ contract TradesUpKeepTest is TestnetTrading {
         address[3] memory outsiders = [keeper, trader, gov];
         bytes memory payload = _automationPayload(trader, BTC, 0, LIQ, vm.getBlockTimestamp());
         for (uint256 i = 0; i < outsiders.length; i++) {
-            vm.expectRevert(abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, outsiders[i]));
+            vm.expectRevert(abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, outsiders[i]));
             vm.prank(outsiders[i]);
             tradesUpKeep.performUpkeep(payload);
         }
         vm.prank(gov);
         tradesUpKeep.unregisterForwarder(liquidatorB);
-        vm.expectRevert(abi.encodeWithSelector(IOstiumForwarded.NotForwarder.selector, liquidatorB));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceForwarded.NotForwarder.selector, liquidatorB));
         vm.prank(liquidatorB);
         tradesUpKeep.performUpkeep(payload);
         // A is unaffected
@@ -139,7 +139,7 @@ contract TradesUpKeepTest is TestnetTrading {
 
     function test_executeAutomationOrder_onlyFromTheTradesUpKeep() public {
         uint256 now_ = vm.getBlockTimestamp();
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.NotTradesUpKeep.selector, liquidatorA));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.NotTradesUpKeep.selector, liquidatorA));
         vm.prank(liquidatorA);
         trading.executeAutomationOrder(LIQ, trader, BTC, 0, now_);
     }
@@ -215,7 +215,7 @@ contract TradesUpKeepTest is TestnetTrading {
 
     function test_status_pausedOnlyAffectsLimitOpens() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        _place(trader, ETH, 100e6, 1_000, true, 2_400e18, 0, 0, IOstiumTradingStorage.OpenOrderType.LIMIT);
+        _place(trader, ETH, 100e6, 1_000, true, 2_400e18, 0, 0, IWhitespaceTradingStorage.OpenOrderType.LIMIT);
         vm.prank(manager);
         trading.pause();
         (uint8 s, bool req) = _single(OPEN, ETH, vm.getBlockTimestamp());
@@ -228,7 +228,7 @@ contract TradesUpKeepTest is TestnetTrading {
     function test_status_backdatedForLimitsAndPositions() public {
         uint256 t0 = vm.getBlockTimestamp();
         _advance(5);
-        _place(trader, ETH, 100e6, 1_000, true, 2_400e18, 0, 0, IOstiumTradingStorage.OpenOrderType.LIMIT);
+        _place(trader, ETH, 100e6, 1_000, true, 2_400e18, 0, 0, IWhitespaceTradingStorage.OpenOrderType.LIMIT);
         (uint8 s, bool req) = _single(OPEN, ETH, t0);
         assertEq(s, S_BACKDATED, "price older than the order");
         assertFalse(req, "no request");
@@ -246,15 +246,15 @@ contract TradesUpKeepTest is TestnetTrading {
     function test_closeDayTrade_isRequestedThenCancelled() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
         uint256 tradeId = ts.getOpenTradeInfo(trader, BTC, 0).tradeId;
-        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, IOstiumTradingStorage.LimitOrder.CLOSE_DAY_TRADE);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, trader, BTC, 0, IWhitespaceTradingStorage.LimitOrder.CLOSE_DAY_TRADE);
         vm.expectEmit(true, true, true, true, d.callbacks);
-        emit IOstiumTradingCallbacks.AutomationCloseOrderCanceled(
+        emit IWhitespaceTradingCallbacks.AutomationCloseOrderCanceled(
             id,
             tradeId,
             trader,
             BTC,
-            IOstiumTradingStorage.LimitOrder.CLOSE_DAY_TRADE,
-            IOstiumTradingCallbacks.CancelReason.CLOSE_DAY_TRADE_NOT_ALLOWED
+            IWhitespaceTradingStorage.LimitOrder.CLOSE_DAY_TRADE,
+            IWhitespaceTradingCallbacks.CancelReason.CLOSE_DAY_TRADE_NOT_ALLOWED
         );
         _deliverAt(id, BTC, t, _basePrice(BTC));
         assertEq(ts.openTradesCount(trader, BTC), 1, "still open");
@@ -266,7 +266,7 @@ contract TradesUpKeepTest is TestnetTrading {
 
     function test_batch_mixedStatusesAreEachReportedAndOnlySuccessRequests() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory e = new IOstiumAutomationCompatible.SimplifiedTradeId[](5);
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory e = new IWhitespaceAutomationCompatible.SimplifiedTradeId[](5);
         _set(e, 0, trader, BTC, TP); // SUCCESS (the default max-gain TP)
         _set(e, 1, trader, ETH, LIQ); // NO_TRADE
         _set(e, 2, address(0), BTC, LIQ); // skipped: no event at all
@@ -289,8 +289,8 @@ contract TradesUpKeepTest is TestnetTrading {
         assertEq(requests, 1, "exactly one oracle request");
     }
 
-    function _goodThenBad(IOstiumTradingStorage.LimitOrder kind, uint16 pairIndex) internal view returns (bytes memory) {
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory e = new IOstiumAutomationCompatible.SimplifiedTradeId[](2);
+    function _goodThenBad(IWhitespaceTradingStorage.LimitOrder kind, uint16 pairIndex) internal view returns (bytes memory) {
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory e = new IWhitespaceAutomationCompatible.SimplifiedTradeId[](2);
         _set(e, 0, trader, BTC, LIQ); // would succeed on its own
         _set(e, 1, trader, pairIndex, kind);
         return abi.encode(e, vm.getBlockTimestamp());
@@ -308,11 +308,11 @@ contract TradesUpKeepTest is TestnetTrading {
     ///         hazard for a buggy keeper rather than a griefing vector.
     function test_batch_aSingleInvalidEntryRevertsTheWholeBatch() public {
         _open(trader, BTC, 1_000e6, 1_000, true);
-        bytes memory wrong = abi.encodeWithSelector(IOstiumTrading.WrongParams.selector);
-        _assertBatchReverts(_goodThenBad(IOstiumTradingStorage.LimitOrder.REMOVE_COLLATERAL, BTC), wrong);
-        _assertBatchReverts(_goodThenBad(IOstiumTradingStorage.LimitOrder.PENDING_CLOSE, BTC), wrong);
+        bytes memory wrong = abi.encodeWithSelector(IWhitespaceTrading.WrongParams.selector);
+        _assertBatchReverts(_goodThenBad(IWhitespaceTradingStorage.LimitOrder.REMOVE_COLLATERAL, BTC), wrong);
+        _assertBatchReverts(_goodThenBad(IWhitespaceTradingStorage.LimitOrder.PENDING_CLOSE, BTC), wrong);
         _assertBatchReverts(
-            _goodThenBad(LIQ, 9), abi.encodeWithSelector(IOstiumTrading.PairNotListed.selector, uint16(9))
+            _goodThenBad(LIQ, 9), abi.encodeWithSelector(IWhitespaceTrading.PairNotListed.selector, uint16(9))
         );
     }
 
@@ -321,13 +321,13 @@ contract TradesUpKeepTest is TestnetTrading {
         vm.prank(gov);
         trading.done();
         bytes memory payload = _automationPayload(trader, BTC, 0, LIQ, vm.getBlockTimestamp());
-        vm.expectRevert(abi.encodeWithSelector(IOstiumTrading.IsDone.selector));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceTrading.IsDone.selector));
         vm.prank(liquidatorA);
         tradesUpKeep.performUpkeep(payload);
     }
 
     function test_batch_emptyIsANoOp() public {
-        IOstiumAutomationCompatible.SimplifiedTradeId[] memory e = new IOstiumAutomationCompatible.SimplifiedTradeId[](0);
+        IWhitespaceAutomationCompatible.SimplifiedTradeId[] memory e = new IWhitespaceAutomationCompatible.SimplifiedTradeId[](0);
         Vm.Log[] memory logs = _batch(liquidatorA, e, vm.getBlockTimestamp());
         assertEq(logs.length, 0, "nothing emitted");
     }

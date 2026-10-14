@@ -10,7 +10,7 @@ export type { EventMeta };
 // exercised against test/fakeDb.ts.
 //
 // Which events fire, read from the vendored contracts:
-//   - OstiumTrading.openTrade with orderType LIMIT/STOP -> OpenLimitPlacedV2 only
+//   - WhitespaceTrading.openTrade with orderType LIMIT/STOP -> OpenLimitPlacedV2 only
 //     (OpenLimitPlaced, the V1 event, is never emitted). The event carries the full
 //     Trade and the OpenOrderType, so no storage read is needed.
 //   - updateOpenLimitOrder -> OpenLimitUpdated(price, tp, sl). Collateral, leverage and

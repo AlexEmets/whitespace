@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CANCEL_REASONS, explainCancelReason } from '@/lib/abi';
 
 describe('CANCEL_REASONS', () => {
-  it('matches IOstiumTradingCallbacks.CancelReason exactly (16 entries, NONE first)', () => {
-    // Transcribed from contracts/src/vendor/ostium/interfaces/IOstiumTradingCallbacks.sol.
+  it('matches IWhitespaceTradingCallbacks.CancelReason exactly (16 entries, NONE first)', () => {
+    // Transcribed from contracts/src/vendor/ostium/interfaces/IWhitespaceTradingCallbacks.sol.
     expect(CANCEL_REASONS).toEqual([
       'NONE',
       'PAUSED',

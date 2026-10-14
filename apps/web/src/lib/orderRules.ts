@@ -9,7 +9,7 @@
 import type { OpenOrderKind } from './abi';
 import { formatMoney } from './money';
 
-/** solidity: `MAX_GAIN_P = 900` (OstiumTrading.sol:27) — TP is capped at +900% PnL. */
+/** solidity: `MAX_GAIN_P = 900` (WhitespaceTrading.sol:27) — TP is capped at +900% PnL. */
 export const MAX_GAIN_P = 900n;
 
 export interface TpSlInput {
@@ -64,7 +64,7 @@ export function tpCapError(p: { buy: boolean; entryPrice: bigint; leverage: bigi
 }
 
 /**
- * solidity: OstiumTrading.updateTp — a new TP may not be zero and may not sit further than
+ * solidity: WhitespaceTrading.updateTp — a new TP may not be zero and may not sit further than
  * `openPrice * MAX_GAIN_P / max(initialLeverage, leverage)` beyond the entry.
  */
 export function updateTpError(p: {
@@ -85,7 +85,7 @@ export function updateTpError(p: {
 }
 
 /**
- * solidity: OstiumTrading.updateSl — zero removes the stop; otherwise it may not sit further
+ * solidity: WhitespaceTrading.updateSl — zero removes the stop; otherwise it may not sit further
  * than `openPrice * maxSl_P / leverage` from the entry on the losing side.
  */
 export function updateSlError(p: {
@@ -128,7 +128,7 @@ export function triggerPriceError(kind: OpenOrderKind, buy: boolean, trigger: bi
 }
 
 /**
- * solidity: OstiumTrading.openTrade — `slippageP` must be in (0, 100e2) for MARKET and exactly
+ * solidity: WhitespaceTrading.openTrade — `slippageP` must be in (0, 100e2) for MARKET and exactly
  * 0 for LIMIT/STOP, or it reverts `WrongParams`.
  */
 export function slippageForSubmission(kind: OpenOrderKind, slippageBps: bigint): bigint {

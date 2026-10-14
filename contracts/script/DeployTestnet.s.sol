@@ -3,15 +3,15 @@ pragma solidity 0.8.24;
 
 import {SystemDeployer} from "./Deploy.s.sol";
 import {OperateScript} from "./Operate.s.sol";
-import {OstiumVault} from "../src/vendor/ostium/OstiumVault.sol";
-import {OstiumPairInfos} from "../src/vendor/ostium/OstiumPairInfos.sol";
-import {IOstiumRegistry} from "../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumPairsStorage} from "../src/vendor/ostium/interfaces/IOstiumPairsStorage.sol";
-import {IOstiumPairInfos} from "../src/vendor/ostium/interfaces/IOstiumPairInfos.sol";
-import {IOstiumTrading} from "../src/vendor/ostium/interfaces/IOstiumTrading.sol";
+import {WhitespaceVault} from "../src/vendor/ostium/WhitespaceVault.sol";
+import {WhitespacePairInfos} from "../src/vendor/ostium/WhitespacePairInfos.sol";
+import {IWhitespaceRegistry} from "../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespacePairsStorage} from "../src/vendor/ostium/interfaces/IWhitespacePairsStorage.sol";
+import {IWhitespacePairInfos} from "../src/vendor/ostium/interfaces/IWhitespacePairInfos.sol";
+import {IWhitespaceTrading} from "../src/vendor/ostium/interfaces/IWhitespaceTrading.sol";
 
 /// @notice The whole testnet system from nothing, in one run: the vendored core, the hardened
-///         k-of-N oracle, `OstiumTradesUpKeep` with its forwarders, every market with real
+///         k-of-N oracle, `WhitespaceTradesUpKeep` with its forwarders, every market with real
 ///         economics, and a seeded LP vault.
 ///
 /// @dev    Exists because chain 1874 is being redeployed rather than migrated (the registry gov
@@ -36,7 +36,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
 
     /// @dev Blocks before a trader may reclaim an unfilled market order. A report is deliverable
     ///      while `block.timestamp <= orderTimestamp + maxAge` (10 s), and a reclaim is allowed
-    ///      once `block.number >= orderBlock + marketOrdersTimeout` (`OstiumTrading.sol:673`). At
+    ///      once `block.number >= orderBlock + marketOrdersTimeout` (`WhitespaceTrading.sol:673`). At
     ///      1 s/block — fixed on the OP Stack sequencer — 11 is the one value where every block
     ///      after the request is exactly one of fillable or refundable:
     ///        - above 11, orders sit in a dead window (the original 30 left 19 blocks:
@@ -46,7 +46,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     uint16 internal constant TESTNET_MARKET_ORDERS_TIMEOUT = 11;
 
     /// @dev Anyone may trigger a vault settlement once this has elapsed since the last one
-    ///      (`OstiumVault.tryNewSettlement`). The vendored default is 24 h, which makes an LP
+    ///      (`WhitespaceVault.tryNewSettlement`). The vendored default is 24 h, which makes an LP
     ///      deposit un-testable on a working day; one hour is inside the contract's 10 min–3 day
     ///      bounds.
     uint32 internal constant TESTNET_MAX_SETTLEMENT_INTERVAL = 1 hours;
@@ -68,10 +68,10 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         string name;
         uint32 maxLeverage;
         uint256 maxOi;
-        IOstiumPairInfos.PairOpeningFees openingFees;
-        IOstiumPairInfos.PairFundingFeesV2 funding;
-        IOstiumPairInfos.PairRolloverFeesV2 rollover;
-        IOstiumPairInfos.DynamicSpreadParams spread;
+        IWhitespacePairInfos.PairOpeningFees openingFees;
+        IWhitespacePairInfos.PairFundingFeesV2 funding;
+        IWhitespacePairInfos.PairRolloverFeesV2 rollover;
+        IWhitespacePairInfos.DynamicSpreadParams spread;
     }
 
     /// @notice Addresses the configuration needs beyond the core deployment.
@@ -96,8 +96,8 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     ///      half of each fee to the vault. PRECISION_6 percent: 30_000 == 0.03%. Charged on
     ///      NOTIONAL, so at 17x the taker fee is ~0.5% of margin; 0.06% (the first testnet value)
     ///      made a single round of trading cost traders ~1% of margin plus the oracle fee.
-    function _openingFees() internal pure returns (IOstiumPairInfos.PairOpeningFees memory) {
-        return IOstiumPairInfos.PairOpeningFees({
+    function _openingFees() internal pure returns (IWhitespacePairInfos.PairOpeningFees memory) {
+        return IWhitespacePairInfos.PairOpeningFees({
             makerFeeP: 10_000,
             takerFeeP: 30_000,
             usageFeeP: 0,
@@ -110,7 +110,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @dev Funding caps at 100%/year at full imbalance (1e18 / BLOCKS_PER_YEAR per block) and
     ///      approaches its target with a time constant of 1/springFactor = 10,000 blocks
     ///      (~2.8 h); twice as fast when the sign flips (`sFactorUpScaleP` 200%).
-    function _funding() internal pure returns (IOstiumPairInfos.PairFundingFeesV2 memory f) {
+    function _funding() internal pure returns (IWhitespacePairInfos.PairFundingFeesV2 memory f) {
         f.maxFundingFeePerBlock = uint64(1e18 / BLOCKS_PER_YEAR);
         f.springFactor = 1e14;
         f.hillPosScale = 100;
@@ -122,7 +122,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @dev A flat 1.5%/year holding cost on both sides (`brokerPremium`), paid to the vault.
     ///      `brokerPremium` is capped by the vendored `MAX_BROKER_PREMIUM_PER_BLOCK`, which is
     ///      ~3%/year at 1 s/block; half of it is used.
-    function _rollover() internal pure returns (IOstiumPairInfos.PairRolloverFeesV2 memory r) {
+    function _rollover() internal pure returns (IWhitespacePairInfos.PairRolloverFeesV2 memory r) {
         r.brokerPremium = uint256(15e15) / BLOCKS_PER_YEAR;
         r.maxRolloverFeePerBlock = uint64(2 * r.brokerPremium);
     }
@@ -134,9 +134,9 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     function _spread(uint256 netVolThreshold, uint256 priceImpactK)
         internal
         pure
-        returns (IOstiumPairInfos.DynamicSpreadParams memory)
+        returns (IWhitespacePairInfos.DynamicSpreadParams memory)
     {
-        return IOstiumPairInfos.DynamicSpreadParams({
+        return IWhitespacePairInfos.DynamicSpreadParams({
             netVolThreshold: netVolThreshold,
             decayRate: 1e15,
             priceImpactK: priceImpactK
@@ -162,11 +162,11 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     ///         tier at the testnet values (a replay re-prices a system on older ones).
     /// @dev Caller must be `registry.gov()`.
     function ensureGroupAndFee(address registry) public {
-        IOstiumPairsStorage ps = IOstiumPairsStorage(IOstiumRegistry(registry).getContractAddress("pairsStorage"));
+        IWhitespacePairsStorage ps = IWhitespacePairsStorage(IWhitespaceRegistry(registry).getContractAddress("pairsStorage"));
         if (ps.groupsCount() == 0) {
             _relay();
             ps.addGroup(
-                IOstiumPairsStorage.Group({
+                IWhitespacePairsStorage.Group({
                     name: GROUP_NAME,
                     minLeverage: GROUP_MIN_LEVERAGE,
                     maxLeverage: GROUP_MAX_LEVERAGE,
@@ -177,7 +177,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         if (ps.feesCount() == 0) {
             _relay();
             ps.addFee(
-                IOstiumPairsStorage.Fee({
+                IWhitespacePairsStorage.Fee({
                     name: FEE_NAME,
                     minLevPos: FEE_MIN_LEV_POS,
                     oracleFee: TESTNET_ORACLE_FEE,
@@ -190,7 +190,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
             _relay();
             ps.updateFee(
                 0,
-                IOstiumPairsStorage.Fee({
+                IWhitespacePairsStorage.Fee({
                     name: FEE_NAME,
                     minLevPos: FEE_MIN_LEV_POS,
                     oracleFee: TESTNET_ORACLE_FEE,
@@ -203,15 +203,15 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @notice Opening fees, funding and rollover for one listed market.
     /// @dev Caller must be `registry.gov()`. Each of the three is compared before it is written.
     function configureMarketEconomics(address registry, uint16 pairIndex, MarketSpec memory m) public {
-        IOstiumPairInfos pi = IOstiumPairInfos(IOstiumRegistry(registry).getContractAddress("pairInfos"));
+        IWhitespacePairInfos pi = IWhitespacePairInfos(IWhitespaceRegistry(registry).getContractAddress("pairInfos"));
         // Reads go through the concrete contract, whose public-mapping getters are `view`.
-        // `IOstiumPairInfos` declares them without `view`, and under `--broadcast` a non-view
+        // `IWhitespacePairInfos` declares them without `view`, and under `--broadcast` a non-view
         // call is sent as a transaction — every run used to pay for 12 no-op reads here.
-        OstiumPairInfos piView = OstiumPairInfos(address(pi));
+        WhitespacePairInfos piView = WhitespacePairInfos(address(pi));
 
         (uint32 makerFeeP, uint32 takerFeeP, uint32 usageFeeP, uint16 utilP, uint16 makerMaxLev, uint8 vaultFeeP) =
             piView.pairOpeningFees(pairIndex);
-        IOstiumPairInfos.PairOpeningFees memory f = m.openingFees;
+        IWhitespacePairInfos.PairOpeningFees memory f = m.openingFees;
         if (
             makerFeeP != f.makerFeeP || takerFeeP != f.takerFeeP || usageFeeP != f.usageFeeP
                 || utilP != f.utilizationThresholdP || makerMaxLev != f.makerMaxLeverage || vaultFeeP != f.vaultFeePercent
@@ -222,7 +222,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
 
         (,,, int64 hillInflectionPoint, uint64 maxFundingFeePerBlock, uint64 springFactor,, uint16 hillPos, uint16 hillNeg, uint16 up, uint16 down,)
         = piView.pairFundingFees(pairIndex);
-        IOstiumPairInfos.PairFundingFeesV2 memory fu = m.funding;
+        IWhitespacePairInfos.PairFundingFeesV2 memory fu = m.funding;
         if (
             hillInflectionPoint != fu.hillInflectionPoint || maxFundingFeePerBlock != fu.maxFundingFeePerBlock
                 || springFactor != fu.springFactor || hillPos != fu.hillPosScale || hillNeg != fu.hillNegScale
@@ -234,7 +234,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
 
         (,, int256 lastLongPure, uint256 brokerPremium, uint64 maxRollover, uint32 lastUpdateBlock, bool negAllowed) =
             piView.pairRolloverFeesV2(pairIndex); // not on the interface
-        IOstiumPairInfos.PairRolloverFeesV2 memory r = m.rollover;
+        IWhitespacePairInfos.PairRolloverFeesV2 memory r = m.rollover;
         if (
             lastUpdateBlock == 0 || lastLongPure != r.lastLongPure || brokerPremium != r.brokerPremium
                 || maxRollover != r.maxRolloverFeePerBlock || negAllowed != r.isNegativeRolloverAllowed
@@ -248,8 +248,8 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @dev Caller must be `registry.manager()` (or gov): `setPairDynamicSpreadParams` is
     ///      `onlyGovOrManager`, and it is the manager's day-to-day tuning knob.
     function configureMarketSpread(address registry, uint16 pairIndex, MarketSpec memory m) public {
-        IOstiumPairInfos pi = IOstiumPairInfos(IOstiumRegistry(registry).getContractAddress("pairInfos"));
-        (uint256 thr, uint128 decay, uint256 k) = OstiumPairInfos(address(pi)).pairDynamicSpreadParams(pairIndex);
+        IWhitespacePairInfos pi = IWhitespacePairInfos(IWhitespaceRegistry(registry).getContractAddress("pairInfos"));
+        (uint256 thr, uint128 decay, uint256 k) = WhitespacePairInfos(address(pi)).pairDynamicSpreadParams(pairIndex);
         if (thr == m.spread.netVolThreshold && decay == m.spread.decayRate && k == m.spread.priceImpactK) return;
         _relay();
         pi.setPairDynamicSpreadParams(pairIndex, m.spread);
@@ -259,7 +259,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @dev Caller must be `registry.gov()`. Needed by `configureTestnet()` on a core deployed by
     ///      `DeployScript` (30 blocks); a core from `deployTestnet()` already has the right value.
     function alignMarketOrdersTimeout(address registry) public {
-        IOstiumTrading trading = IOstiumTrading(IOstiumRegistry(registry).getContractAddress("trading"));
+        IWhitespaceTrading trading = IWhitespaceTrading(IWhitespaceRegistry(registry).getContractAddress("trading"));
         if (trading.marketOrdersTimeout() == TESTNET_MARKET_ORDERS_TIMEOUT) return;
         _relay();
         trading.setMarketOrdersTimeout(TESTNET_MARKET_ORDERS_TIMEOUT);
@@ -268,7 +268,7 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
     /// @notice Shortens the vault's fallback settlement interval to one hour.
     /// @dev Caller must be `registry.gov()`.
     function configureVaultSettlement(address vault) public {
-        OstiumVault v = OstiumVault(vault);
+        WhitespaceVault v = WhitespaceVault(vault);
         if (v.maxSettlementInterval() == TESTNET_MAX_SETTLEMENT_INTERVAL) return;
         _relay();
         v.updateMaxSettlementInterval(TESTNET_MAX_SETTLEMENT_INTERVAL);
@@ -374,11 +374,11 @@ contract DeployTestnetScript is SystemDeployer, OperateScript {
         _requireTestnetChain();
         _broadcasting = true;
 
-        IOstiumRegistry registry = IOstiumRegistry(vm.envAddress("REGISTRY_ADDRESS"));
+        IWhitespaceRegistry registry = IWhitespaceRegistry(vm.envAddress("REGISTRY_ADDRESS"));
         _configure(
             _readTestnetConfig(
                 address(registry),
-                address(OstiumVault(registry.getContractAddress("vault")).asset()),
+                address(WhitespaceVault(registry.getContractAddress("vault")).asset()),
                 registry.getContractAddress("vault")
             ),
             vm.envUint("DEPLOYER_PRIVATE_KEY"),

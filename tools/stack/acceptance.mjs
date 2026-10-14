@@ -415,7 +415,7 @@ async function main() {
 
   // 0 ── LP vault ──────────────────────────────────────────────────────────────────────
   // Runs before any trading: a settlement accepts deposits only while the vault's buffer is
-  // not negative (OstiumVault._maxMint returns 0 when effectiveAccPnlPerTokenUsed() > 0, i.e.
+  // not negative (WhitespaceVault._maxMint returns 0 when effectiveAccPnlPerTokenUsed() > 0, i.e.
   // traders are in net open profit), and a refused request becomes RECLAIMABLE instead.
   await item('vault', 'LP deposit request, cancel part, settlement, claim (or reclaim); withdraw request, settlement, claim', async () => {
     const settle = async () => {
@@ -493,7 +493,7 @@ async function main() {
     const t = await open(trader, { pair: 1, collateral: 200n * E6, leverage: 500 });
     const c = await close(trader, t, 5_000);
     const after = await read(C.tradingStorage, STORAGE, 'getOpenTrade', [trader.address, t.pairIndex, t.index]);
-    // The bond for a partial close comes out of the position (see OstiumTrading.closeTradeMarket).
+    // The bond for a partial close comes out of the position (see WhitespaceTrading.closeTradeMarket).
     const bond = await read(C.pairsStorage, PAIRS, 'pairOracleFee', [t.pairIndex]);
     check(after.collateral === t.collateral / 2n - bond || after.collateral === t.collateral / 2n, `collateral ${t.collateral} -> ${after.collateral} (bond ${bond})`);
     const row = await waitFor('partial row in API', () => apiHistoryRow(trader, c.orderId), 30_000);

@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import '@openzeppelin/contracts/utils/math/SafeCast.sol';
 import '@openzeppelin/contracts/utils/math/SignedMath.sol';
 import '@openzeppelin/contracts/utils/math/Math.sol';
-import '../interfaces/IOstiumTradingStorage.sol';
-import '../interfaces/IOstiumPairInfos.sol';
-import '../interfaces/IOstiumRegistry.sol';
-import '../interfaces/IOstiumVault.sol';
-import '../interfaces/IOstiumPairsStorage.sol';
-import '../interfaces/IOstiumTradingCallbacks.sol';
+import '../interfaces/IWhitespaceTradingStorage.sol';
+import '../interfaces/IWhitespacePairInfos.sol';
+import '../interfaces/IWhitespaceRegistry.sol';
+import '../interfaces/IWhitespaceVault.sol';
+import '../interfaces/IWhitespacePairsStorage.sol';
+import '../interfaces/IWhitespaceTradingCallbacks.sol';
 
 library TradingCallbacksLib {
     using SafeCast for uint256;
@@ -139,8 +139,8 @@ library TradingCallbacksLib {
     ///         collateral, or `false` when the bond cannot be applied to it safely.
     ///
     /// @dev    Collateral falls, so leverage is recomputed against a FIXED notional — the
-    ///         protocol's own invariant, see removeCollateral in OstiumTrading.sol and
-    ///         handleRemoveCollateral in OstiumTradingCallbacks.sol. Subtracting collateral while
+    ///         protocol's own invariant, see removeCollateral in WhitespaceTrading.sol and
+    ///         handleRemoveCollateral in WhitespaceTradingCallbacks.sol. Subtracting collateral while
     ///         leaving leverage alone would silently delete `leverage x bond` of exposure with no
     ///         fill behind it.
     ///
@@ -168,14 +168,14 @@ library TradingCallbacksLib {
     ///
     ///         `t` is mutated in place and returned; callers must not reuse their copy on `false`.
     function applyBondToTrade(
-        IOstiumTradingStorage.Trade memory t,
+        IWhitespaceTradingStorage.Trade memory t,
         uint256 bond,
         uint256 price,
         uint32 initialLeverage,
         uint8 maxSl_P,
-        IOstiumPairInfos pairInfos,
-        IOstiumPairsStorage pairsStorage
-    ) external returns (IOstiumTradingStorage.Trade memory, bool) {
+        IWhitespacePairInfos pairInfos,
+        IWhitespacePairsStorage pairsStorage
+    ) external returns (IWhitespaceTradingStorage.Trade memory, bool) {
         // Strictly less than, not less-or-equal: a position reduced to exactly zero collateral is
         // not a position, and the new collateral is a divisor below.
         if (t.leverage == 0 || t.collateral <= bond) {
@@ -233,7 +233,7 @@ library TradingCallbacksLib {
     /// @dev When overnightMaxLeverage is 0, all trades are overnight and use pairMaxLeverage
     ///      When overnightMaxLeverage > 0, day trades use pairMaxLeverage, overnight trades use overnightMaxLeverage
     /// @dev Duplicated in TradingLib, update it there as well.
-    function getEffectiveMaxLeverage(uint16 pairIndex, bool isDayTrade, IOstiumPairsStorage pairsStorage)
+    function getEffectiveMaxLeverage(uint16 pairIndex, bool isDayTrade, IWhitespacePairsStorage pairsStorage)
         public
         view
         returns (uint32)
@@ -244,7 +244,7 @@ library TradingCallbacksLib {
             : (overnightMaxLeverage > 0 ? overnightMaxLeverage : pairsStorage.pairMaxLeverage(pairIndex));
     }
 
-    function withinMaxLeverage(uint16 pairIndex, uint256 leverage, bool isDayTrade, IOstiumPairsStorage pairsStorage)
+    function withinMaxLeverage(uint16 pairIndex, uint256 leverage, bool isDayTrade, IWhitespacePairsStorage pairsStorage)
         public
         view
         returns (bool)
@@ -265,8 +265,8 @@ library TradingCallbacksLib {
         uint32 leverage,
         uint256 price,
         uint256 fillPrice,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumTradingStorage tradingStorage
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceTradingStorage tradingStorage
     ) public view returns (bool) {
         uint256 newNotional = collateral * leverage / 100;
         if (fillPrice != 0 && fillPrice < price) newNotional = newNotional * price / fillPrice;
@@ -276,9 +276,9 @@ library TradingCallbacksLib {
     }
 
     function getTradeAndPriceData(
-        IOstiumPriceUpKeep.PriceUpKeepAnswer calldata a,
-        IOstiumTradingStorage.Trade calldata t,
-        IOstiumPairInfos pairInfos,
+        IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata a,
+        IWhitespaceTradingStorage.Trade calldata t,
+        IWhitespacePairInfos pairInfos,
         uint32 initialLeverage,
         uint32 maxLeverage,
         uint256 collateral,
@@ -315,29 +315,29 @@ library TradingCallbacksLib {
         uint256 wantedPrice,
         uint256 slippageP,
         uint192 a_price,
-        IOstiumTradingStorage.Trade memory trade,
+        IWhitespaceTradingStorage.Trade memory trade,
         uint256 priceImpactP,
-        IOstiumPairInfos pairInfos,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumTradingStorage tradingStorage
-    ) external view returns (IOstiumTradingCallbacks.CancelReason) {
+        IWhitespacePairInfos pairInfos,
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceTradingStorage tradingStorage
+    ) external view returns (IWhitespaceTradingCallbacks.CancelReason) {
         uint256 maxSlippage = (wantedPrice * slippageP) / 100 / 100;
 
-        if (isPaused) return IOstiumTradingCallbacks.CancelReason.PAUSED;
+        if (isPaused) return IWhitespaceTradingCallbacks.CancelReason.PAUSED;
 
         // Check slippage
         if (trade.buy ? trade.openPrice > wantedPrice + maxSlippage : trade.openPrice < wantedPrice - maxSlippage) {
-            return IOstiumTradingCallbacks.CancelReason.SLIPPAGE;
+            return IWhitespaceTradingCallbacks.CancelReason.SLIPPAGE;
         }
 
         // Check if TP is reached
         if (trade.tp != 0 && (trade.buy ? trade.openPrice >= trade.tp : trade.openPrice <= trade.tp)) {
-            return IOstiumTradingCallbacks.CancelReason.TP_REACHED;
+            return IWhitespaceTradingCallbacks.CancelReason.TP_REACHED;
         }
 
         // Check if SL is reached
         if (trade.sl != 0 && (trade.buy ? trade.openPrice <= trade.sl : trade.openPrice >= trade.sl)) {
-            return IOstiumTradingCallbacks.CancelReason.SL_REACHED;
+            return IWhitespaceTradingCallbacks.CancelReason.SL_REACHED;
         }
 
         // Check exposure limits
@@ -351,102 +351,102 @@ library TradingCallbacksLib {
                 pairsStorage,
                 tradingStorage
             )) {
-            return IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
+            return IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
         }
 
         // Check price impact
         if (priceImpactP * trade.leverage / 100 / PRECISION_18 > pairInfos.maxNegativePnlOnOpenP()) {
-            return IOstiumTradingCallbacks.CancelReason.PRICE_IMPACT;
+            return IWhitespaceTradingCallbacks.CancelReason.PRICE_IMPACT;
         }
 
         // Check max leverage
         if (!withinMaxLeverage(trade.pairIndex, trade.leverage, trade.isDayTrade, pairsStorage)) {
-            return IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE;
+            return IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE;
         }
 
-        return IOstiumTradingCallbacks.CancelReason.NONE;
+        return IWhitespaceTradingCallbacks.CancelReason.NONE;
     }
 
     function getAutomationOpenOrderCancelReason(
-        IOstiumTradingStorage.OpenLimitOrder memory o,
+        IWhitespaceTradingStorage.OpenLimitOrder memory o,
         uint256 priceAfterImpact,
         uint256 a_price,
         uint256 priceImpactP,
-        IOstiumPairInfos pairInfos,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumTradingStorage tradingStorage
-    ) external view returns (IOstiumTradingCallbacks.CancelReason) {
+        IWhitespacePairInfos pairInfos,
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceTradingStorage tradingStorage
+    ) external view returns (IWhitespaceTradingCallbacks.CancelReason) {
         // Check if price target is hit based on order type
-        bool isNotHit = o.orderType == IOstiumTradingStorage.OpenOrderType.LIMIT
+        bool isNotHit = o.orderType == IWhitespaceTradingStorage.OpenOrderType.LIMIT
             ? (o.buy ? priceAfterImpact > o.targetPrice : priceAfterImpact < o.targetPrice)
             : (o.buy ? uint192(a_price) < o.targetPrice : uint192(a_price) > o.targetPrice);
 
-        if (isNotHit) return IOstiumTradingCallbacks.CancelReason.NOT_HIT;
+        if (isNotHit) return IWhitespaceTradingCallbacks.CancelReason.NOT_HIT;
 
         // Check if TP is reached
         if (o.tp != 0 && (o.buy ? priceAfterImpact >= o.tp : priceAfterImpact <= o.tp)) {
-            return IOstiumTradingCallbacks.CancelReason.TP_REACHED;
+            return IWhitespaceTradingCallbacks.CancelReason.TP_REACHED;
         }
 
         // Check if SL is reached
         if (o.sl != 0 && (o.buy ? priceAfterImpact <= o.sl : priceAfterImpact >= o.sl)) {
-            return IOstiumTradingCallbacks.CancelReason.SL_REACHED;
+            return IWhitespaceTradingCallbacks.CancelReason.SL_REACHED;
         }
 
         // Check exposure limits
         if (!withinExposureLimits(
                 o.pairIndex, o.buy, o.collateral, o.leverage, uint192(a_price), priceAfterImpact, pairsStorage, tradingStorage
             )) {
-            return IOstiumTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
+            return IWhitespaceTradingCallbacks.CancelReason.EXPOSURE_LIMITS;
         }
 
         // Check price impact
         if (priceImpactP * o.leverage / 100 / PRECISION_18 > pairInfos.maxNegativePnlOnOpenP()) {
-            return IOstiumTradingCallbacks.CancelReason.PRICE_IMPACT;
+            return IWhitespaceTradingCallbacks.CancelReason.PRICE_IMPACT;
         }
 
         // Check max leverage
         if (!withinMaxLeverage(o.pairIndex, o.leverage, o.isDayTrade, pairsStorage)) {
-            return IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE;
+            return IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE;
         }
 
-        return IOstiumTradingCallbacks.CancelReason.NONE;
+        return IWhitespaceTradingCallbacks.CancelReason.NONE;
     }
 
     function getAutomationCloseOrderCancelReason(
-        IOstiumTradingStorage.LimitOrder orderType,
-        IOstiumTradingStorage.Trade memory t,
+        IWhitespaceTradingStorage.LimitOrder orderType,
+        IWhitespaceTradingStorage.Trade memory t,
         uint256 triggerPrice,
         uint256 usdcSentToTrader,
         bool isDayTradingClosed
-    ) external pure returns (IOstiumTradingCallbacks.CancelReason) {
-        if (orderType == IOstiumTradingStorage.LimitOrder.CLOSE_DAY_TRADE) {
+    ) external pure returns (IWhitespaceTradingCallbacks.CancelReason) {
+        if (orderType == IWhitespaceTradingStorage.LimitOrder.CLOSE_DAY_TRADE) {
             return (t.isDayTrade && isDayTradingClosed)
-                ? IOstiumTradingCallbacks.CancelReason.NONE
-                : IOstiumTradingCallbacks.CancelReason.CLOSE_DAY_TRADE_NOT_ALLOWED;
-        } else if (orderType == IOstiumTradingStorage.LimitOrder.LIQ) {
+                ? IWhitespaceTradingCallbacks.CancelReason.NONE
+                : IWhitespaceTradingCallbacks.CancelReason.CLOSE_DAY_TRADE_NOT_ALLOWED;
+        } else if (orderType == IWhitespaceTradingStorage.LimitOrder.LIQ) {
             return usdcSentToTrader == 0
-                ? IOstiumTradingCallbacks.CancelReason.NONE
-                : IOstiumTradingCallbacks.CancelReason.NOT_HIT;
-        } else if (orderType == IOstiumTradingStorage.LimitOrder.TP) {
+                ? IWhitespaceTradingCallbacks.CancelReason.NONE
+                : IWhitespaceTradingCallbacks.CancelReason.NOT_HIT;
+        } else if (orderType == IWhitespaceTradingStorage.LimitOrder.TP) {
             return t.tp > 0 && (t.buy ? triggerPrice >= t.tp : triggerPrice <= t.tp)
-                ? IOstiumTradingCallbacks.CancelReason.NONE
-                : IOstiumTradingCallbacks.CancelReason.NOT_HIT;
-        } else if (orderType == IOstiumTradingStorage.LimitOrder.SL) {
+                ? IWhitespaceTradingCallbacks.CancelReason.NONE
+                : IWhitespaceTradingCallbacks.CancelReason.NOT_HIT;
+        } else if (orderType == IWhitespaceTradingStorage.LimitOrder.SL) {
             return t.sl > 0 && (t.buy ? triggerPrice <= t.sl : triggerPrice >= t.sl)
-                ? IOstiumTradingCallbacks.CancelReason.NONE
-                : IOstiumTradingCallbacks.CancelReason.NOT_HIT;
+                ? IWhitespaceTradingCallbacks.CancelReason.NONE
+                : IWhitespaceTradingCallbacks.CancelReason.NOT_HIT;
         }
-        return IOstiumTradingCallbacks.CancelReason.NOT_HIT;
+        return IWhitespaceTradingCallbacks.CancelReason.NOT_HIT;
     }
 
     function getHandleRemoveCollateralCancelReason(
-        IOstiumPriceUpKeep.PriceUpKeepAnswer calldata a,
-        IOstiumTradingStorage.Trade memory trade,
-        IOstiumPairInfos pairInfos,
-        IOstiumPairsStorage pairsStorage,
+        IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata a,
+        IWhitespaceTradingStorage.Trade memory trade,
+        IWhitespacePairInfos pairInfos,
+        IWhitespacePairsStorage pairsStorage,
         uint32 initialLeverage
-    ) external returns (IOstiumTradingCallbacks.CancelReason) {
+    ) external returns (IWhitespaceTradingCallbacks.CancelReason) {
         TradingCallbacksLib.PriceImpactResult memory result = getDynamicTradePriceImpact(
             a.price, a.ask, a.bid, false, trade, pairInfos, trade.collateral
         );
@@ -462,7 +462,7 @@ library TradingCallbacksLib {
         uint32 maxLeverage = getEffectiveMaxLeverage(trade.pairIndex, trade.isDayTrade, pairsStorage);
 
         if (maxLeverage == 0) {
-            return IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE;
+            return IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE;
         }
 
         (uint256 tradeValue, uint256 liqMarginValue,,) = pairInfos.getTradeValue(
@@ -480,19 +480,19 @@ library TradingCallbacksLib {
         uint256 usdcSentToTrader = isLiquidated ? 0 : tradeValue;
 
         if (usdcSentToTrader == 0) {
-            return IOstiumTradingCallbacks.CancelReason.UNDER_LIQUIDATION;
+            return IWhitespaceTradingCallbacks.CancelReason.UNDER_LIQUIDATION;
         }
 
         // Check leverage against appropriate max based on trade type (not market state)
         if (!withinMaxLeverage(trade.pairIndex, trade.leverage, trade.isDayTrade, pairsStorage)) {
-            return IOstiumTradingCallbacks.CancelReason.MAX_LEVERAGE;
+            return IWhitespaceTradingCallbacks.CancelReason.MAX_LEVERAGE;
         }
 
         if (profitP == maxPnlP) {
-            return IOstiumTradingCallbacks.CancelReason.GAIN_LOSS;
+            return IWhitespaceTradingCallbacks.CancelReason.GAIN_LOSS;
         }
 
-        return IOstiumTradingCallbacks.CancelReason.NONE;
+        return IWhitespaceTradingCallbacks.CancelReason.NONE;
     }
 
     function _decayVolumeWithPade(uint256 volume, uint32 decayInterval, uint128 decayRate)
@@ -541,8 +541,8 @@ library TradingCallbacksLib {
         int192 ask,
         int192 bid,
         bool isOpen,
-        IOstiumTradingStorage.Trade memory trade,
-        IOstiumPairInfos pairInfos,
+        IWhitespaceTradingStorage.Trade memory trade,
+        IWhitespacePairInfos pairInfos,
         uint256 collateralValue
     ) public returns (PriceImpactResult memory) {
         uint256 priceImpactK = pairInfos.getPairPriceImpactK(trade.pairIndex);
@@ -595,7 +595,7 @@ library TradingCallbacksLib {
         bool isBuy,
         uint256 postFeeCollateral,
         uint32 leverage,
-        IOstiumPairInfos pairInfos
+        IWhitespacePairInfos pairInfos
     ) external returns (uint256 decayedBuyVolume, uint256 decayedSellVolume) {
         (uint256 netVolThreshold, uint128 decayRate,) = pairInfos.pairDynamicSpreadParams(pairIndex);
 
@@ -642,8 +642,8 @@ library TradingCallbacksLib {
         uint32 leverage,
         uint16 pairIndex,
         uint32 takerFeeP,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumTradingStorage.BuilderFee memory bf
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceTradingStorage.BuilderFee memory bf
     ) public view returns (uint256) {
         uint256 preFeeNotional = collateral * leverage / 100;
 
@@ -666,18 +666,18 @@ library TradingCallbacksLib {
 
     function executeRegisterTrade(
         uint256 tradeId,
-        IOstiumTradingStorage.Trade memory trade,
+        IWhitespaceTradingStorage.Trade memory trade,
         uint256 latestPrice,
-        IOstiumTradingStorage.BuilderFee memory bf,
+        IWhitespaceTradingStorage.BuilderFee memory bf,
         uint8 maxSl_P,
-        IOstiumTradingStorage storageT,
-        IOstiumPairInfos pairInfos,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumVault vault
+        IWhitespaceTradingStorage storageT,
+        IWhitespacePairInfos pairInfos,
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceVault vault
     )
         external
         returns (
-            IOstiumTradingStorage.Trade memory,
+            IWhitespaceTradingStorage.Trade memory,
             uint256 reward,
             uint256 vaultReward,
             uint256 oracleFee,
@@ -724,7 +724,7 @@ library TradingCallbacksLib {
         uint32 currTimestamp = block.timestamp.toUint32();
         storageT.storeTrade(
             trade,
-            IOstiumTradingStorage.TradeInfo(
+            IWhitespaceTradingStorage.TradeInfo(
                 tradeId,
                 trade.collateral * uint256(1e12) * trade.leverage / 100 * PRECISION_18 / trade.openPrice,
                 trade.leverage,
@@ -739,13 +739,13 @@ library TradingCallbacksLib {
     }
 
     function executeUnregisterTrade(
-        IOstiumTradingStorage.Trade memory trade,
+        IWhitespaceTradingStorage.Trade memory trade,
         uint256 usdcSentToTrader,
         uint256 liquidationFee,
         uint256 collateralToClose,
-        IOstiumTradingStorage storageT,
-        IOstiumPairsStorage pairsStorage,
-        IOstiumVault vault
+        IWhitespaceTradingStorage storageT,
+        IWhitespacePairsStorage pairsStorage,
+        IWhitespaceVault vault
     ) external {
         pairsStorage.updateGroupCollateral(trade.pairIndex, collateralToClose, trade.buy, false);
 

@@ -1,0 +1,167 @@
+// SPDX-License-Identifier: MIT
+import './IWhitespaceTradingStorage.sol';
+
+pragma solidity ^0.8.24;
+
+interface IWhitespaceTradingCallbacks {
+    enum TradeType {
+        MARKET,
+        LIMIT
+    }
+
+    enum CancelReason {
+        NONE,
+        PAUSED,
+        MARKET_CLOSED,
+        SLIPPAGE,
+        TP_REACHED,
+        SL_REACHED,
+        EXPOSURE_LIMITS,
+        PRICE_IMPACT,
+        MAX_LEVERAGE,
+        NO_TRADE,
+        UNDER_LIQUIDATION,
+        NOT_HIT,
+        GAIN_LOSS,
+        DAY_TRADE_NOT_ALLOWED,
+        CLOSE_DAY_TRADE_NOT_ALLOWED,
+        WRONG_TRADE
+    }
+
+    event MarketOpenExecuted(
+        uint256 indexed orderId, IWhitespaceTradingStorage.Trade t, uint256 priceImpactP, uint256 tradeNotional
+    );
+    event MarketCloseExecuted(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        uint256 price,
+        uint256 priceImpactP,
+        int256 percentProfit,
+        uint256 usdcSentToTrader
+    );
+    event MarketCloseExecutedV2(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        uint256 price,
+        uint256 priceImpactP,
+        int256 percentProfit,
+        uint256 usdcSentToTrader,
+        uint256 percentageClosed
+    );
+    event LimitOpenExecuted(
+        uint256 indexed orderId,
+        uint256 limitIndex,
+        IWhitespaceTradingStorage.Trade t,
+        uint256 priceImpactP,
+        uint256 tradeNotional
+    );
+    event LimitCloseExecuted(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        IWhitespaceTradingStorage.LimitOrder orderType,
+        uint256 price,
+        uint256 priceImpactP,
+        int256 percentProfit,
+        uint256 usdcSentToTrader
+    );
+    event MarketOpenCanceled(
+        uint256 indexed orderId, address indexed trader, uint256 indexed pairIndex, CancelReason cancelReason
+    );
+    event MarketCloseCanceled(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        uint256 pairIndex,
+        uint256 index,
+        CancelReason cancelReason
+    );
+    event AutomationOpenOrderCanceled(
+        uint256 indexed orderId, address indexed trader, uint256 indexed pairIndex, CancelReason cancelReason
+    );
+    event AutomationCloseOrderCanceled(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        uint256 pairIndex,
+        IWhitespaceTradingStorage.LimitOrder orderType,
+        CancelReason cancelReason
+    );
+    event Done(bool done);
+    event Paused(bool paused);
+    event MaxSlPUpdated(uint256 value);
+    event TradeSizeRefUpdated(uint256 value);
+    event DevFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
+    event OracleFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
+    // Emitted once, only when applyBondToTrade actually applies the charge (never on a waive),
+    // from both places OracleFeeCharged above fires with a position argument:
+    // _chargeBondFromPosition's cancelled-close and partial-close paths. Carries the position's
+    // resulting state so an off-chain indexer can update it directly, mirroring what
+    // RemoveCollateralExecuted already carries for the other mid-life collateral mutation.
+    event OracleFeeBondCharged(
+        uint256 indexed tradeId, address indexed trader, uint256 collateral, uint32 leverage, uint192 tp, uint192 sl
+    );
+    event VaultOpeningFeeCharged(uint256 indexed tradeId, address indexed trader, uint256 amount);
+    event VaultLiqFeeCharged(uint256 indexed orderId, uint256 indexed tradeId, address indexed trader, uint256 amount);
+    event RemoveCollateralRejected(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        uint16 pairIndex,
+        uint256 removeAmount,
+        CancelReason reason
+    );
+    event RemoveCollateralExecuted(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        uint16 pairIndex,
+        uint256 removeAmount,
+        uint32 leverage,
+        uint192 tp,
+        uint192 sl
+    );
+    event FeesCharged(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        uint256 rolloverFees,
+        int256 fundingFees
+    );
+    event FeesChargedV2(
+        uint256 indexed orderId,
+        uint256 indexed tradeId,
+        address indexed trader,
+        int256 rolloverFees,
+        int256 fundingFees
+    );
+    event BuilderFeeCharged(uint256 indexed tradeId, address indexed trader, address indexed builder, uint256 amount);
+    event OracleFeeRefunded(uint256 indexed tradeId, address indexed trader, uint16 pairIndex, uint256 amount);
+
+    error IsDone();
+    error IsPaused();
+    error WrongParams();
+    error NotGov(address a);
+    error NotManager(address a);
+    error NotTrading(address a);
+    error NotPriceUpKeep(address a);
+
+    function isDone() external view returns (bool);
+    function isPaused() external view returns (bool);
+    function maxSl_P() external view returns (uint8);
+
+    // only priceUpKeep
+    function openTradeMarketCallback(IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata) external;
+    function closeTradeMarketCallback(IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata) external;
+    function executeAutomationOpenOrderCallback(IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata) external;
+    function executeAutomationCloseOrderCallback(IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata) external;
+    function handleRemoveCollateral(IWhitespacePriceUpKeep.PriceUpKeepAnswer calldata a) external;
+
+    // only gov
+    function done() external;
+    function setVaultMaxAllowance() external;
+    function setMaxSl_P(uint256 _maxSl_P) external;
+    function unsetVaultMaxAllowance(address _oldVault) external;
+
+    // only manager
+    function pause() external;
+}

@@ -15,7 +15,7 @@
  *
  * SCALES (all bigint, never a JS number — see src/lib/money.ts):
  *   - price / ask / bid          1e18   (PRICE_DECIMALS)
- *   - buyVolume / sellVolume     1e18   USD notional (IOstiumPairInfos.DynamicSpreadState)
+ *   - buyVolume / sellVolume     1e18   USD notional (IWhitespacePairInfos.DynamicSpreadState)
  *   - netVolThreshold            1e18   USD notional
  *   - decayRate                  1e18   per second
  *   - priceImpactK               1e27   (PRECISION_27)

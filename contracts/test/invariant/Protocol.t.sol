@@ -6,15 +6,15 @@ import {Vm, console2} from "forge-std/Test.sol";
 import {TestnetTrading} from "../helpers/TestnetTrading.sol";
 import {SystemDeployer} from "../../script/Deploy.s.sol";
 import {USDW} from "../../src/mocks/USDW.sol";
-import {IOstiumVault} from "../../src/vendor/ostium/interfaces/IOstiumVault.sol";
-import {IOstiumTradingStorage} from "../../src/vendor/ostium/interfaces/IOstiumTradingStorage.sol";
+import {IWhitespaceVault} from "../../src/vendor/ostium/interfaces/IWhitespaceVault.sol";
+import {IWhitespaceTradingStorage} from "../../src/vendor/ostium/interfaces/IWhitespaceTradingStorage.sol";
 
 /// @notice Drives random sequences of every user, keeper, liquidator and LP action against the
 ///         testnet deployment. Every contract call is wrapped so a revert is an outcome, not a
 ///         handler failure; prices only ever move inside the oracle's 5% deviation rail and are
 ///         delivered as fresh 3-of-5 signed reports.
 contract ProtocolHandler is TestnetTrading {
-    IOstiumTradingStorage.OpenOrderType internal constant MARKET = IOstiumTradingStorage.OpenOrderType.MARKET;
+    IWhitespaceTradingStorage.OpenOrderType internal constant MARKET = IWhitespaceTradingStorage.OpenOrderType.MARKET;
 
     address[4] internal traderSet = [address(0xA001), address(0xA002), address(0xA003), address(0xA004)];
     address internal lp2 = address(0x1B2);
@@ -151,7 +151,7 @@ contract ProtocolHandler is TestnetTrading {
 
     /// @dev The first open position at or after the seed-chosen (trader, pair, index) slot, so
     ///      a random seed nearly always acts on a position that exists. Leverage 0 if none.
-    function _tradeAt(address t, uint16 pair, uint8 idx) internal view returns (IOstiumTradingStorage.Trade memory tr) {
+    function _tradeAt(address t, uint16 pair, uint8 idx) internal view returns (IWhitespaceTradingStorage.Trade memory tr) {
         uint256 a;
         while (a < 3 && traderSet[a] != t) a++;
         uint256 start = a * 40 + uint256(pair) * 10 + idx;
@@ -183,7 +183,7 @@ contract ProtocolHandler is TestnetTrading {
     function _boundedTrade(uint256 a, uint16 pair, uint256 coll, uint256 lev, bool buy)
         internal
         view
-        returns (IOstiumTradingStorage.Trade memory t)
+        returns (IWhitespaceTradingStorage.Trade memory t)
     {
         t = _tradeFull(
             _actor(a),
@@ -201,7 +201,7 @@ contract ProtocolHandler is TestnetTrading {
         _openMarket(_boundedTrade(a, _pairOf(p), coll, lev, buy), deliverNow);
     }
 
-    function _openMarket(IOstiumTradingStorage.Trade memory tr, bool deliverNow) internal {
+    function _openMarket(IWhitespaceTradingStorage.Trade memory tr, bool deliverNow) internal {
         vm.recordLogs();
         vm.prank(tr.trader);
         try trading.openTrade(tr, _noBuilder(), MARKET, 200) {} catch {
@@ -217,9 +217,9 @@ contract ProtocolHandler is TestnetTrading {
     function placeOrder(uint256 a, uint256 p, uint256 coll, uint256 lev, bool buy, bool stop, uint256 offsetBps)
         external
     {
-        IOstiumTradingStorage.Trade memory tr = _boundedTrade(a, _pairOf(p), coll, lev, buy);
+        IWhitespaceTradingStorage.Trade memory tr = _boundedTrade(a, _pairOf(p), coll, lev, buy);
         tr.openPrice = _restingTarget(tr.openPrice, buy, stop, bound(offsetBps, 0, 300));
-        _placeOrder(tr, stop ? IOstiumTradingStorage.OpenOrderType.STOP : IOstiumTradingStorage.OpenOrderType.LIMIT);
+        _placeOrder(tr, stop ? IWhitespaceTradingStorage.OpenOrderType.STOP : IWhitespaceTradingStorage.OpenOrderType.LIMIT);
     }
 
     /// @dev A limit rests on the favourable side of the price, a stop on the unfavourable one.
@@ -228,7 +228,7 @@ contract ProtocolHandler is TestnetTrading {
         return uint192(uint256(price) * m / 10_000);
     }
 
-    function _placeOrder(IOstiumTradingStorage.Trade memory tr, IOstiumTradingStorage.OpenOrderType kind) internal {
+    function _placeOrder(IWhitespaceTradingStorage.Trade memory tr, IWhitespaceTradingStorage.OpenOrderType kind) internal {
         vm.prank(tr.trader);
         try trading.openTrade(tr, _noBuilder(), kind, 0) {
             _count("placeOrder");
@@ -260,7 +260,7 @@ contract ProtocolHandler is TestnetTrading {
         if (!found) return;
         bool buy = ts.getOpenLimitOrder(t, pair, i).buy;
         bytes memory payload =
-            _automationPayload(t, pair, i, IOstiumTradingStorage.LimitOrder.OPEN, vm.getBlockTimestamp());
+            _automationPayload(t, pair, i, IWhitespaceTradingStorage.LimitOrder.OPEN, vm.getBlockTimestamp());
         vm.recordLogs();
         vm.prank(useB ? liquidatorB : liquidatorA);
         try tradesUpKeep.performUpkeep(payload) {} catch {
@@ -273,12 +273,12 @@ contract ProtocolHandler is TestnetTrading {
     }
 
     function closeMarket(uint256 a, uint256 p, uint256 idx, uint256 pct, bool deliverNow) external {
-        IOstiumTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
+        IWhitespaceTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
         if (tr.leverage == 0) return;
         _close(tr, pct % 3 == 0 ? uint16(0) : uint16(bound(pct, 1_000, 9_000)), deliverNow);
     }
 
-    function _close(IOstiumTradingStorage.Trade memory tr, uint16 pc, bool deliverNow) internal {
+    function _close(IWhitespaceTradingStorage.Trade memory tr, uint16 pc, bool deliverNow) internal {
         vm.recordLogs();
         vm.prank(tr.trader);
         try trading.closeTradeMarket(tr.pairIndex, tr.index, pc, uint192(uint256(int256(px[tr.pairIndex]))), 500) {}
@@ -331,7 +331,7 @@ contract ProtocolHandler is TestnetTrading {
     }
 
     function updateTpSl(uint256 a, uint256 p, uint256 idx, uint256 tpBps, uint256 slBps) external {
-        IOstiumTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
+        IWhitespaceTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
         if (tr.leverage == 0) return;
         slBps = bound(slBps, 0, 2_000);
         _setTpSl(
@@ -341,7 +341,7 @@ contract ProtocolHandler is TestnetTrading {
         );
     }
 
-    function _setTpSl(IOstiumTradingStorage.Trade memory tr, uint192 tp, uint192 sl) internal {
+    function _setTpSl(IWhitespaceTradingStorage.Trade memory tr, uint192 tp, uint192 sl) internal {
         vm.startPrank(tr.trader);
         try trading.updateTp(tr.pairIndex, tr.index, tp) {
             _count("updateTp");
@@ -353,7 +353,7 @@ contract ProtocolHandler is TestnetTrading {
     }
 
     function topUp(uint256 a, uint256 p, uint256 idx, uint256 amount) external {
-        IOstiumTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
+        IWhitespaceTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
         if (tr.leverage == 0) return;
         vm.prank(tr.trader);
         try trading.topUpCollateral(tr.pairIndex, tr.index, bound(amount, 1e6, 1_000e6)) {
@@ -362,12 +362,12 @@ contract ProtocolHandler is TestnetTrading {
     }
 
     function removeCollateral(uint256 a, uint256 p, uint256 idx, uint256 amount) external {
-        IOstiumTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
+        IWhitespaceTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
         if (tr.leverage == 0 || tr.collateral < 2) return;
         _remove(tr, bound(amount, 1, tr.collateral - 1));
     }
 
-    function _remove(IOstiumTradingStorage.Trade memory tr, uint256 amount) internal {
+    function _remove(IWhitespaceTradingStorage.Trade memory tr, uint256 amount) internal {
         vm.recordLogs();
         vm.prank(tr.trader);
         try trading.removeCollateral(tr.pairIndex, tr.index, amount) {} catch {
@@ -380,12 +380,12 @@ contract ProtocolHandler is TestnetTrading {
 
     /// @notice A liquidator triggers TP, SL or LIQ on a position and the keeper delivers.
     function triggerClose(uint256 a, uint256 p, uint256 idx, uint256 kind) external {
-        IOstiumTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
+        IWhitespaceTradingStorage.Trade memory tr = _tradeAt(_actor(a), _pairOf(p), uint8(idx % 10));
         if (tr.leverage == 0) return;
-        _triggerClose(tr, IOstiumTradingStorage.LimitOrder(kind % 3)); // TP, SL, LIQ
+        _triggerClose(tr, IWhitespaceTradingStorage.LimitOrder(kind % 3)); // TP, SL, LIQ
     }
 
-    function _triggerClose(IOstiumTradingStorage.Trade memory tr, IOstiumTradingStorage.LimitOrder k) internal {
+    function _triggerClose(IWhitespaceTradingStorage.Trade memory tr, IWhitespaceTradingStorage.LimitOrder k) internal {
         bytes memory payload = _automationPayload(tr.trader, tr.pairIndex, tr.index, k, vm.getBlockTimestamp());
         vm.recordLogs();
         vm.prank(liquidatorA);
@@ -481,23 +481,23 @@ contract ProtocolHandler is TestnetTrading {
         address who = _lp(s);
         uint32[] memory ids = lpRequestIds[who];
         for (uint256 i = 0; i < ids.length; i++) {
-            IOstiumVault.RequestStatus ds = vault.getDepositStatus(who, ids[i]);
+            IWhitespaceVault.RequestStatus ds = vault.getDepositStatus(who, ids[i]);
             vm.startPrank(who);
-            if (ds == IOstiumVault.RequestStatus.CLAIMABLE) {
+            if (ds == IWhitespaceVault.RequestStatus.CLAIMABLE) {
                 try vault.claimDeposit(ids[i]) {
                     _count("claimDeposit");
                 } catch {}
-            } else if (ds == IOstiumVault.RequestStatus.RECLAIMABLE) {
+            } else if (ds == IWhitespaceVault.RequestStatus.RECLAIMABLE) {
                 try vault.reclaimDeposit(ids[i]) {
                     _count("reclaimDeposit");
                 } catch {}
             }
-            IOstiumVault.RequestStatus ws = vault.getWithdrawStatus(who, ids[i]);
-            if (ws == IOstiumVault.RequestStatus.CLAIMABLE) {
+            IWhitespaceVault.RequestStatus ws = vault.getWithdrawStatus(who, ids[i]);
+            if (ws == IWhitespaceVault.RequestStatus.CLAIMABLE) {
                 try vault.claimWithdraw(ids[i]) {
                     _count("claimWithdraw");
                 } catch {}
-            } else if (ws == IOstiumVault.RequestStatus.RECLAIMABLE) {
+            } else if (ws == IWhitespaceVault.RequestStatus.RECLAIMABLE) {
                 try vault.reclaimWithdraw(ids[i]) {
                     _count("reclaimWithdraw");
                 } catch {}
@@ -615,12 +615,12 @@ contract ProtocolInvariantTest is TestnetTrading {
             }
             uint256[] memory ids = ts.getPendingOrderIds(tr[a]);
             for (uint256 k = 0; k < ids.length; k++) {
-                (,,, IOstiumTradingStorage.Trade memory t,) = ts.reqID_pendingMarketOrder(ids[k]);
+                (,,, IWhitespaceTradingStorage.Trade memory t,) = ts.reqID_pendingMarketOrder(ids[k]);
                 if (t.leverage > 0) sum += t.collateral; // opens carry collateral, closes do not
             }
         }
         for (uint16 p = 0; p < 4; p++) {
-            IOstiumTradingStorage.OpenLimitOrder[] memory os = ts.getOpenLimitOrders(p);
+            IWhitespaceTradingStorage.OpenLimitOrder[] memory os = ts.getOpenLimitOrders(p);
             for (uint256 k = 0; k < os.length; k++) {
                 sum += os[k].collateral;
             }
@@ -660,7 +660,7 @@ contract ProtocolInvariantTest is TestnetTrading {
     // -------------------------------------------------------------------------------------
 
     /// @dev The contract's `currentPercentProfit`, at the market price (what LIQ uses).
-    function _pnlP(IOstiumTradingStorage.Trade memory t, uint32 initLev, uint256 price)
+    function _pnlP(IWhitespaceTradingStorage.Trade memory t, uint32 initLev, uint256 price)
         internal
         pure
         returns (int256 profitP)
@@ -672,7 +672,7 @@ contract ProtocolInvariantTest is TestnetTrading {
         if (profitP > maxP) profitP = maxP;
     }
 
-    function _valueAt(address who, uint16 p, uint8 i, IOstiumTradingStorage.Trade memory t, uint256 price)
+    function _valueAt(address who, uint16 p, uint8 i, IWhitespaceTradingStorage.Trade memory t, uint256 price)
         internal
         view
         returns (uint256)
@@ -688,9 +688,9 @@ contract ProtocolInvariantTest is TestnetTrading {
     }
 
     function _shouldLiquidate(address who, uint16 p, uint8 i, uint256 price) internal view returns (bool) {
-        IOstiumTradingStorage.Trade memory t = ts.getOpenTrade(who, p, i);
+        IWhitespaceTradingStorage.Trade memory t = ts.getOpenTrade(who, p, i);
         if (t.leverage == 0) return false;
-        uint256 trig = ts.orderTriggerBlock(who, p, i, IOstiumTradingStorage.LimitOrder.LIQ);
+        uint256 trig = ts.orderTriggerBlock(who, p, i, IWhitespaceTradingStorage.LimitOrder.LIQ);
         if (trig != 0 && vm.getBlockNumber() - trig < TRIGGER_TIMEOUT) return false; // a LIQ is already in flight
         return _valueAt(who, p, i, t, price)
             < pairInfos.getTradeLiquidationMargin(t.collateral, t.leverage, ps.pairMaxLeverage(p));
@@ -699,7 +699,7 @@ contract ProtocolInvariantTest is TestnetTrading {
     function _checkLiquidatable(address who, uint16 p, uint8 i, int192 last) internal {
         if (!_shouldLiquidate(who, p, i, uint256(int256(last)))) return;
         uint256 snap = vm.snapshotState();
-        (uint256 id, uint32 t) = _triggerNow(liquidatorA, who, p, i, IOstiumTradingStorage.LimitOrder.LIQ);
+        (uint256 id, uint32 t) = _triggerNow(liquidatorA, who, p, i, IWhitespaceTradingStorage.LimitOrder.LIQ);
         _deliverAt(id, p, t, last);
         assertEq(ts.getOpenTrade(who, p, i).leverage, 0, "below maintenance but not liquidated");
         vm.revertToState(snap);
@@ -737,15 +737,15 @@ contract ProtocolInvariantTest is TestnetTrading {
                 uint32 id = ids[j];
                 uint256 dep = vault.pendingDepositRequest(l[k], id);
                 if (dep > 0) {
-                    IOstiumVault.RequestStatus s = vault.getDepositStatus(l[k], id);
-                    if (s == IOstiumVault.RequestStatus.CLAIMABLE) {
+                    IWhitespaceVault.RequestStatus s = vault.getDepositStatus(l[k], id);
+                    if (s == IWhitespaceVault.RequestStatus.CLAIMABLE) {
                         sum += dep - dep * vault.settlementAllocationScaleP(id) / 1e18;
                     } else {
                         sum += dep; // PENDING or RECLAIMABLE
                     }
                 }
                 uint256 wd = vault.pendingWithdrawRequest(l[k], id);
-                if (wd > 0 && vault.getWithdrawStatus(l[k], id) == IOstiumVault.RequestStatus.CLAIMABLE) {
+                if (wd > 0 && vault.getWithdrawStatus(l[k], id) == IWhitespaceVault.RequestStatus.CLAIMABLE) {
                     sum += wd * vault.settlementShareToAssetsPrice(id) / 1e18;
                 }
             }

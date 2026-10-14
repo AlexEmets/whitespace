@@ -11,7 +11,7 @@ import { FundingModal } from '@/components/FundingModal';
  * after the gas was spent. Moving a control must not lose the guard on it.
  *
  * The withdraw side gets the same guard for the same reason: `requestWithdraw` moves the
- * caller's shares with `_transfer` (OstiumVault.sol:475), which reverts identically when
+ * caller's shares with `_transfer` (WhitespaceVault.sol:475), which reverts identically when
  * the wallet does not hold them.
  */
 
@@ -217,7 +217,7 @@ describe('<FundingModal> withdraw', () => {
 describe('<FundingModal> settlement lifecycle', () => {
   /**
    * Each status accepts exactly one call. `claimWithdraw` reverts unless CLAIMABLE
-   * (OstiumVault.sol:532) and `cancelRequest*` only in PENDING (:481, :492), so offering
+   * (WhitespaceVault.sol:532) and `cancelRequest*` only in PENDING (:481, :492), so offering
    * the wrong button is offering a guaranteed revert.
    */
   it('offers cancel — and only cancel — while the request is PENDING', async () => {
@@ -259,7 +259,7 @@ describe('<FundingModal> settlement lifecycle', () => {
 
   /**
    * The state that had no control at all before this change. A settlement that ran and
-   * did not fill the request (`totalSharesToWithdraw == 0`, OstiumVault.sol:590) left the
+   * did not fill the request (`totalSharesToWithdraw == 0`, WhitespaceVault.sol:590) left the
    * user with funds in the contract and nothing in the product to act on them with.
    */
   it('offers reclaim — not claim — when the settlement did not fill the request', async () => {

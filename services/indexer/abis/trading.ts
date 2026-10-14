@@ -1,5 +1,5 @@
 // Event fragments transcribed from
-// contracts/src/vendor/ostium/interfaces/IOstiumTrading.sol.
+// contracts/src/vendor/ostium/interfaces/IWhitespaceTrading.sol.
 // Only the events this indexer consumes are included (Ponder only needs the
 // events it subscribes to; the full interface also has admin/error surface
 // this indexer does not touch). Every signature below was cross-checked
@@ -22,7 +22,7 @@ const BUILDER_FEE_COMPONENTS = [
 
 export const tradingAbi = [
   // --- Limit / stop entries. OpenLimitPlacedV2 is the only placement event
-  // OstiumTrading.openTrade emits (the V1 OpenLimitPlaced is declared but never emitted).
+  // WhitespaceTrading.openTrade emits (the V1 OpenLimitPlaced is declared but never emitted).
   {
     type: 'event',
     name: 'OpenLimitPlacedV2',
@@ -31,7 +31,7 @@ export const tradingAbi = [
       { name: 'pairIndex', type: 'uint16', indexed: true },
       { name: 'index', type: 'uint8', indexed: false },
       { name: 'trade', type: 'tuple', indexed: false, components: TRADE_COMPONENTS },
-      { name: 'orderType', type: 'uint8', indexed: false }, // IOstiumTradingStorage.OpenOrderType
+      { name: 'orderType', type: 'uint8', indexed: false }, // IWhitespaceTradingStorage.OpenOrderType
       { name: 'builderFee', type: 'tuple', indexed: false, components: BUILDER_FEE_COMPONENTS },
     ],
   },

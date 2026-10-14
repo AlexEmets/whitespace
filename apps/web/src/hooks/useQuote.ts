@@ -72,7 +72,7 @@ export interface QuoteInputsResult {
 
 /**
  * Live inputs to the vault's fill formula for a pair: the on-chain dynamic-spread parameters from
- * `IOstiumPairInfos`, evaluated against the live mark by src/lib/priceImpact.ts.
+ * `IWhitespacePairInfos`, evaluated against the live mark by src/lib/priceImpact.ts.
  *
  * Recomputes whenever the mark moves (`usePrice` polls every 3s and takes WS pushes), and
  * re-reads the chain state every 60s — the pair parameters only change by governance, and

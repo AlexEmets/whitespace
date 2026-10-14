@@ -59,7 +59,7 @@ vi.mock('wagmi', () => ({
   },
   useBlockNumber: () => ({ data: 1n }),
   useAccount: () => ({ address: '0xTraderAddress000000000000000000000000', isConnected: true }),
-  // PositionsList reads the liquidation price straight off OstiumPairInfos via
+  // PositionsList reads the liquidation price straight off WhitespacePairInfos via
   // useLiquidationPrice. Mocked at the wagmi boundary rather than at the hook, so the
   // hook's own arg-gating (it must not fire with a zero price/collateral/leverage) still
   // runs under test.

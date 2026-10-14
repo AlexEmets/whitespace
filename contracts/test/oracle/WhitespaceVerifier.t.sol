@@ -5,9 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {OstiumRegistry} from "../../src/vendor/ostium/OstiumRegistry.sol";
-import {IOstiumRegistry} from "../../src/vendor/ostium/interfaces/IOstiumRegistry.sol";
-import {IOstiumVerifier} from "../../src/vendor/ostium/interfaces/IOstiumVerifier.sol";
+import {WhitespaceRegistry} from "../../src/vendor/ostium/WhitespaceRegistry.sol";
+import {IWhitespaceRegistry} from "../../src/vendor/ostium/interfaces/IWhitespaceRegistry.sol";
+import {IWhitespaceVerifier} from "../../src/vendor/ostium/interfaces/IWhitespaceVerifier.sol";
 import {WhitespaceVerifier} from "../../src/oracle/WhitespaceVerifier.sol";
 import {ReportLib} from "../helpers/ReportLib.sol";
 
@@ -41,13 +41,13 @@ contract WhitespaceVerifierTest is Test {
     address internal manager = address(0xA11);
     address internal owner = address(0x0E1);
 
-    OstiumRegistry internal registry;
+    WhitespaceRegistry internal registry;
     WhitespaceVerifier internal verifier;
 
     uint256[] internal allKeys;
 
     function setUp() public {
-        registry = new OstiumRegistry(gov, dev, manager, owner);
+        registry = new WhitespaceRegistry(gov, dev, manager, owner);
 
         allKeys = [K1, K2, K3, K4, K5];
         address[] memory signers = new address[](5);
@@ -55,7 +55,7 @@ contract WhitespaceVerifierTest is Test {
             signers[i] = vm.addr(allKeys[i]);
         }
 
-        verifier = new WhitespaceVerifier(IOstiumRegistry(address(registry)), signers, THRESHOLD);
+        verifier = new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), signers, THRESHOLD);
     }
 
     function _report() internal view returns (ReportLib.Report memory) {
@@ -206,7 +206,7 @@ contract WhitespaceVerifierTest is Test {
         uint256[] memory keys = ReportLib.sortKeysByAddress(ReportLib.keys3(K1, K2, rogueKey));
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.NotAuthorizedSigner.selector, vm.addr(rogueKey))
+            abi.encodeWithSelector(IWhitespaceVerifier.NotAuthorizedSigner.selector, vm.addr(rogueKey))
         );
         verifier.verify(ReportLib.pack(reportData, ReportLib.signUnsorted(reportData, keys)));
     }
@@ -221,7 +221,7 @@ contract WhitespaceVerifierTest is Test {
         uint256[] memory keys = ReportLib.sortKeysByAddress(ReportLib.keys3(r1, r2, r3));
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.NotAuthorizedSigner.selector, vm.addr(keys[0]))
+            abi.encodeWithSelector(IWhitespaceVerifier.NotAuthorizedSigner.selector, vm.addr(keys[0]))
         );
         verifier.verify(ReportLib.pack(reportData, ReportLib.signUnsorted(reportData, keys)));
     }
@@ -234,7 +234,7 @@ contract WhitespaceVerifierTest is Test {
         verifier.unregisterAuthorizedSigner(vm.addr(K3));
 
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.NotAuthorizedSigner.selector, vm.addr(K3))
+            abi.encodeWithSelector(IWhitespaceVerifier.NotAuthorizedSigner.selector, vm.addr(K3))
         );
         verifier.verify(_signed(ReportLib.keys3(K1, K2, K3)));
     }
@@ -276,7 +276,7 @@ contract WhitespaceVerifierTest is Test {
             signers[i] = vm.addr(allKeys[i]);
         }
         WhitespaceVerifier sibling =
-            new WhitespaceVerifier(IOstiumRegistry(address(registry)), signers, THRESHOLD);
+            new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), signers, THRESHOLD);
 
         bytes memory reportForOriginal = _signed(ReportLib.keys3(K1, K2, K3));
         vm.expectRevert(
@@ -413,14 +413,14 @@ contract WhitespaceVerifierTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(WhitespaceVerifier.ThresholdExceedsSignerCount.selector, 3, 2)
         );
-        new WhitespaceVerifier(IOstiumRegistry(address(registry)), two, 3);
+        new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), two, 3);
     }
 
     function test_constructorRejectsZeroThreshold() public {
         address[] memory one = new address[](1);
         one[0] = vm.addr(K1);
-        vm.expectRevert(IOstiumVerifier.WrongParams.selector);
-        new WhitespaceVerifier(IOstiumRegistry(address(registry)), one, 0);
+        vm.expectRevert(IWhitespaceVerifier.WrongParams.selector);
+        new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), one, 0);
     }
 
     function test_constructorRejectsDuplicateSigner() public {
@@ -428,20 +428,20 @@ contract WhitespaceVerifierTest is Test {
         dupes[0] = vm.addr(K1);
         dupes[1] = vm.addr(K1);
         vm.expectRevert(
-            abi.encodeWithSelector(IOstiumVerifier.AlreadyAuthorizedSigner.selector, vm.addr(K1))
+            abi.encodeWithSelector(IWhitespaceVerifier.AlreadyAuthorizedSigner.selector, vm.addr(K1))
         );
-        new WhitespaceVerifier(IOstiumRegistry(address(registry)), dupes, 1);
+        new WhitespaceVerifier(IWhitespaceRegistry(address(registry)), dupes, 1);
     }
 
     function test_onlyGovCanRegisterSigner() public {
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVerifier.NotGov.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVerifier.NotGov.selector, address(0xBAD)));
         verifier.registerAuthorizedSigner(vm.addr(ROGUE));
     }
 
     function test_onlyGovCanSetThreshold() public {
         vm.prank(address(0xBAD));
-        vm.expectRevert(abi.encodeWithSelector(IOstiumVerifier.NotGov.selector, address(0xBAD)));
+        vm.expectRevert(abi.encodeWithSelector(IWhitespaceVerifier.NotGov.selector, address(0xBAD)));
         verifier.setThreshold(1);
     }
 
@@ -491,7 +491,7 @@ contract WhitespaceVerifierTest is Test {
 
     function test_setThresholdToZeroReverts() public {
         vm.prank(gov);
-        vm.expectRevert(IOstiumVerifier.WrongParams.selector);
+        vm.expectRevert(IWhitespaceVerifier.WrongParams.selector);
         verifier.setThreshold(0);
     }
 

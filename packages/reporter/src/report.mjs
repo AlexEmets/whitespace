@@ -2,7 +2,7 @@ import { encodeAbiParameters, keccak256 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 /**
- * The tuple OstiumPrivatePriceUpKeep.performUpkeep decodes out of the verifier response.
+ * The tuple WhitespacePrivatePriceUpKeep.performUpkeep decodes out of the verifier response.
  * Prices carry 18 decimals; a wrong exponent does not revert anywhere.
  */
 const REPORT_FIELDS = [
@@ -17,7 +17,7 @@ export function buildReportData({ feedId, timestamp, price, bid, ask, isMarketOp
 }
 
 /**
- * OstiumVerifier.verify recovers with the EIP-191 personal_sign prefix over keccak256(reportData),
+ * WhitespaceVerifier.verify recovers with the EIP-191 personal_sign prefix over keccak256(reportData),
  * so we sign the raw hash as a message rather than signing it directly.
  */
 export async function signReport(reportData, privateKey) {

@@ -14,7 +14,7 @@
  *        - decide with triggerRules.mjs on the chain values, never the DB values;
  *        - gate with degradedMode.canTrigger;
  *        - skip if the timestamp would be BACKDATED_EXECUTION / NO_TP / NO_SL
- *          (OstiumTrading.sol:585-619) or a trigger is already pending on chain
+ *          (WhitespaceTrading.sol:585-619) or a trigger is already pending on chain
  *          (PENDING_TRIGGER, :621-623).
  *   4. Dedupe by (trader, pair, index, kind), chunk into batches of <= maxBatchSize,
  *      and hand every batch at once to the injected (pipelined) sendPerformUpkeep.
@@ -32,7 +32,7 @@
  * BACKDATED / NO_SL / NO_TP checks only get easier to pass as the timestamp grows.
  *
  * Per position at most one close kind fires, in LIQ > SL > TP order: the callback turns
- * any close of a liquidatable trade into a liquidation (OstiumTradingCallbacks.sol:546,
+ * any close of a liquidatable trade into a liquidation (WhitespaceTradingCallbacks.sol:546,
  * :583-584), so when LIQ is hit but gated (degraded market, recovery window), SL and TP
  * are held back too — otherwise they would liquidate through the side door.
  *
@@ -42,7 +42,7 @@
  * gets PENDING_TRIGGER / NO_TRADE / NO_LIMIT, which is a status, not a revert.
  *
  * Entry backoff: a LIMIT/STOP entry the callback cancels (EXPOSURE_LIMITS, PRICE_IMPACT,
- * MAX_LEVERAGE, ... — OstiumTradingCallbacks.executeAutomationOpenOrderCallback) is NOT
+ * MAX_LEVERAGE, ... — WhitespaceTradingCallbacks.executeAutomationOpenOrderCallback) is NOT
  * removed: it keeps resting with its trigger cleared, and is just as hit on the next sweep.
  * Those checks depend on pool-wide state the bot does not model, so instead each further
  * trigger of the same still-resting entry waits twice as long as the last (cooldownMs,
@@ -341,7 +341,7 @@ export function createAutomationEngine({
         if (!gate.ok) return skip(out, p, kind, gate.reason, detail);
       }
 
-      // executeAutomationOrder's own early returns (OstiumTrading.sol:603-619).
+      // executeAutomationOrder's own early returns (WhitespaceTrading.sol:603-619).
       if (tsSec < trade.createdAt) return skip(out, p, kind, 'backdated', detail);
       if (kind === TriggerKind.SL && trade.slLastUpdated > tsSec) return skip(out, p, kind, 'backdated', detail);
       if (kind === TriggerKind.TP && trade.tpLastUpdated > tsSec) return skip(out, p, kind, 'backdated', detail);

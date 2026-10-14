@@ -24,7 +24,7 @@ function MarketRow({
   const { data: price } = usePrice(pairIndex);
   const change = useMarket24h(pairIndex);
   // openInterest.{long,short} are collateral-denominated (6 decimals) per
-  // IOstiumTradingStorage — same assumption as elsewhere in this app; see
+  // IWhitespaceTradingStorage — same assumption as elsewhere in this app; see
   // docs/decisions/phase-5-frontend.md for the note that this is not spelled out by D3.
   const oiTotal = collateralToRaw(openInterest.long) + collateralToRaw(openInterest.short);
 

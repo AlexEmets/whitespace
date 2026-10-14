@@ -1,6 +1,6 @@
 /**
  * Exact trigger rules for every automation order type the bot fires through
- * OstiumTradesUpKeep.performUpkeep -> OstiumTrading.executeAutomationOrder. Each rule is
+ * WhitespaceTradesUpKeep.performUpkeep -> WhitespaceTrading.executeAutomationOrder. Each rule is
  * the callback's own hit condition, with the callback's own choice of price. Pure; no
  * I/O. Line references are to contracts/src/vendor/ostium/.
  *
@@ -9,7 +9,7 @@
  * index quote (falling back to the mark when a side is missing). A `market` snapshot
  * here is exactly those three numbers plus the pair's dynamic-spread state.
  *
- * CLOSE side — OstiumTradingCallbacks.executeAutomationCloseOrderCallback (:499-608):
+ * CLOSE side — WhitespaceTradingCallbacks.executeAutomationCloseOrderCallback (:499-608):
  *   isMarketPrice = orderType in {LIQ, SL}                                    (:534-535)
  *   LIQ  hit  <=> tradeValue < liqMarginValue at `price`                     (:546, lib :411-414)
  *   SL   hit  <=> sl > 0 && (buy ? price <= sl : price >= sl)                (lib :419-422, price = a.price)
