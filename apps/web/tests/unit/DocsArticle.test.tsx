@@ -192,4 +192,26 @@ describe('<DocsArticle>', () => {
     expect(text).toMatch(/OstiumTradesUpKeep/);
     expect(text).toMatch(/degraded/i);
   });
+
+  it('ends with where to find the community and how to report a bug, each opening in a new tab', () => {
+    paramsAvailable.value = true;
+    render(<DocsArticle />);
+    const section = screen.getByTestId('docs-section-community');
+    const hrefs = Array.from(section.querySelectorAll('a')).map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(
+      expect.arrayContaining([
+        'https://t.me/WhiteSpaceAnnouncementsEN',
+        'https://t.me/WhiteSpaceAnnouncementsUA',
+        'https://t.me/WhiteSpaceEN',
+        'https://t.me/WhiteSpaceUA',
+        'https://x.com/WhiteSpaceFi',
+        'https://forms.gle/NPronWQVVFu5MSnt9',
+      ]),
+    );
+    for (const a of section.querySelectorAll('a')) {
+      expect(a).toHaveAttribute('target', '_blank');
+      expect(a.getAttribute('rel')).toContain('noopener');
+    }
+  });
 });
+

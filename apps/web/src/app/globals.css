@@ -890,6 +890,19 @@ a {
   margin-top: 0;
 }
 
+/* The landing page's community block: two-up like the cards above it, but under a heading,
+   so it keeps the gap that `.steps` gives below a lede. */
+.steps.two-up.community {
+  margin-top: 2.2rem;
+}
+
+.step .community-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.4rem;
+  margin-top: auto;
+}
+
 .step {
   display: flex;
   flex-direction: column;
@@ -963,9 +976,17 @@ a {
   font-size: 0.9rem;
 }
 
+.landing-footer .footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  /* Wraps rather than running off the edge: with X and Telegram added the row is wider
+     than a phone, and "Telegram" was pushed past the right edge of the screen. */
+  gap: 0.5rem 1.5rem;
+}
+
 .landing-footer a {
   text-decoration: none;
-  margin-left: 1.5rem;
   color: var(--fg-muted);
 }
 
@@ -2528,8 +2549,9 @@ table.data-table[data-testid='positions-table'] .cell-sub.neg {
     padding: 2rem var(--page-pad) 2.4rem;
   }
 
-  .landing-footer a {
-    margin: 0 1.2rem 0 0;
+  .landing-footer .footer-links {
+    justify-content: flex-start;
+    gap: 0.6rem 1.2rem;
   }
 
   .markets-table-wrap {

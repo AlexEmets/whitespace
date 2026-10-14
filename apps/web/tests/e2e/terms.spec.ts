@@ -79,3 +79,34 @@ test('the landing page states points honestly and links the Terms and the Privac
   await page.waitForURL('**/privacy', { timeout: 30_000 });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Privacy Policy');
 });
+
+test('the landing page links the community: announcements, chats, X and the bug form', async ({ page, baseURL }) => {
+  await installMockBackend(page, new TestState(), `${baseURL}/__api`);
+  await page.goto('/');
+  const block = page.getByTestId('landing-community');
+  await block.scrollIntoViewIfNeeded();
+  await expect(block).toBeVisible();
+  const hrefs = await block.locator('a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+  expect(hrefs).toEqual([
+    'https://t.me/WhiteSpaceAnnouncementsEN',
+    'https://t.me/WhiteSpaceAnnouncementsUA',
+    'https://t.me/WhiteSpaceEN',
+    'https://t.me/WhiteSpaceUA',
+    'https://x.com/WhiteSpaceFi',
+    'https://forms.gle/NPronWQVVFu5MSnt9',
+  ]);
+  await expect(page.getByTestId('footer-x')).toHaveAttribute('href', 'https://x.com/WhiteSpaceFi');
+  await expect(page.getByTestId('footer-telegram')).toHaveAttribute('href', 'https://t.me/WhiteSpaceAnnouncementsEN');
+});
+
+/** With X and Telegram added the footer row outgrew a phone and pushed "Telegram" off-screen. */
+test('on a phone the footer links wrap instead of running off the edge', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installMockBackend(page, new TestState(), `${baseURL}/__api`);
+  await page.goto('/');
+  const telegram = page.getByTestId('footer-telegram');
+  await telegram.scrollIntoViewIfNeeded();
+  const box = await telegram.boundingBox();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});

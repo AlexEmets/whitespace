@@ -10,6 +10,7 @@ import { TickerStrip } from '@/components/TickerStrip';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
 import { formatMoney, leverageToRaw } from '@/lib/money';
+import { COMMUNITY, SOCIAL } from '@/lib/social';
 
 /** The size the landing page's live quote is shown for: a round 10,000 USDW of notional,
  * large enough that the size-dependent impact is visible in the two prices. */
@@ -194,6 +195,27 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="landing-section" data-testid="landing-community">
+        <span className="section-eyebrow">04 · Community</span>
+        <h2>Follow along. Tell us what breaks.</h2>
+        <div className="steps two-up community">
+          {COMMUNITY.map((c) => (
+            <div key={c.id} className="step panel" data-testid={`community-${c.id}`}>
+              <span className="step-index">{c.kicker}</span>
+              <h3>{c.title}</h3>
+              <p>{c.body}</p>
+              <p className="community-links">
+                {c.links.map((l) => (
+                  <a key={l.href} href={l.href} target="_blank" rel="noopener noreferrer">
+                    {l.label} ↗
+                  </a>
+                ))}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="landing-cta panel">
         <h2>Leave the noise outside.</h2>
         <Link href="/trade" className="btn-primary">
@@ -203,7 +225,7 @@ export default function LandingPage() {
 
       <footer className="landing-footer">
         <span>whitespace · Whitechain testnet 1874</span>
-        <span>
+        <span className="footer-links">
           <Link href="/docs">Docs</Link>
           <Link href="/faucet">Faucet</Link>
           <Link href="/vaults">Vaults</Link>
@@ -213,6 +235,12 @@ export default function LandingPage() {
           <Link href="/privacy" data-testid="footer-privacy">
             Privacy
           </Link>
+          <a href={SOCIAL.x} target="_blank" rel="noopener noreferrer" data-testid="footer-x">
+            X
+          </a>
+          <a href={SOCIAL.announcementsEn} target="_blank" rel="noopener noreferrer" data-testid="footer-telegram">
+            Telegram
+          </a>
         </span>
       </footer>
     </div>

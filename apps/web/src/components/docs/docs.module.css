@@ -156,6 +156,19 @@
   margin: 0 0 1rem;
 }
 
+/* Links in running copy take the accent, as on the landing page, rather than the muted
+   body colour every other word here has. */
+.p a,
+.li a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.p a:hover,
+.li a:hover {
+  text-decoration: underline;
+}
+
 .p strong,
 .li strong {
   color: var(--fg);

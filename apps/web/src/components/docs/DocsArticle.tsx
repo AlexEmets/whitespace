@@ -14,6 +14,7 @@ import {
 } from '@/lib/config';
 import { DEPLOYMENT_1874 } from '@/lib/deployment';
 import { formatBps, formatMoney } from '@/lib/money';
+import { COMMUNITY } from '@/lib/social';
 import styles from './docs.module.css';
 
 /**
@@ -65,6 +66,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'fees', title: 'Fees' },
   { id: 'contracts', title: 'Contracts' },
   { id: 'limits', title: 'Limits of this testnet' },
+  { id: 'community', title: 'Community & support' },
 ];
 
 function P({ children }: { children: ReactNode }) {
@@ -685,6 +687,28 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               Source: docs/decisions/phase-0-1.md §5–6; phase-2-oracle-hardening.md §7, §10;
               phase-4-indexer-api.md §6; phase-5-frontend.md (design-honesty rulings).
             </p>
+          </DocSection>
+
+          <DocSection index={9} id="community" title="Community & support">
+            <P>
+              Announcements, the community chats and bug reports all live outside this site. If something here is wrong
+              or broken, the bug form is the fastest way to reach the team.
+            </P>
+            <List>
+              {COMMUNITY.map((c) => (
+                <LI key={c.id}>
+                  <strong>{c.title}</strong> — {c.body}{' '}
+                  {c.links.map((l, i) => (
+                    <span key={l.href}>
+                      {i > 0 ? ' · ' : ''}
+                      <a href={l.href} target="_blank" rel="noopener noreferrer" data-testid={`docs-community-${c.id}-${i}`}>
+                        {l.label} ↗
+                      </a>
+                    </span>
+                  ))}
+                </LI>
+              ))}
+            </List>
           </DocSection>
         </div>
       </div>
