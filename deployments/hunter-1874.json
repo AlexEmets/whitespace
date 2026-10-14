@@ -1,0 +1,5 @@
+{
+  "chainId": 1874,
+  "address": "0x50B15b34eEf866E01fDF429008365a5aB57B0353",
+  "note": "Hunter bug-bounty NFT collection. Fill `address` with the deployed contract after running contracts/script/DeployHunter.s.sol; a zero address means not deployed and the frontend hides the badges section."
+}
