@@ -9,7 +9,7 @@ abstract contract Delegatable is IDelegatable {
         keccak256('Delegation(address delegator,address delegate,uint256 nonce,uint256 expiry)');
     bytes32 private constant _TYPE_HASH =
         keccak256('EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)');
-    bytes32 private constant _HASHED_NAME = keccak256(bytes('Ostium'));
+    bytes32 private constant _HASHED_NAME = keccak256(bytes('Whitespace'));
     bytes32 private constant _HASHED_VERSION = keccak256(bytes('1'));
 
     function _domainSeparatorV4() internal view returns (bytes32) {
