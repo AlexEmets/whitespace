@@ -49,7 +49,7 @@ export function TermsGate() {
           <Link href="/privacy">Privacy Policy</Link>. In short:
         </p>
         <ul className={styles.points}>
-          <li>Test tokens and points have no value, and points are not a promise of any token or airdrop.</li>
+          <li>Test tokens have no value. Points may count toward a possible future airdrop, but nothing about one is guaranteed.</li>
           <li>Leveraged trading can lose your whole margin, and the contracts have not been audited.</li>
           <li>You are responsible for your wallet, the transactions you sign and following the laws where you live.</li>
           <li>

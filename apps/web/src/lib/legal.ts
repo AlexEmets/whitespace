@@ -7,9 +7,12 @@
  * a lawyer's review; until then they state plainly what the testnet is and is not.
  */
 
-/** Bump when the Terms change materially: every browser is asked to agree again. */
-export const TERMS_VERSION = '2026-10-13';
-export const TERMS_LAST_UPDATED = '13 October 2026';
+/** Bump when the Terms change materially: every browser is asked to agree again.
+ * 2026-10-14: points may count toward a possible future airdrop (they promised nothing before). */
+export const TERMS_VERSION = '2026-10-14';
+export const TERMS_LAST_UPDATED = '14 October 2026';
+/** The Privacy Policy is dated on its own: a change to the Terms is not a change to it. */
+export const PRIVACY_LAST_UPDATED = '13 October 2026';
 
 /** Published once there is one; the documents say so rather than print a made-up address. */
 export const LEGAL_CONTACT: string | null = null;

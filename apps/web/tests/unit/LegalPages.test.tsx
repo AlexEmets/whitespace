@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PrivacyPolicy } from '@/components/legal/PrivacyPolicy';
 import { TermsOfUse } from '@/components/legal/TermsOfUse';
-import { RESTRICTED_JURISDICTIONS, TERMS_LAST_UPDATED } from '@/lib/legal';
+import { PRIVACY_LAST_UPDATED, RESTRICTED_JURISDICTIONS, TERMS_LAST_UPDATED } from '@/lib/legal';
 
 vi.mock('next/link', () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -28,11 +28,22 @@ describe('Terms of Use', () => {
     expect(screen.getByTestId('terms-testnet')).toHaveTextContent(/Neither has any monetary value/);
   });
 
-  it('says points are worth nothing and promise no token or airdrop', () => {
+  /** Points may lead to an airdrop — possibly, and with nothing guaranteed. Saying more would
+   * be a promise of a token; saying less now contradicts what the channels announce. */
+  it('says points may count toward a possible airdrop, and guarantees nothing about it', () => {
     render(<TermsOfUse />);
     const points = screen.getByTestId('terms-points');
     expect(points).toHaveTextContent(/no monetary value/);
-    expect(points).toHaveTextContent(/not a promise, offer or expectation of any token, airdrop/);
+    expect(points).toHaveTextContent(/We may, at our sole discretion, take points into account in a possible future token distribution, such as an airdrop/);
+    expect(points).toHaveTextContent(/Nothing about one is guaranteed: not that it will happen, nor who is eligible, how much/);
+    expect(points).toHaveTextContent(/Points give no right to any token/);
+    expect(points).toHaveTextContent(/restricted jurisdiction \(see below\) is excluded/);
+  });
+
+  it('dates the Privacy Policy on its own, not with the Terms', () => {
+    render(<PrivacyPolicy />);
+    expect(screen.getByTestId('privacy-updated')).toHaveTextContent(PRIVACY_LAST_UPDATED);
+    expect(PRIVACY_LAST_UPDATED).not.toBe(TERMS_LAST_UPDATED);
   });
 
   it('lists every restricted jurisdiction and forbids getting around them', () => {

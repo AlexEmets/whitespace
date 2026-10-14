@@ -49,7 +49,7 @@ describe('<TermsGate>', () => {
     expect(gate.querySelector('a[href="/terms"]')).not.toBeNull();
     expect(gate.querySelector('a[href="/privacy"]')).not.toBeNull();
     expect(gate).toHaveTextContent(/United States, sanctioned countries/);
-    expect(gate).toHaveTextContent(/points are not a promise of any token or airdrop/);
+    expect(gate).toHaveTextContent(/Points may count toward a possible future airdrop, but nothing about one is guaranteed/);
   });
 
   it('starts with the box unticked and focused, and holds Agree until it is ticked', () => {

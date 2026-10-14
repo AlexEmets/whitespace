@@ -175,13 +175,14 @@ export default function LandingPage() {
         <div className="steps two-up">
           <div className="step panel">
             <span className="step-index">Points · Season One</span>
-            <h3 data-testid="landing-points-title">Live, and worth nothing.</h3>
-            {/* Season One is live (/points), and the Terms say what points are not: they have no
-                value and promise no token or airdrop. This card must not promise otherwise. */}
+            <h3 data-testid="landing-points-title">Live. No promises.</h3>
+            {/* Season One is live (/points). The Terms say exactly what points may and may not
+                lead to: possibly a future airdrop, with nothing guaranteed. This card must not say
+                more than that. */}
             <p data-testid="landing-points-body">
               Missions, time in market, daily streaks and liquidity earn points on the testnet.{' '}
-              <Link href="/points">The points page</Link> shows yours. They have no value and promise no token or
-              airdrop — see the <Link href="/terms">Terms</Link>.
+              <Link href="/points">The points page</Link> shows yours. Points have no monetary value; they may count
+              toward a possible future airdrop, with nothing guaranteed — see the <Link href="/terms">Terms</Link>.
             </p>
           </div>
           <div className="step panel">

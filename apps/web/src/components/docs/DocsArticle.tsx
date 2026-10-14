@@ -679,7 +679,8 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
               </LI>
               <LI>
                 <strong>Points are a testnet score.</strong> <Link href="/points">Points</Link> Season One counts your
-                activity; points have no value and promise no token or airdrop — see the{' '}
+                activity; points have no monetary value and may count toward a possible future airdrop, with nothing
+                guaranteed — see the{' '}
                 <Link href="/terms">Terms</Link>. There is no referral programme.
               </LI>
             </List>

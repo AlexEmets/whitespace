@@ -170,7 +170,7 @@ describe('<DocsArticle>', () => {
     expect(limits).toHaveTextContent(/no cross margin/);
     expect(limits).toHaveTextContent(/plain admin keys/);
     expect(limits).toHaveTextContent(/polled, not pushed/);
-    expect(limits).toHaveTextContent(/points have no value and promise no token or airdrop/);
+    expect(limits).toHaveTextContent(/may count toward a possible future airdrop, with nothing\s+guaranteed/);
   });
 
   it('repeats none of the mockups\' marketing figures', () => {

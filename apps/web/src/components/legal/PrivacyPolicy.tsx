@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { LEGAL_CONTACT, TERMS_LAST_UPDATED } from '@/lib/legal';
+import { LEGAL_CONTACT, PRIVACY_LAST_UPDATED } from '@/lib/legal';
 import { LegalDocument, List, P, type LegalSection } from './LegalDocument';
 
 /**
@@ -155,7 +155,7 @@ export function PrivacyPolicy() {
       testId="privacy"
       eyebrow="Legal"
       title="Privacy Policy"
-      updated={TERMS_LAST_UPDATED}
+      updated={PRIVACY_LAST_UPDATED}
       lede="Whitespace has no accounts, no cookies and no analytics. The one piece of personal data our servers keep is the faucet record that stops test gas being drained."
       sections={SECTIONS}
     />

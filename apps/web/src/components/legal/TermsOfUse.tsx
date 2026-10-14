@@ -75,10 +75,16 @@ const SECTIONS: LegalSection[] = [
           cannot be transferred, sold, exchanged or redeemed for anything.
         </P>
         <P>
-          Points are <strong>not a promise, offer or expectation</strong> of any token, airdrop, allocation, reward or
-          payment, now or in the future. We may change how points are earned, adjust or remove points (for example for
-          duplicate wallets, automated activity or abuse of the faucet or the contracts), reset them, or end the
-          programme at any time, at our sole discretion.
+          We <strong>may</strong>, at our sole discretion, take points into account in a possible future token
+          distribution, such as an airdrop. <strong>Nothing about one is guaranteed</strong>: not that it will happen,
+          nor who is eligible, how much anyone receives, when, or on what terms. Points give no right to any token,
+          allocation or payment, and anyone in a restricted jurisdiction (see below) is excluded from any such
+          distribution.
+        </P>
+        <P>
+          We may change how points are earned, adjust or remove points (for example for duplicate wallets, automated
+          activity or abuse of the faucet or the contracts), reset them, or end the programme at any time, at our sole
+          discretion.
         </P>
       </>
     ),

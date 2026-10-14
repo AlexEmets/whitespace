@@ -53,6 +53,16 @@ describe('agreement to the Terms', () => {
     expect(hasAcceptedTerms(storage, TERMS_VERSION)).toBe(false);
   });
 
+  /** The points clause changed materially on 14 October (a possible airdrop, where before
+   * points promised nothing), so a browser that agreed to the 13 October Terms is asked again. */
+  it('asks again a browser that agreed only to the Terms before the points change', () => {
+    const storage = memoryStorage();
+    acceptTerms(storage, '2026-10-13');
+    __resetTermsSession();
+    expect(TERMS_VERSION).not.toBe('2026-10-13');
+    expect(hasAcceptedTerms(storage)).toBe(false);
+  });
+
   it('holds for the rest of the page session where storage is blocked', () => {
     expect(() => acceptTerms(blockedStorage)).not.toThrow();
     expect(hasAcceptedTerms(blockedStorage)).toBe(true);

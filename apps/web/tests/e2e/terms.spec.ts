@@ -65,7 +65,8 @@ test('the landing page states points honestly and links the Terms and the Privac
 
   await page.goto('/');
   // Season One is live: the landing page used to call points "not live yet".
-  await expect(page.getByTestId('landing-points-title')).toHaveText('Live, and worth nothing.');
+  await expect(page.getByTestId('landing-points-title')).toHaveText('Live. No promises.');
+  await expect(page.getByTestId('landing-points-body')).toContainText('may count toward a possible future airdrop, with nothing guaranteed');
   await expect(page.getByText('Not live yet.')).toHaveCount(0);
   await expect(page.getByTestId('landing-points-body').locator('a[href="/terms"]')).toBeVisible();
 
