@@ -393,6 +393,49 @@
   color: var(--long);
 }
 
+/* ---------- Hunter badges ---------- */
+
+.badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 12px;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.badgeImg {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius);
+  display: block;
+}
+
+.badgeName {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  color: var(--fg-muted);
+}
+
+.empty {
+  margin: 0.9rem 0 0.2rem;
+  font-size: 0.9rem;
+  font-weight: 300;
+  color: var(--fg-muted);
+}
+
 /* ---------- Rules ---------- */
 
 .rules {

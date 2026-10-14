@@ -40,6 +40,13 @@ vi.mock('@/hooks/usePoints', () => ({
   usePoints: () => ({ points: connected.value ? points : undefined, loading: false, error: null, refetch: vi.fn() }),
 }));
 
+// The Hunter badges card reads the chain through wagmi; this suite pins the points rendering,
+// so stub it as "not deployed" (the card renders nothing) and leave its behaviour to its own
+// unit test (hunter.test.ts).
+vi.mock('@/hooks/useHunterNfts', () => ({
+  useHunterNfts: () => ({ badges: [], count: 0, minted: null, cap: null, deployed: false, loading: false }),
+}));
+
 const positionsState = vi.hoisted(() => ({ list: null as unknown[] | null }));
 const underFloor = (held: number) => ({
   pairIndex: 0,

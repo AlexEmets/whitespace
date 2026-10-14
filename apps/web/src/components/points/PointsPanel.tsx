@@ -20,6 +20,7 @@ import {
 import { marketLabel } from '@/components/portfolio/TradeHistoryTable';
 import { AccountState, Dash, accountStyles as shell } from '@/components/portfolio/AccountPage';
 import { LiveNumber } from './LiveNumber';
+import { HunterBadges } from './HunterBadges';
 import styles from './points.module.css';
 
 /**
@@ -215,6 +216,9 @@ export function PointsPanel() {
         <AccountState kind="error" title="Could not load your points" detail={error.message}>
           The read API did not answer, so your totals are unknown — not zero.
         </AccountState>
+        {/* Badges are read straight from chain, not from the points API, so they still show
+            when the API is down. */}
+        <HunterBadges address={address} />
       </div>
     );
   }
@@ -425,6 +429,8 @@ export function PointsPanel() {
       </section>
 
       <MissionsGrid completed={completed} points={`${fmt(confirmed.missions, 0)} of ${MAX_MISSION_POINTS} pts`} />
+
+      <HunterBadges address={address} />
 
       <Rules />
     </div>

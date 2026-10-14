@@ -1,0 +1,51 @@
+import { parseAbi, zeroAddress, type Address } from 'viem';
+import hunterDeployment from '../../../../deployments/hunter-1874.json' assert { type: 'json' };
+
+/**
+ * The Hunter bug-bounty NFT collection (contracts/src/nft/Hunter.sol) on Whitechain testnet
+ * 1874. Address comes from the repo-root `deployments/hunter-1874.json`, the same way the
+ * trading addresses come from `deployments/1874.json` — one file to update on a redeploy.
+ *
+ * A zero address means "not deployed yet": {HUNTER_DEPLOYED} is false and the points page
+ * hides its badges section, so the app builds and runs before the collection exists.
+ */
+export const HUNTER_ADDRESS = hunterDeployment.address as Address;
+export const HUNTER_DEPLOYED = HUNTER_ADDRESS.toLowerCase() !== zeroAddress;
+
+// Only the read surface the UI needs, transcribed from contracts/src/nft/Hunter.sol and the
+// ERC721Enumerable it mixes in. `tokenOfOwnerByIndex` is what lets the frontend list a
+// wallet's badges straight from chain, with no indexer.
+export const HUNTER_ABI = parseAbi([
+  'function balanceOf(address owner) view returns (uint256)',
+  'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)',
+  'function tokenURI(uint256 tokenId) view returns (string)',
+  'function totalSupply() view returns (uint256)',
+  'function MAX_SUPPLY() view returns (uint256)',
+]);
+
+export type HunterMetadata = { name: string; image: string; description?: string };
+
+/**
+ * Decodes a Hunter `tokenURI` — `data:application/json;base64,<json>` whose `image` is itself
+ * a `data:image/svg+xml;base64,<svg>` URI usable directly as an `<img src>`. Returns null for
+ * anything that is not a well-formed Hunter metadata URI, so a bad read is skipped, never
+ * rendered. `atob` in the browser, `Buffer` under Node (tests/SSR).
+ */
+export function decodeHunterTokenUri(uri: string): HunterMetadata | null {
+  const prefix = 'data:application/json;base64,';
+  if (!uri.startsWith(prefix)) return null;
+  const b64 = uri.slice(prefix.length);
+  try {
+    const json =
+      typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('utf8');
+    const meta = JSON.parse(json) as Record<string, unknown>;
+    if (typeof meta.name !== 'string' || typeof meta.image !== 'string') return null;
+    return {
+      name: meta.name,
+      image: meta.image,
+      description: typeof meta.description === 'string' ? meta.description : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
