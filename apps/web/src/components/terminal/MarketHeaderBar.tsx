@@ -5,7 +5,7 @@ import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
-import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
+import { formatMoney, formatPrice, collateralToRaw, leverageToRaw } from '@/lib/money';
 import type { MarketSummary } from '@/lib/types';
 
 /**
@@ -37,7 +37,7 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
         {/* `mark-price` is the one place the terminal prints the mark — the chart's own
             readout was a duplicate. tests/e2e/trade-flow.spec.ts asserts on it. */}
         <span className="last-price" data-testid="mark-price">
-          {price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : '—'}
+          {price ? formatPrice(price.mark) : '—'}
         </span>
         {/* The caption is the window the figure actually covers, not a fixed "24h": a
             market listed this morning has hours of history, and labelling its change as a
@@ -54,7 +54,7 @@ export function MarketHeaderBar({ market }: { market: MarketSummary | undefined 
       <div className="stat-cell">
         Index
         <span className="stat-value" data-testid="index-price">
-          {price ? formatMoney(price.index, PRICE_DECIMALS_NUM) : '—'}
+          {price ? formatPrice(price.index) : '—'}
         </span>
       </div>
       <div className="stat-cell stat-tertiary">

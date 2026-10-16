@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useSta
 import { INTERVAL_SECONDS } from '@whitespace/shared/candles';
 import { useCandles } from '@/hooks/useCandles';
 import { usePrice } from '@/hooks/usePrice';
-import { priceToRaw, formatMoney } from '@/lib/money';
+import { priceToRaw, formatMoney, priceFractionDigits } from '@/lib/money';
 import { PRICE_DECIMALS_NUM } from '@/lib/config';
 import type { Candle, CandleInterval } from '@/lib/types';
 import { DegradedBanner } from './DegradedBanner';
@@ -861,6 +861,12 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   })();
   const markY = scale && markRaw !== null && markRaw >= scale.min && markRaw <= scale.max ? scale.toY(markRaw) : null;
 
+  // One precision for every price label on this chart — axis ticks, the mark chip, the
+  // crosshair and the OHLC readout — so a sub-$10 market (XRP) shows enough digits to be
+  // legible instead of a flat "1.34", and they all agree. Derived from the mark, falling
+  // back to the middle visible tick before the mark has loaded.
+  const priceFd = priceFractionDigits(markRaw ?? yTicks[Math.floor(yTicks.length / 2)] ?? 0n);
+
   const now = Math.floor(Date.now() / 1000);
   const newest = candles[total - 1];
   // "Stale" = the live bucket stopped advancing. Worth saying out loud: a chart that has
@@ -1010,7 +1016,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     .filter((t) => labelClearOfChips(scale.toY(t), [markY, crosshairY]))
                     .map((t) => (
                       <text key={`yl${t}`} x={PAD.left + layout.plotW + 6} y={scale.toY(t) + 3.5}>
-                        {formatMoney(t, PRICE_DECIMALS_NUM)}
+                        {formatMoney(t, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}
                       </text>
                     ))}
                 </g>
@@ -1050,7 +1056,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     <line className={styles.markLine} x1={PAD.left} x2={PAD.left + layout.plotW} y1={markY} y2={markY} clipPath={`url(#${clipId})`} />
                     <rect className={styles.markChip} x={PAD.left + layout.plotW + 2} y={markY - CHIP_H / 2} width={PAD.right - 6} height={CHIP_H} rx={5} />
                     <text className={styles.markChipText} x={PAD.left + layout.plotW + 6} y={markY + 3.5}>
-                      {formatMoney(price.mark, PRICE_DECIMALS_NUM)}
+                      {formatMoney(price.mark, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}
                     </text>
                   </g>
                 ) : null}
@@ -1084,7 +1090,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                       x={PAD.left + layout.plotW + 6}
                       y={scale.toY(priceToRaw(hovered.c)) + 3.5}
                     >
-                      {formatMoney(hovered.c, PRICE_DECIMALS_NUM)}
+                      {formatMoney(hovered.c, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}
                     </text>
                   </g>
                 ) : null}
@@ -1095,16 +1101,16 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                   <>
                     <span className={styles.readoutTime}>{formatAxisTime(hovered.t, interval)}</span>
                     <span>
-                      O <b>{formatMoney(hovered.o, PRICE_DECIMALS_NUM)}</b>
+                      O <b>{formatMoney(hovered.o, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}</b>
                     </span>
                     <span>
-                      H <b>{formatMoney(hovered.h, PRICE_DECIMALS_NUM)}</b>
+                      H <b>{formatMoney(hovered.h, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}</b>
                     </span>
                     <span>
-                      L <b>{formatMoney(hovered.l, PRICE_DECIMALS_NUM)}</b>
+                      L <b>{formatMoney(hovered.l, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}</b>
                     </span>
                     <span className={priceToRaw(hovered.c) >= priceToRaw(hovered.o) ? styles.upText : styles.downText}>
-                      C <b>{formatMoney(hovered.c, PRICE_DECIMALS_NUM)}</b>
+                      C <b>{formatMoney(hovered.c, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}</b>
                     </span>
                   </>
                 ) : null}

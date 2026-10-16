@@ -6,7 +6,7 @@ import { usePositionHistory } from '@/hooks/usePositionHistory';
 import { toClosedTrade } from '@/hooks/useTradeStats';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
-import { formatLeverage, formatMoney } from '@/lib/money';
+import { formatMoney, formatPrice, formatLeverage } from '@/lib/money';
 import { closedShareRef, closedTradeShareCard } from '@/lib/shareCard';
 import { ShareTradeButton } from './share/ShareTradeButton';
 
@@ -53,8 +53,8 @@ export function FillsList() {
               <td>{market ? marketLabel(market) : `#${t.pairIndex}`}</td>
               <td className={t.buy ? 'pos' : 'neg'}>{t.buy ? 'Long' : 'Short'}</td>
               <td>{formatLeverage(t.leverage)}</td>
-              <td>{formatMoney(t.openPrice, PRICE_DECIMALS_NUM)}</td>
-              <td>{t.closePrice !== null ? formatMoney(t.closePrice, PRICE_DECIMALS_NUM) : <span className="dash">—</span>}</td>
+              <td>{formatPrice(t.openPrice)}</td>
+              <td>{t.closePrice !== null ? formatPrice(t.closePrice) : <span className="dash">—</span>}</td>
               <td
                 data-testid={`fill-pnl-${t.rowKey}`}
                 className={t.realisedPnlRaw === null ? 'dash' : t.realisedPnlRaw >= 0n ? 'pos' : 'neg'}

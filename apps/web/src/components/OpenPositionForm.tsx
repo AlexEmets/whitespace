@@ -18,7 +18,7 @@ import { explainCancelReason, humanizeCancelReason, type OpenOrderKind } from '@
 import { COLLATERAL_DECIMALS, DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import { marketLabel } from '@/lib/markets';
-import { formatMoney, parseHumanDecimal, priceToRaw } from '@/lib/money';
+import { formatMoney, formatPrice, priceToRaw, parseHumanDecimal } from '@/lib/money';
 import {
   exposureError,
   minOpenCollateral,
@@ -342,8 +342,8 @@ export function OpenPositionForm({
     }
   }
 
-  const buyLabel = quote ? formatMoney(quote.buyPrice, PRICE_DECIMALS_NUM) : '—';
-  const sellLabel = quote ? formatMoney(quote.sellPrice, PRICE_DECIMALS_NUM) : '—';
+  const buyLabel = quote ? formatPrice(quote.buyPrice) : '—';
+  const sellLabel = quote ? formatPrice(quote.sellPrice) : '—';
   const submitLabel =
     state.phase === 'approving'
       ? 'Approving USDW…'
@@ -425,7 +425,7 @@ export function OpenPositionForm({
         <div className="field-group">
           <div className="field-label-row">
             <span>{kind === 'LIMIT' ? 'Limit price' : 'Stop price'}</span>
-            <button type="button" className={styles.linkButton} onClick={() => price && setTriggerInput(formatMoney(markRaw, PRICE_DECIMALS_NUM, { grouping: false }))}>
+            <button type="button" className={styles.linkButton} onClick={() => price && setTriggerInput(formatPrice(markRaw, { grouping: false }))}>
               Mark
             </button>
           </div>
@@ -580,7 +580,7 @@ export function OpenPositionForm({
         <div>
           <dt>Liquidation price</dt>
           <dd data-testid="est-liq-price" className={estLiqPrice !== null ? styles.liq : undefined}>
-            {estLiqPrice !== null ? formatMoney(estLiqPrice, PRICE_DECIMALS_NUM) : '—'}
+            {estLiqPrice !== null ? formatPrice(estLiqPrice) : '—'}
           </dd>
         </div>
         <div>
@@ -607,7 +607,7 @@ export function OpenPositionForm({
         </div>
         <div>
           <dt>{kind === 'MARKET' ? 'Quoted price' : 'Trigger price'}</dt>
-          <dd data-testid="quoted-price">{entryPrice > 0n ? formatMoney(entryPrice, PRICE_DECIMALS_NUM) : '—'}</dd>
+          <dd data-testid="quoted-price">{entryPrice > 0n ? formatPrice(entryPrice) : '—'}</dd>
         </div>
         {kind === 'MARKET' ? (
           <div>

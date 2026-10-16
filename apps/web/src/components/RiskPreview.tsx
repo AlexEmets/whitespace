@@ -1,5 +1,5 @@
 import { PRICE_DECIMALS_NUM } from '@/lib/config';
-import { formatMoney } from '@/lib/money';
+import { formatPrice } from '@/lib/money';
 import styles from './OrderPanel.module.css';
 
 export type RiskKey = 'liq' | 'sl' | 'entry' | 'tp';
@@ -72,7 +72,7 @@ export function RiskPreview({ entry, liq, tp, sl }: { entry: bigint; liq: bigint
           <span key={m.key} className={styles[`risk_${m.key}`]}>
             {m.label}
             <br />
-            {formatMoney(m.value, PRICE_DECIMALS_NUM, { fractionDigits: 0 })}
+            {formatPrice(m.value)}
           </span>
         ))}
       </div>

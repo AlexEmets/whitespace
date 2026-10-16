@@ -6,7 +6,7 @@ import { useMarket24h, formatWindowLabel } from '@/hooks/useMarket24h';
 import { usePrice } from '@/hooks/usePrice';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketPairLabel } from '@/lib/markets';
-import { collateralToRaw, formatMoney, leverageToRaw } from '@/lib/money';
+import { formatMoney, formatPrice, collateralToRaw, leverageToRaw } from '@/lib/money';
 
 function MarketRow({
   pairIndex,
@@ -35,7 +35,7 @@ function MarketRow({
           {marketPairLabel({ from, to })}
         </Link>
       </td>
-      <td>{price ? formatMoney(price.mark, PRICE_DECIMALS_NUM) : <span className="dash">—</span>}</td>
+      <td>{price ? formatPrice(price.mark) : <span className="dash">—</span>}</td>
       {/* The column is headed "24h"; a market younger than that discloses its real window
           per row rather than letting the header speak for a period it has not lived. */}
       <td

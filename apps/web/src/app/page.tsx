@@ -9,7 +9,7 @@ import { MarketsTable } from '@/components/MarketsTable';
 import { TickerStrip } from '@/components/TickerStrip';
 import { COLLATERAL_DECIMALS, PRICE_DECIMALS_NUM } from '@/lib/config';
 import { marketLabel } from '@/lib/markets';
-import { formatMoney, leverageToRaw } from '@/lib/money';
+import { formatMoney, formatPrice, leverageToRaw } from '@/lib/money';
 import { COMMUNITY, SOCIAL } from '@/lib/social';
 
 /** The size the landing page's live quote is shown for: a round 10,000 USDW of notional,
@@ -129,11 +129,11 @@ export default function LandingPage() {
           <hr />
           <div className="row">
             <span style={{ color: 'var(--long)' }}>Buy · ask + impact</span>
-            <span className="big pos">{quote ? formatMoney(quote.buyPrice, PRICE_DECIMALS_NUM) : '—'}</span>
+            <span className="big pos">{quote ? formatPrice(quote.buyPrice) : '—'}</span>
           </div>
           <div className="row">
             <span style={{ color: 'var(--short)' }}>Sell · bid − impact</span>
-            <span className="big neg">{quote ? formatMoney(quote.sellPrice, PRICE_DECIMALS_NUM) : '—'}</span>
+            <span className="big neg">{quote ? formatPrice(quote.sellPrice) : '—'}</span>
           </div>
           <hr />
           <div className="row">

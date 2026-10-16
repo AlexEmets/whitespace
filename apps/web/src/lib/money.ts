@@ -215,6 +215,43 @@ export function formatMoney(value: MoneyInput, decimals: number, opts: FormatMon
   return `${sign}${body}`;
 }
 
+/**
+ * How many fraction digits a price should show, by magnitude. A flat 2 digits — fine for
+ * BTC at 82,000 — collapses a sub-$10 market: XRP at ~1.3428 renders "1.34" everywhere, so
+ * the chart axis, the header and the quote all read the same and the candles look flat.
+ * This widens the precision as the price shrinks so a cheap market stays legible, while
+ * BTC/ETH/SOL/WBT (all >= 10) keep the familiar 2. One rule, so every surface agrees and a
+ * newly listed cheap market needs no per-market config.
+ *
+ *   >= 10     -> 2   (BTC, ETH, SOL, WBT)
+ *   >= 0.1    -> 4   (XRP ~1.3428 -> 1.3428)
+ *   >= 0.001  -> 6
+ *   else      -> 8   (and 0 -> 2)
+ */
+export function priceFractionDigits(value: MoneyInput): number {
+  assertNotNumber(value);
+  const raw = toRawUnits(value, PRICE_DECIMALS_NUM);
+  const abs = raw < 0n ? -raw : raw;
+  if (abs === 0n) return 2;
+  const scale = 10n ** BigInt(PRICE_DECIMALS_NUM); // 1.0 in raw units
+  if (abs >= 10n * scale) return 2;
+  if (abs >= scale / 10n) return 4;
+  if (abs >= scale / 1000n) return 6;
+  return 8;
+}
+
+/**
+ * `formatMoney` for a price: picks the fraction digits from the value's magnitude via
+ * `priceFractionDigits` unless the caller pins `fractionDigits` explicitly. Every price on
+ * screen should go through this rather than `formatMoney(x, PRICE_DECIMALS_NUM)`, so a
+ * cheap market is not rounded to a flat 2 digits. Pass an explicit `fractionDigits` (e.g.
+ * on a chart axis) to keep a set of related labels at one uniform precision.
+ */
+export function formatPrice(value: MoneyInput, opts: FormatMoneyOptions = {}): string {
+  const fractionDigits = opts.fractionDigits ?? priceFractionDigits(value);
+  return formatMoney(value, PRICE_DECIMALS_NUM, { ...opts, fractionDigits });
+}
+
 /** Formats a PRECISION_2 leverage value: raw `1000n` from the chain, or the API's
  * `"10.00"` — both render `"10.00x"`. */
 export function formatLeverage(value: MoneyInput): string {

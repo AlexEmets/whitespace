@@ -6,6 +6,8 @@ import {
   formatExact,
   formatLeverage,
   formatMoney,
+  formatPrice,
+  priceFractionDigits,
   parseHumanDecimal,
   parseRawUnits,
 } from '@/lib/money';
@@ -184,3 +186,44 @@ describe('formatCompactMoney', () => {
     expect(() => formatCompactMoney(38_200_000, 6)).toThrow();
   });
 });
+
+// A flat 2 digits is fine for BTC at 82,000 but turns a sub-$10 market into a row of "1.34".
+// priceFractionDigits widens precision as the price shrinks; formatPrice applies it so the
+// chart axis, the header and the quote all agree. See the 2026-10-16 XRP listing.
+describe('priceFractionDigits picks decimals by magnitude', () => {
+  it('keeps the four-figure markets at 2 (BTC/ETH/SOL/WBT are all >= 10)', () => {
+    expect(priceFractionDigits('82318.77')).toBe(2);
+    expect(priceFractionDigits('2469.35')).toBe(2);
+    expect(priceFractionDigits('106.76')).toBe(2);
+    expect(priceFractionDigits('80.97')).toBe(2);
+  });
+
+  it('gives a sub-$10 market like XRP 4 digits', () => {
+    expect(priceFractionDigits('1.342772773548981084')).toBe(4);
+    expect(priceFractionDigits('-1.34')).toBe(4);
+  });
+
+  it('widens further for very small prices, and 0 stays at 2', () => {
+    expect(priceFractionDigits('0.0456')).toBe(6);
+    expect(priceFractionDigits('0.00012')).toBe(8);
+    expect(priceFractionDigits('0')).toBe(2);
+  });
+});
+
+describe('formatPrice formats a price at magnitude-aware precision', () => {
+  it('rounds XRP to 4 fraction digits', () => {
+    expect(formatPrice('1.342772773548981084')).toBe('1.3428');
+  });
+
+  it('keeps BTC at 2, grouped', () => {
+    expect(formatPrice('82318.774635440551986561')).toBe('82,318.77');
+  });
+
+  it('honours an explicit fractionDigits override', () => {
+    expect(formatPrice('1.342772', { fractionDigits: 2 })).toBe('1.34');
+  });
+
+  it('passes through other options like grouping', () => {
+    expect(formatPrice('1.342772', { grouping: false })).toBe('1.3428');
+  });
+})
