@@ -13,6 +13,12 @@
  * verified live on 2026-09-10 and again on 2026-09-22 (worst spread 5.43 bps, on WhiteBIT
  * SOL, against a 10 bps bound).
  *
+ * XRP/USD is the same ordinary four-venue case — Binance, Bybit and OKX quote XRP-USDT and
+ * WhiteBIT quotes XRP_USDT — so it carries no bounds override and uses the default
+ * MIN_HEALTHY_VENUES (3 of 4). The design bar ("enough sources clear the venue filters")
+ * is confirmed against the running publisher's /status before the on-chain listing is
+ * broadcast, exactly as for ETH/SOL; see docs/runbooks for the listing procedure.
+ *
  * WBT/USD is the exception and is listed on WhiteBIT's own two books. Measured 2026-09-22:
  * Binance, Bybit and OKX do not list WBT at all; MEXC (28.9 bps) and Kraken (30.1 bps) do,
  * but quote ~3x wider than VENUE_SPREAD_WIDTH_BOUND_BPS, so adapters for them would only
@@ -71,6 +77,16 @@ export const MARKETS = {
       bybit: 'SOLUSDT',
       okx: 'SOL-USDT',
       whitebit: 'SOL_USDT',
+    },
+  },
+  'XRP/USD': {
+    feed: 'XRP/USD',
+    feedId: asciiToBytes32Hex('XRP/USD'),
+    venueSymbols: {
+      binance: 'XRPUSDT',
+      bybit: 'XRPUSDT',
+      okx: 'XRP-USDT',
+      whitebit: 'XRP_USDT',
     },
   },
   'WBT/USD': {

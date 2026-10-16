@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { asciiToBytes32Hex, MARKETS, MARKET_FEEDS, getMarket } from '../src/markets.mjs';
 import { VENUE_IDS } from '../src/venues.mjs';
-import { boundsForMarket } from '../src/bounds.mjs';
+import { boundsForMarket, MIN_HEALTHY_VENUES } from '../src/bounds.mjs';
 
 test('asciiToBytes32Hex matches the proven-against-cast feed id fixture from packages/reporter', () => {
   // Same literal used in packages/reporter/test/report.test.mjs, produced there via
@@ -63,10 +63,25 @@ test('every market has a well-formed feed id and enough known-venue symbols to s
 
 // Named explicitly so that REMOVING one is a test failure rather than a silent capability
 // loss — the structural test above cannot notice an absence.
-test('MARKETS defines BTC/USD, ETH/USD, SOL/USD and WBT/USD', () => {
-  for (const feed of ['BTC/USD', 'ETH/USD', 'SOL/USD', 'WBT/USD']) {
+test('MARKETS defines BTC/USD, ETH/USD, SOL/USD, XRP/USD and WBT/USD', () => {
+  for (const feed of ['BTC/USD', 'ETH/USD', 'SOL/USD', 'XRP/USD', 'WBT/USD']) {
     assert.ok(MARKET_FEEDS.includes(feed), `${feed} is missing from MARKETS`);
   }
+});
+
+// XRP is the ordinary four-venue case — pinned so a later edit cannot quietly drop a source
+// (which would push it under the default 3-of-4 threshold) or misspell a venue symbol the
+// publisher subscribes with. Same shape and same venue ids as BTC/ETH/SOL; no bounds override.
+test('XRP/USD is fed by all four venues with the standard *USDT symbols and no bounds override', () => {
+  const market = getMarket('XRP/USD');
+  assert.equal(market.feed, 'XRP/USD');
+  assert.equal(market.feedId, asciiToBytes32Hex('XRP/USD'));
+  assert.deepEqual(Object.keys(market.venueSymbols).sort(), ['binance', 'bybit', 'okx', 'whitebit']);
+  assert.equal(market.venueSymbols.binance, 'XRPUSDT');
+  assert.equal(market.venueSymbols.bybit, 'XRPUSDT');
+  assert.equal(market.venueSymbols.okx, 'XRP-USDT');
+  assert.equal(market.venueSymbols.whitebit, 'XRP_USDT');
+  assert.equal(boundsForMarket('XRP/USD').minHealthyVenues, MIN_HEALTHY_VENUES);
 });
 
 // WBT is the one market allowed to run on a single exchange, so the shape that makes that
