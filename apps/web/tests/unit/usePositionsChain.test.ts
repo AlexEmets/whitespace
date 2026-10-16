@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   trades: {} as Record<string, unknown>,
   failTrades: false,
   apiPositions: [] as unknown[],
+  markets: [] as { pairIndex: number }[],
 }));
 
 vi.mock('wagmi', () => ({
@@ -38,7 +39,11 @@ vi.mock('@/hooks/useLiveResource', () => ({
   useLiveResource: () => ({ data: state.apiPositions, error: null, stale: false, loading: false, refetch: vi.fn() }),
 }));
 
-import { usePositions } from '@/hooks/usePositions';
+vi.mock('@/hooks/useMarkets', () => ({
+  useMarkets: () => ({ markets: state.markets, loading: false, error: null }),
+}));
+
+import { pairsToScan, usePositions } from '@/hooks/usePositions';
 
 const trade = (index: number) => ({
   collateral: 1_000_000000n,
@@ -62,6 +67,7 @@ beforeEach(() => {
   state.trades = {};
   state.failTrades = false;
   state.apiPositions = [];
+  state.markets = [0, 1, 2, 3].map((pairIndex) => ({ pairIndex }));
 });
 
 describe('usePositions reads open positions from the chain', () => {
@@ -100,5 +106,28 @@ describe('usePositions reads open positions from the chain', () => {
     state.apiPositions = [apiStalePosition];
     const { result } = renderHook(() => usePositions(TRADER));
     expect(result.current.source).toBe('api');
+  });
+
+  // The 2026-10-16 report: XRP was listed at pairIndex 4, a position opened on-chain, and the
+  // table showed nothing — the chain scan was driven by the build-time deployment record (pairs
+  // 0-3), so pair 4 was never read, and the known pairs reading fine meant it never fell back to
+  // the API list that did carry XRP. The scan now follows the live /markets list.
+  it('scans a market listed after the bundle was built (XRP at pairIndex 4) from the live markets list', () => {
+    state.markets = [0, 1, 2, 3, 4].map((pairIndex) => ({ pairIndex }));
+    state.counts = [0, 0, 0, 0, 1].map((result) => ({ status: 'success', result }));
+    state.trades = { '4-0': { ...trade(0), pairIndex: 4, openPrice: 1n * E18 } };
+    const { result } = renderHook(() => usePositions(TRADER));
+    expect(result.current.source).toBe('chain');
+    expect(result.current.positions.map((p) => p.pairIndex)).toContain(4);
+  });
+});
+
+describe('pairsToScan', () => {
+  it('prefers the live markets list so a pair listed after the build is scanned', () => {
+    expect(pairsToScan([0, 1, 2, 3, 4].map((pairIndex) => ({ pairIndex })), [0, 1, 2, 3])).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('falls back to the build-time pairs while /markets is still loading', () => {
+    expect(pairsToScan([], [0, 1, 2, 3])).toEqual([0, 1, 2, 3]);
   });
 });

@@ -7,14 +7,33 @@ import { TRADING_STORAGE_ABI } from '@/lib/abi';
 import { DEPLOYMENT_1874, TRADING_STORAGE_ADDRESS } from '@/lib/deployment';
 import type { PositionSummary } from '@/lib/types';
 import { useLiveResource } from './useLiveResource';
+import { useMarkets } from './useMarkets';
 
 const REFRESH_MS = 5_000;
 
-/** Every listed pair, from the deployment record; the four 1874 markets if it has none. */
-const PAIRS: number[] =
+/**
+ * Pairs to scan on-chain for the wallet's open trades, built-time deployment record as the
+ * fallback. The four 1874 markets if even that has none.
+ *
+ * Only a fallback: a market listed after this bundle was built (e.g. XRP/USD, pairIndex 4)
+ * is absent here, so `pairsToScan` below prefers the live `/markets` list. Scanning off the
+ * build-time record alone silently hid positions on any newly listed market until the web
+ * was rebuilt — the chain reads for the known pairs still succeeded, so the hook never even
+ * fell back to the API list that did carry the new pair.
+ */
+const FALLBACK_PAIRS: number[] =
   ((DEPLOYMENT_1874 as unknown as { markets?: { pairIndex: number }[] }).markets ?? []).map((m) => m.pairIndex).length > 0
     ? (DEPLOYMENT_1874 as unknown as { markets: { pairIndex: number }[] }).markets.map((m) => m.pairIndex)
     : [0, 1, 2, 3];
+
+/**
+ * The pair indexes to read open trades for: the live `/markets` list when it has loaded,
+ * so a newly listed market shows its positions without a rebuild; otherwise the build-time
+ * fallback so the first render (before `/markets` resolves) still shows the known pairs.
+ */
+export function pairsToScan(markets: { pairIndex: number }[], fallback: number[] = FALLBACK_PAIRS): number[] {
+  return markets.length > 0 ? markets.map((m) => m.pairIndex) : fallback;
+}
 
 type ChainTrade = { collateral: bigint; openPrice: bigint; tp: bigint; sl: bigint; leverage: number; pairIndex: number; index: number; buy: boolean };
 type ChainInfo = { tradeId: bigint; createdAt: number };
@@ -31,6 +50,8 @@ type ChainInfo = { tradeId: bigint; createdAt: number };
  */
 export function usePositions(address: `0x${string}` | undefined) {
   const enabled = Boolean(address);
+  const { markets } = useMarkets();
+  const PAIRS = pairsToScan(markets);
   const fromApi = useLiveResource<PositionSummary[]>({
     channel: address ? `positions:${address}` : null,
     enabled,
