@@ -1,119 +1,86 @@
-# List XRP/USD market
+# List XRP/USD market — DONE (live)
 
 Date: 2026-10-16
 Chain: Whitechain testnet 1874
+Deployment: the **live** pre-debrand one — registry `0x86d4EC32F8ed6e07D6176b71De05c9866A30c357`,
+pairsStorage `0x2e5CcD43667fCE72e3EDE9Af5E3E1A10DBBA985A`, priceUpKeep
+`0x1E0DBa1e028eE40A0096dD63eaBadB5b4A7c2c99`. **Not** the debranded redeploy at
+`0xBc14f71f…` that `origin/main` HEAD's `deployments/1874.json` describes — prod has not
+migrated to it (prod repo is at `77fb71f`, 5 commits behind), so the live site reads
+`0x86d4`. XRP was listed where the site actually serves from.
 
 XRP/USD is the ordinary four-venue case, identical in shape to ETH/USD and SOL/USD:
-Binance, Bybit and OKX quote `XRP-USDT`/`XRPUSDT` and WhiteBIT quotes `XRP_USDT`, so it
-carries **no** bounds override and uses the default `MIN_HEALTHY_VENUES` (3 of 4) and the
-default risk caps (100x, $1M OI, group 0, fee 0). Contrast WBT/USD, which needed code for a
-per-market threshold and a second WhiteBIT book — XRP needs none of that.
+Binance/Bybit/OKX quote `XRPUSDT`/`XRP-USDT`, WhiteBIT quotes `XRP_USDT`. No bounds
+override, default `MIN_HEALTHY_VENUES` (3 of 4), default caps (100x, $1M, group 0, fee 0).
+No Solidity change — the generic `Operate.s.sol:runAddMarkets()` lists it.
 
-The on-chain listing uses the already-generic `Operate.s.sol:runAddMarkets()`
-(`MARKETS=XRP/USD`); no Solidity change is required, and the path is already covered by
-`contracts/test/integration/Operate.t.sol` (`test_addMarketForListsPairsBesideBtc` etc.).
+## Phase 0 — code (committed, tests green)
 
-## Phase 0 — code (DONE, tests green)
+- [x] `packages/shared/src/markets.mjs` — `XRP/USD` added (four standard venue symbols),
+      registry header documents it as the ordinary four-venue case.
+- [x] `packages/shared/test/markets.test.mjs` — named-markets guard includes `XRP/USD`
+      plus a pinned test (four venues, standard symbols, feedId, no bounds override). Both
+      new assertions confirmed **red** without the registry entry, green with it.
+- [x] `services/price-publisher/.env.example` — stale `PUBLISHER_MARKETS` default
+      (BTC/ETH/SOL only, predating WBT) corrected to the full current registry.
+- [x] Verified (node 22 container; repo has no local node / installed deps, so only the
+      dependency-free shared package was runnable): `markets.test.mjs` 8/8, whole shared
+      suite 72/72. No other code enumerates the market set — publisher defaults to
+      `MARKET_FEEDS`, keeper resolves via `getMarketByFeedId`, API reads the chain, web
+      reads the API, and the web shared `.d.ts` mirror types markets as `Record`/`string[]`.
 
-- [x] `packages/shared/src/markets.mjs` — `XRP/USD` added with the four standard venue
-      symbols (`binance XRPUSDT`, `bybit XRPUSDT`, `okx XRP-USDT`, `whitebit XRP_USDT`) and
-      the registry header updated to document it as the ordinary four-venue case.
-- [x] `packages/shared/test/markets.test.mjs` — the named-markets guard now includes
-      `XRP/USD`, plus a pinned test asserting all four venues, the standard symbols, the
-      correct `feedId`, and no bounds override (default `minHealthyVenues`). Both new
-      assertions were confirmed **red** against the tree without the registry entry
-      (`XRP/USD is missing from MARKETS` / `getMarket: unknown feed "XRP/USD"`) before the
-      fix made them green.
-- [x] `services/price-publisher/.env.example` — the `PUBLISHER_MARKETS` default comment and
-      example value were stale (listed only BTC/ETH/SOL, predating WBT). Corrected to the
-      full current registry `BTC/USD,ETH/USD,SOL/USD,XRP/USD,WBT/USD` — this is exactly the
-      "stale override silently starves a new market of prices" trap the comment itself warns
-      about.
+## Phase 1 — prod publisher serves XRP (surgical, DONE)
 
-Verified here (node 22 in a container; the repo has no local node and deps are not
-installed, so only the dependency-free shared package was runnable):
+Did **not** run `deploy/deploy.sh`: it `git pull`s, which would drag prod onto the
+debranded `0xBc14` contracts and strand live positions. Surgical instead:
 
-```
-packages/shared/test/markets.test.mjs   8 pass 0 fail
-packages/shared whole suite             72 pass 0 fail
-```
+- [x] 1.1 Copied the edited `packages/shared/src/markets.mjs` to prod
+      (`whitespace@65.21.53.147:/home/whitespace/whitespace`); diffed against the live file
+      first — strict superset, only the XRP additions. Backup:
+      `packages/shared/src/markets.mjs.bak-2026-10-16`.
+- [x] 1.2 Added `XRP/USD` to `PUBLISHER_MARKETS` in prod
+      `services/price-publisher/.env` (now `BTC/USD,ETH/USD,SOL/USD,WBT/USD,XRP/USD`).
+      Backup: `services/price-publisher/.env.bak-2026-10-16`. `node` import of the edited
+      registry succeeded (no syntax error; feeds include XRP/USD).
+- [x] 1.3 `sudo systemctl restart whitespace-publisher`; unit `active`.
+- [x] 1.4 Gate passed: `curl 127.0.0.1:8787/status` → XRP/USD `healthyCount 4`
+      `[whitebit,bybit,okx,binance]`, `minHealthyVenues 3`, `degraded false`, `noData false`.
 
-No other code enumerates the market set: the publisher defaults to `MARKET_FEEDS`, the
-keeper resolves feeds dynamically via `getMarketByFeedId`, the API reads pairs from the
-chain and maps them through the registry, and the web client reads the API. The web
-`whitespace-shared.d.ts` mirror types `MARKETS`/`MARKET_FEEDS` as `Record<string, Market>`
-/ `string[]`, not literal unions, so it needs no change.
+## Phase 2 — list XRP/USD on-chain (DONE, live registry)
 
-## Phase 1 — prod publisher must serve XRP/USD BEFORE the on-chain listing
+- [x] 2.1 Dry-run against `REGISTRY_ADDRESS=0x86d4…`: 4 calls, 561,233 gas (~0.0028 WBT).
+      Decoded byte-perfect: `addPair(XRP, USD, feed XRP/USD, 100x, group0, fee0)`;
+      `registerContract("XRP/USDPriceUpkeep" → 0x1E0DBa1e…)` (the live upkeep);
+      `setMaxOpenInterest(4, 1e12)`. Keys `~/.whitespace-keys/{gov,manager}.json` derive to
+      the live `gov 0xFB04…` / `manager 0xE2DA…` (simulation did not revert).
+- [x] 2.2 Broadcast (`forge --broadcast --slow`): ONCHAIN EXECUTION COMPLETE & SUCCESSFUL,
+      all four receipts `status=true`:
+      - registerContract `0x7b4a3ff941896ac1209021eada6f4852d86c989074222e1c92fe4b1dcb1ed79b`
+      - addPair          `0xf839968202a64341b45215d6d59420a9c99d12f0eacc1c3d8d5f97e291ccfe45`
+      - setPairFundingFees `0x821ac0362a0b141a480edaf32eb8dea10b567d36e70e5cf120b666e0770af030`
+      - setMaxOpenInterest `0x79167a9a29c77863381951d3bcd60ec6534f5d5c04d888c1c3f0cedb3556aa46`
+- [x] 2.3 On-chain (read live, not inferred): `pairsCount() == 5`; `pairs(4)` = XRP/USD at
+      100x, group 0, fee 0, feed byte-identical to `asciiToBytes32Hex("XRP/USD")`;
+      `openInterest(4, 2) == 1e12` (non-zero); `XRP/USDPriceUpkeep` → `0x1E0DBa1e…`.
+- [x] 2.4 Public API: `/api/markets` returns 5 rows, XRP at index 4 (100x / $1M);
+      `/api/price/4` → `"source":"publisher"`, 4 healthy venues, `degraded:false`, live quote.
 
-`PUBLISHER_MARKETS` and `PUBLISHER_VENUES` in the prod `.env` OVERRIDE the registry rather
-than extend it, so a market can be listed on-chain and never priced. XRP needs only the
-four default venues (all already in prod's `PUBLISHER_VENUES`), so only `PUBLISHER_MARKETS`
-changes.
+## Phase 3 — record (DONE)
 
-- [ ] 1.1 On the publisher host, back up `.env`, add `XRP/USD` to `PUBLISHER_MARKETS`,
-      restart the publisher (per `docs/runbooks/deploy-server.md`).
-- [ ] 1.2 `curl 127.0.0.1:8787/status` shows `XRP/USD` healthy on 4 venues, `degraded:false`.
-      **This is the design bar ("enough sources clear the venue filters") and the gate for
-      Phase 2** — do not broadcast until it passes. If any venue's spread exceeds
-      `VENUE_SPREAD_WIDTH_BOUND_BPS` (10) and XRP sits below 3 healthy, stop and reassess
-      (it should not — XRP is deep on all four, but this is measured, not assumed).
+- [x] Appended XRP/USD (pairIndex 4) to `markets` in `deployments/1874-operational.json`
+      with the four tx hashes and the listing metadata.
 
-## Phase 2 — list XRP/USD on-chain (no code, default caps)
+## Left / hazards
 
-Run from `contracts/`. Default `MARKET_MAX_LEVERAGE`/`MARKET_MAX_OI` are left unset so XRP
-gets 100x / $1M like ETH/SOL. Never print or commit `GOV_PRIVATE_KEY` / `MANAGER_PRIVATE_KEY`.
-
-```sh
-RPC=https://rpc.testnet.whitechain.io
-MARKETS=XRP/USD \
-REGISTRY_ADDRESS=0xBc14f71f6533c74Dc63edeBa1fEC440e564bC4c8 \
-GOV_PRIVATE_KEY=$(cat ../keys/gov.json | ...) \
-MANAGER_PRIVATE_KEY=$(cat ../keys/manager.json | ...) \
-forge script script/Operate.s.sol:OperateScript --sig "runAddMarkets()" \
-  --rpc-url $RPC --legacy --slow -vvv          # add --broadcast to send
-```
-
-- [ ] 2.1 Dry-run (without `--broadcast`): expect the per-market sequence
-      `registerUpkeepFor` → `addMarketFor` (`addPair` + `setPairFundingFees`) → `setMaxOiFor`.
-      Confirm the `addPair.feed` equals `asciiToBytes32Hex("XRP/USD")` and the upkeep key is
-      `XRP/USDPriceUpkeep` resolving to the deployed `priceUpKeep`
-      `0x1c84dFAE52e4448196d37Cb9A6611d34BE810dE2`.
-- [ ] 2.2 Broadcast. The 1874 public RPC is flaky under `--broadcast` re-simulation; if it
-      dies before sending, fall back to the proven per-tx calldata replay used for ETH/SOL/WBT
-      (one call at a time, each retried, `addPair` guarded on `pairsCount`). XRP becomes
-      **pairIndex 4** (BTC 0, ETH 1, SOL 2, WBT 3).
-- [ ] 2.3 Verify on chain (read live, not inferred): `pairsCount() == 5`; `pairs(4)` is
-      XRP/USD at 100x, group 0, fee 0, `feed` byte-identical to `asciiToBytes32Hex("XRP/USD")`;
-      `openInterest(4,2) == 1e12` (non-zero — a zero cap cancels opens silently); the
-      `XRP/USDPriceUpkeep` registry key resolves to the incumbent upkeep.
-- [ ] 2.4 Verify on prod API: `GET /markets` returns 5 rows; `GET /price/4` is
-      `"source":"publisher"` with 4 healthy venues and `degraded:false` (feed resolves to the
-      live publisher, not the stale chain fallback).
-
-## Phase 3 — record the listing
-
-- [ ] 3.1 Append the XRP/USD entry to `markets` in `deployments/1874-operational.json`
-      (pairIndex 4, same shape as ETH/SOL: maxLeverage 10000, maxOpenInterest
-      "1000000000000", fundingSpringFactor "1000000000000", maxFundingFeePerBlock "0"),
-      with `listedAt`, `listedBy` and the broadcast `txs`.
-
-## Verification gate
-
-- [ ] Whole-repo lint + typecheck + unit tests green once deps are installed, output quoted.
-      (Here: only `packages/shared` was runnable — 72/72 green — because the environment has
-      no node and no installed deps. publisher/reporter/liquidator/api/web suites NOT run.)
-- [ ] `pairsCount()` read from the live chain after the broadcast, not inferred.
-- [ ] Publisher `/status` shows XRP/USD non-degraded before AND after the broadcast.
-- [ ] Explicitly state what was NOT verified.
-
-## Not done here / hazards
-
-- Phases 1–3 need the GOV/MANAGER keys, the 1874 RPC and the running prod publisher. None of
-  those are reachable from this session, so the code (Phase 0) is done and committed and the
-  broadcast + prod `.env` edit + deployment-record update are left as the operator steps above.
-- The local dev `services/price-publisher/.env` is gitignored; a second developer must add
-  `XRP/USD` to their own `PUBLISHER_MARKETS` (the startup `MISCONFIGURED` warning will flag it
-  otherwise). The committed `.env.example` now shows the correct full set.
-- There is no unlisting: `removePair` requires zero traders and never frees the index, so
-  pairIndex 4 is XRP forever once broadcast. Broadcast only after Phase 1.2 passes.
+- **Prod working tree is now dirty**: `packages/shared/src/markets.mjs` is modified
+  (XRP added) on top of `77fb71f`, plus a `.bak-2026-10-16` and the edited (gitignored)
+  `.env`. The next `deploy/deploy.sh` does `git pull --ff-only`, which will FAIL on the
+  local modification. Before any future deploy, run on prod:
+  `git checkout packages/shared/src/markets.mjs` then pull — `origin/main` already carries
+  the identical XRP addition (this branch), so nothing is lost.
+- **Two deployments on 1874.** XRP is on the live `0x86d4`. The debranded `0xBc14` redeploy
+  at `origin/main` HEAD does NOT have XRP; whenever prod is migrated to it, XRP must be
+  listed there too (same `runAddMarkets` with `REGISTRY_ADDRESS=0xBc14…`, which the dry-run
+  already proved works).
+- Not run here: publisher/reporter/liquidator/api/web suites (no local node / deps). Shared
+  suite only.

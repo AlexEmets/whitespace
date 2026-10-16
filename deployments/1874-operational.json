@@ -83,6 +83,29 @@
         "0x7833e2220e27b28994b524c7d392594bf8930ba7216479c5a989ff877744528c",
         "0xc4891f8152e253d7fd06a502878b6930e7ab860c567e7da3b678f6bf90f56fc7"
       ]
+    },
+    {
+      "pairIndex": 4,
+      "from": "XRP",
+      "to": "USD",
+      "feedId": "XRP/USD",
+      "oracle": "XRP/USD",
+      "registryKey": "XRP/USDPriceUpkeep",
+      "groupIndex": 0,
+      "feeIndex": 0,
+      "maxLeverage": 10000,
+      "maxOpenInterest": "1000000000000",
+      "fundingSpringFactor": "1000000000000",
+      "maxFundingFeePerBlock": "0",
+      "listedAt": "2026-10-16",
+      "listedBy": "Operate.s.sol runAddMarkets() with MARKETS=XRP/USD against the live registry 0x86d4EC32F8ed6e07D6176b71De05c9866A30c357, forge --broadcast --slow",
+      "note": "Ordinary four-venue market like ETH/USD and SOL/USD (Binance/Bybit/OKX XRP(-/)USDT, WhiteBIT XRP_USDT); default bounds (minHealthyVenues 3) and default 100x/$1M caps. Prod publisher gate confirmed before broadcast: /status XRP/USD healthy on 4 venues, degraded false. Listed on the live pre-debrand deployment (registry 0x86d4), which is what prod serves; not the debranded 0xBc14 redeploy at origin HEAD.",
+      "txs": [
+        "0x7b4a3ff941896ac1209021eada6f4852d86c989074222e1c92fe4b1dcb1ed79b",
+        "0xf839968202a64341b45215d6d59420a9c99d12f0eacc1c3d8d5f97e291ccfe45",
+        "0x821ac0362a0b141a480edaf32eb8dea10b567d36e70e5cf120b666e0770af030",
+        "0x79167a9a29c77863381951d3bcd60ec6534f5d5c04d888c1c3f0cedb3556aa46"
+      ]
     }
   ],
   "roles": {
