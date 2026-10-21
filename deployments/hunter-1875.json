@@ -1,0 +1,5 @@
+{
+  "chainId": 1875,
+  "address": "0xa64B648c2B81061D4c5889B45e25C67083543373",
+  "note": "Hunter bug-bounty NFT collection on Whitechain mainnet. Fill `address` with the deployed contract after running scripts/nft/hunter/deploy.sh (CHAIN=1875); a zero address means not deployed yet."
+}
