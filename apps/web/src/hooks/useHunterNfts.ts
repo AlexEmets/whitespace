@@ -4,6 +4,7 @@ import { useReadContract, useReadContracts } from 'wagmi';
 import {
   HUNTER_ABI,
   HUNTER_ADDRESS,
+  HUNTER_CHAIN_ID,
   HUNTER_DEPLOYED,
   decodeHunterTokenUri,
   type HunterMetadata,
@@ -23,6 +24,7 @@ export function useHunterNfts(address?: `0x${string}`) {
   const enabled = Boolean(address) && HUNTER_DEPLOYED;
 
   const balanceQ = useReadContract({
+    chainId: HUNTER_CHAIN_ID,
     address: HUNTER_ADDRESS,
     abi: HUNTER_ABI,
     functionName: 'balanceOf',
@@ -33,6 +35,7 @@ export function useHunterNfts(address?: `0x${string}`) {
 
   const idsQ = useReadContracts({
     contracts: Array.from({ length: count }, (_, i) => ({
+      chainId: HUNTER_CHAIN_ID,
       address: HUNTER_ADDRESS,
       abi: HUNTER_ABI,
       functionName: 'tokenOfOwnerByIndex' as const,
@@ -44,6 +47,7 @@ export function useHunterNfts(address?: `0x${string}`) {
 
   const uriQ = useReadContracts({
     contracts: tokenIds.map((id) => ({
+      chainId: HUNTER_CHAIN_ID,
       address: HUNTER_ADDRESS,
       abi: HUNTER_ABI,
       functionName: 'tokenURI' as const,

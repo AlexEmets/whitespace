@@ -1,15 +1,18 @@
 import { parseAbi, zeroAddress, type Address } from 'viem';
-import hunterDeployment from '../../../../deployments/hunter-1874.json' assert { type: 'json' };
+import hunterDeployment from '../../../../deployments/hunter-1875.json' assert { type: 'json' };
 
 /**
- * The Hunter bug-bounty NFT collection (contracts/src/nft/Hunter.sol) on Whitechain testnet
- * 1874. Address comes from the repo-root `deployments/hunter-1874.json`, the same way the
- * trading addresses come from `deployments/1874.json` — one file to update on a redeploy.
+ * The Hunter bug-bounty NFT collection (contracts/src/nft/Hunter.sol) on Whitechain **mainnet
+ * 1875**. The rest of the app trades on testnet 1874, but the badges are a mainnet collection,
+ * so address and chain both come from `deployments/hunter-1875.json` — one file to update on a
+ * redeploy. {HUNTER_CHAIN_ID} is what useHunterNfts pins its reads to, so a wallet connected to
+ * testnet still sees its mainnet badges.
  *
  * A zero address means "not deployed yet": {HUNTER_DEPLOYED} is false and the points page
  * hides its badges section, so the app builds and runs before the collection exists.
  */
 export const HUNTER_ADDRESS = hunterDeployment.address as Address;
+export const HUNTER_CHAIN_ID = hunterDeployment.chainId as 1875;
 export const HUNTER_DEPLOYED = HUNTER_ADDRESS.toLowerCase() !== zeroAddress;
 
 // Only the read surface the UI needs, transcribed from contracts/src/nft/Hunter.sol and the

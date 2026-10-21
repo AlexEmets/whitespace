@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeHunterTokenUri } from '@/lib/hunter';
+import { HUNTER_CHAIN_ID, decodeHunterTokenUri } from '@/lib/hunter';
 
 /** Builds a tokenURI exactly as contracts/src/nft/Hunter.sol does: base64 JSON whose `image`
  *  is a base64 SVG data URI. */
@@ -14,6 +14,15 @@ function makeTokenUri(id: number) {
   });
   return `data:application/json;base64,${Buffer.from(json).toString('base64')}`;
 }
+
+describe('Hunter deployment wiring', () => {
+  it('pins badge reads to Whitechain mainnet 1875, not testnet 1874', () => {
+    // The app trades on 1874, but the badges are a mainnet collection; useHunterNfts reads
+    // against this chain id. If someone repoints lib/hunter.ts back to hunter-1874.json this
+    // flips to 1874 and the badges silently read the wrong chain — so guard it here.
+    expect(HUNTER_CHAIN_ID).toBe(1875);
+  });
+});
 
 describe('decodeHunterTokenUri', () => {
   it('decodes name, description and the embedded SVG image', () => {
