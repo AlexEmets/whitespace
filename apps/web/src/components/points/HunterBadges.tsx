@@ -1,7 +1,7 @@
 'use client';
 
 import { useHunterNfts } from '@/hooks/useHunterNfts';
-import { hunterTokenUrl } from '@/lib/hunter';
+import { hunterExplorerUrl } from '@/lib/hunter';
 import styles from './points.module.css';
 
 /**
@@ -37,7 +37,7 @@ export function HunterBadges({ address }: { address?: `0x${string}` }) {
                     touch); keyboard users get it on focus. Opens the token's explorer page. */}
                 <a
                   className={styles.badgeLink}
-                  href={hunterTokenUrl(b.tokenId)}
+                  href={hunterExplorerUrl()}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`View ${b.name} on the block explorer`}

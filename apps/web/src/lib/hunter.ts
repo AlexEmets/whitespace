@@ -24,12 +24,14 @@ export const HUNTER_EXPLORER = (
 ).replace(/\/+$/, '');
 
 /**
- * Link to one badge's page on the explorer — the Blockscout NFT-instance route the Whitechain
- * explorer uses (`/token/<collection>/instance/<id>`), so a holder can inspect the token, its
- * on-chain metadata and transfer history straight from /points.
+ * Link to the Hunter collection on the explorer. The Whitechain mainnet explorer has no
+ * per-token-instance page — its only token route is `/token/<addr>`, which 404s for a token it
+ * has not indexed — so every badge links to the contract's address page, a route that always
+ * resolves and carries the collection's token transfers and holders. (The badge art itself
+ * already shows which serial it is.)
  */
-export function hunterTokenUrl(tokenId: bigint): string {
-  return `${HUNTER_EXPLORER}/token/${HUNTER_ADDRESS}/instance/${tokenId.toString()}`;
+export function hunterExplorerUrl(): string {
+  return `${HUNTER_EXPLORER}/address/${HUNTER_ADDRESS}`;
 }
 
 // Only the read surface the UI needs, transcribed from contracts/src/nft/Hunter.sol and the
