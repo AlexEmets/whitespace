@@ -15,6 +15,23 @@ export const HUNTER_ADDRESS = hunterDeployment.address as Address;
 export const HUNTER_CHAIN_ID = hunterDeployment.chainId as 1875;
 export const HUNTER_DEPLOYED = HUNTER_ADDRESS.toLowerCase() !== zeroAddress;
 
+/**
+ * Block explorer for the Hunter collection's chain (mainnet 1875). Overridable with
+ * NEXT_PUBLIC_HUNTER_EXPLORER; the trailing slash is trimmed so paths join cleanly.
+ */
+export const HUNTER_EXPLORER = (
+  process.env.NEXT_PUBLIC_HUNTER_EXPLORER ?? 'https://explorer.whitechain.io'
+).replace(/\/+$/, '');
+
+/**
+ * Link to one badge's page on the explorer — the Blockscout NFT-instance route the Whitechain
+ * explorer uses (`/token/<collection>/instance/<id>`), so a holder can inspect the token, its
+ * on-chain metadata and transfer history straight from /points.
+ */
+export function hunterTokenUrl(tokenId: bigint): string {
+  return `${HUNTER_EXPLORER}/token/${HUNTER_ADDRESS}/instance/${tokenId.toString()}`;
+}
+
 // Only the read surface the UI needs, transcribed from contracts/src/nft/Hunter.sol and the
 // ERC721Enumerable it mixes in. `tokenOfOwnerByIndex` is what lets the frontend list a
 // wallet's badges straight from chain, with no indexer.

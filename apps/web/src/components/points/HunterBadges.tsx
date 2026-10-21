@@ -1,6 +1,7 @@
 'use client';
 
 import { useHunterNfts } from '@/hooks/useHunterNfts';
+import { hunterTokenUrl } from '@/lib/hunter';
 import styles from './points.module.css';
 
 /**
@@ -28,9 +29,39 @@ export function HunterBadges({ address }: { address?: `0x${string}` }) {
         <ul className={styles.badges}>
           {badges.map((b) => (
             <li key={b.tokenId.toString()} className={styles.badge} title={b.description ?? b.name}>
-              {/* on-chain SVG data URI — a plain <img> renders it directly */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img className={styles.badgeImg} src={b.image} alt={b.name} width={128} height={128} />
+              <div className={styles.badgeMedia}>
+                {/* on-chain SVG data URI — a plain <img> renders it directly */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img className={styles.badgeImg} src={b.image} alt={b.name} width={128} height={128} />
+                {/* Gently revealed on hover (and always shown where there is no hover, e.g.
+                    touch); keyboard users get it on focus. Opens the token's explorer page. */}
+                <a
+                  className={styles.badgeLink}
+                  href={hunterTokenUrl(b.tokenId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`View ${b.name} on the block explorer`}
+                >
+                  <svg
+                    className={styles.badgeLinkIcon}
+                    viewBox="0 0 24 24"
+                    width={12}
+                    height={12}
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M14 4h6v6M20 4l-8.5 8.5M18 13.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5.5"
+                    />
+                  </svg>
+                  Explorer
+                </a>
+              </div>
               <span className={styles.badgeName}>{b.name}</span>
             </li>
           ))}

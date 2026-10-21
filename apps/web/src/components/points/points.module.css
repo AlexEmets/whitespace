@@ -415,12 +415,87 @@
   background: rgba(255, 255, 255, 0.02);
 }
 
+.badgeMedia {
+  position: relative;
+  width: 100%;
+}
+
 .badgeImg {
   width: 100%;
   height: auto;
   aspect-ratio: 1 / 1;
   border-radius: var(--radius);
   display: block;
+}
+
+/* "Explorer" pill, tucked into the top-right of the badge art. Hidden until the badge is
+   hovered (or the link itself is focused for keyboard users), then it fades + slides in
+   gently. Works in both themes via tokens. */
+.badgeLink {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+
+.badge:hover .badgeLink,
+.badgeLink:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.badgeLink:hover,
+.badgeLink:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.badgeLink:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.badgeLinkIcon {
+  flex: none;
+}
+
+/* No hover affordance (touch) → keep the link visible and tappable. */
+@media (hover: none) {
+  .badgeLink {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+/* Honour reduced-motion: reveal without the slide/fade animation. */
+@media (prefers-reduced-motion: reduce) {
+  .badgeLink {
+    transition: color 120ms ease, border-color 120ms ease;
+    transform: none;
+  }
 }
 
 .badgeName {

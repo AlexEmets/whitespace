@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HUNTER_CHAIN_ID, decodeHunterTokenUri } from '@/lib/hunter';
+import { HUNTER_ADDRESS, HUNTER_CHAIN_ID, decodeHunterTokenUri, hunterTokenUrl } from '@/lib/hunter';
 
 /** Builds a tokenURI exactly as contracts/src/nft/Hunter.sol does: base64 JSON whose `image`
  *  is a base64 SVG data URI. */
@@ -21,6 +21,13 @@ describe('Hunter deployment wiring', () => {
     // against this chain id. If someone repoints lib/hunter.ts back to hunter-1874.json this
     // flips to 1874 and the badges silently read the wrong chain — so guard it here.
     expect(HUNTER_CHAIN_ID).toBe(1875);
+  });
+
+  it('builds an explorer NFT-instance link for a badge', () => {
+    // The "Explorer" button on each badge points here (Blockscout instance route).
+    expect(hunterTokenUrl(2n)).toBe(
+      `https://explorer.whitechain.io/token/${HUNTER_ADDRESS}/instance/2`,
+    );
   });
 });
 
