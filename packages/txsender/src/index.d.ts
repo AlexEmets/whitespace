@@ -75,6 +75,7 @@ export const DEFAULTS: Readonly<{
   bumpNumerator: bigint;
   bumpDenominator: bigint;
   retryOnRevert: boolean;
+  estimateGasBlockTag: 'latest' | 'pending' | 'earliest' | 'safe' | 'finalized';
 }>;
 
 export interface Counter {
@@ -116,7 +117,7 @@ export function createTxSender(opts: {
     getGasPrice(): Promise<bigint>;
     getTransactionReceipt(args: { hash: Hex }): Promise<{ status: 'success' | 'reverted' } | null>;
     /** Only used with `gasHeadroomPercent`. */
-    estimateGas?(args: { account: { address: Hex }; to: Hex; data: Hex; value?: bigint }): Promise<bigint>;
+    estimateGas?(args: { account: { address: Hex }; to: Hex; data: Hex; value?: bigint; blockTag?: string }): Promise<bigint>;
   };
   walletClient: { sendTransaction(args: Record<string, unknown>): Promise<Hex> };
   account: { address: Hex };
@@ -135,6 +136,9 @@ export function createTxSender(opts: {
   pipeline?: boolean;
   /** Estimate requests without `gas` and add this percent; 0 leaves estimation to the wallet client. */
   gasHeadroomPercent?: number;
+  /** Block tag the gas estimate runs against. Defaults to 'latest' (accurate mined timestamps);
+   *  'pending' can revert on a node whose pending EVM clock runs ahead of a freshness bound. */
+  estimateGasBlockTag?: 'latest' | 'pending' | 'earliest' | 'safe' | 'finalized';
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
   log?: (level: 'warn' | 'error', message: string) => void;

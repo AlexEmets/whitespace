@@ -580,3 +580,39 @@ test('a failed estimate is a refused broadcast: the nonce is not consumed', asyn
   const b = await sender.send(req('b'));
   assert.equal(b.nonce, 5);
 });
+
+test('the gas estimate runs against the latest (mined) block, not the skewed pending clock', async () => {
+  // Regression for the keeper stall: Whitechain's public RPC runs the `pending` EVM
+  // block.timestamp ~12s ahead, so the price upkeep's StaleReport(maxAge=10s) reverts at
+  // `pending` while the eventual mined block passes. Estimating at `pending` (or with no
+  // blockTag, which a node resolves to pending) dead-lettered every order; `latest` must
+  // be requested so the preflight sees an accurate, mined timestamp and the tx broadcasts.
+  const chain = fakeChain();
+  const tags = [];
+  chain.publicClient.estimateGas = async (args) => {
+    tags.push(args.blockTag);
+    if (args.blockTag !== 'latest') {
+      throw new Error('execution reverted: custom error 0x468a53bc'); // StaleReport
+    }
+    return 100_000n;
+  };
+  const result = await makeSender(chain, { gasHeadroomPercent: 30 }).send(req());
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(tags, ['latest']);
+  assert.equal(chain.sent[0].gas, 130_000n);
+});
+
+test('estimateGasBlockTag is configurable, and pending reproduces the stall', async () => {
+  const chain = fakeChain();
+  chain.publicClient.estimateGas = async (args) => {
+    if (args.blockTag === 'pending') throw new Error('execution reverted: custom error 0x468a53bc');
+    return 100_000n;
+  };
+  const sender = makeSender(chain, { gasHeadroomPercent: 30, estimateGasBlockTag: 'pending', maxRetries: 0 });
+  const result = await sender.send(req());
+
+  assert.equal(result.ok, false);
+  assert.equal(result.deadLettered, true);
+  assert.equal(chain.sent.length, 0); // never broadcast
+});

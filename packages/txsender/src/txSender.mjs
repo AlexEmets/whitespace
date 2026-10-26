@@ -46,6 +46,12 @@ export const DEFAULTS = Object.freeze({
   bumpNumerator: 12n,
   bumpDenominator: 10n,
   retryOnRevert: true,
+  // Estimate gas against a mined block, never the mempool. A node's `pending` EVM context
+  // can synthesise a block.timestamp seconds ahead of wall-clock (Whitechain's public RPC
+  // runs it ~12s ahead), which reverts any call with a freshness bound tighter than that
+  // skew — the price upkeep's StaleReport(maxAge=10s) fires at `pending` while `latest` and
+  // the eventual mined block both pass. `latest` reflects accurate, mined timestamps.
+  estimateGasBlockTag: 'latest',
 });
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,6 +79,7 @@ export function createTxSender({
   retryOnRevert = DEFAULTS.retryOnRevert,
   pipeline = false,
   gasHeadroomPercent = 0,
+  estimateGasBlockTag = DEFAULTS.estimateGasBlockTag,
   now = () => Date.now(),
   sleep = defaultSleep,
   log = () => {},
@@ -134,6 +141,8 @@ export function createTxSender({
       to: req.to,
       data: req.data,
       ...(req.value !== undefined ? { value: req.value } : {}),
+      // Against a mined block, not the mempool's `pending` clock — see DEFAULTS.estimateGasBlockTag.
+      blockTag: estimateGasBlockTag,
     });
     return estimate + (estimate * BigInt(gasHeadroomPercent) + 99n) / 100n;
   }
