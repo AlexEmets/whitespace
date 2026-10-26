@@ -143,6 +143,14 @@ export function createTxSender({
       ...(req.value !== undefined ? { value: req.value } : {}),
       // Against a mined block, not the mempool's `pending` clock — see DEFAULTS.estimateGasBlockTag.
       blockTag: estimateGasBlockTag,
+      // `prepare: false` is load-bearing, not an optimisation. viem's estimateGas defaults to
+      // prepare:true, which runs prepareTransactionRequest and then reads `blockTag` from THAT
+      // prepared request — which does not carry it — so our blockTag is silently dropped and
+      // eth_estimateGas goes out with no block param, i.e. against `pending`. With prepare:false
+      // viem reads blockTag straight from these args, so it actually reaches the node. (On
+      // Whitechain's RPC the pending EVM clock runs ~12s ahead of mined blocks, which trips the
+      // price upkeep's StaleReport(maxAge=10s) at `pending` while `latest` passes.)
+      prepare: false,
     });
     return estimate + (estimate * BigInt(gasHeadroomPercent) + 99n) / 100n;
   }

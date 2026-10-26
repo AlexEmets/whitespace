@@ -117,7 +117,7 @@ export function createTxSender(opts: {
     getGasPrice(): Promise<bigint>;
     getTransactionReceipt(args: { hash: Hex }): Promise<{ status: 'success' | 'reverted' } | null>;
     /** Only used with `gasHeadroomPercent`. */
-    estimateGas?(args: { account: { address: Hex }; to: Hex; data: Hex; value?: bigint; blockTag?: string }): Promise<bigint>;
+    estimateGas?(args: { account: { address: Hex }; to: Hex; data: Hex; value?: bigint; blockTag?: string; prepare?: boolean }): Promise<bigint>;
   };
   walletClient: { sendTransaction(args: Record<string, unknown>): Promise<Hex> };
   account: { address: Hex };

@@ -588,10 +588,13 @@ test('the gas estimate runs against the latest (mined) block, not the skewed pen
   // blockTag, which a node resolves to pending) dead-lettered every order; `latest` must
   // be requested so the preflight sees an accurate, mined timestamp and the tx broadcasts.
   const chain = fakeChain();
-  const tags = [];
+  const calls = [];
   chain.publicClient.estimateGas = async (args) => {
-    tags.push(args.blockTag);
-    if (args.blockTag !== 'latest') {
+    calls.push({ blockTag: args.blockTag, prepare: args.prepare });
+    // Model viem's real behaviour: blockTag only reaches the node when prepare===false;
+    // with prepare left at its default the tag is dropped and the node estimates at pending.
+    const effectiveTag = args.prepare === false ? args.blockTag : 'pending';
+    if (effectiveTag !== 'latest') {
       throw new Error('execution reverted: custom error 0x468a53bc'); // StaleReport
     }
     return 100_000n;
@@ -599,7 +602,7 @@ test('the gas estimate runs against the latest (mined) block, not the skewed pen
   const result = await makeSender(chain, { gasHeadroomPercent: 30 }).send(req());
 
   assert.equal(result.ok, true);
-  assert.deepEqual(tags, ['latest']);
+  assert.deepEqual(calls, [{ blockTag: 'latest', prepare: false }]);
   assert.equal(chain.sent[0].gas, 130_000n);
 });
 
