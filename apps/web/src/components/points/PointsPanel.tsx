@@ -21,6 +21,7 @@ import { marketLabel } from '@/components/portfolio/TradeHistoryTable';
 import { AccountState, Dash, accountStyles as shell } from '@/components/portfolio/AccountPage';
 import { LiveNumber } from './LiveNumber';
 import { HunterBadges } from './HunterBadges';
+import { Leaderboard } from './Leaderboard';
 import styles from './points.module.css';
 
 /**
@@ -192,6 +193,7 @@ export function PointsPanel() {
           Points are address-scoped. Connect a wallet to see what you have earned and what is still accruing.
           <Link href="/trade"> Start trading</Link> to open your first mission.
         </AccountState>
+        <Leaderboard />
         <MissionsGrid completed={new Set()} points={`up to ${MAX_MISSION_POINTS} pts`} />
         <Rules />
       </div>
@@ -431,6 +433,8 @@ export function PointsPanel() {
       <MissionsGrid completed={completed} points={`${fmt(confirmed.missions, 0)} of ${MAX_MISSION_POINTS} pts`} />
 
       <HunterBadges address={address} />
+
+      <Leaderboard me={address} />
 
       <Rules />
     </div>

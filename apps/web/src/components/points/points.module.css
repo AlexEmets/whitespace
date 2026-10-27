@@ -511,6 +511,115 @@
   color: var(--fg-muted);
 }
 
+/* ---------- Leaderboard ---------- */
+
+/* A safety net only: on narrow screens the breakdown columns drop out (below), so the table
+   fits; this keeps a long address from ever pushing the page sideways. */
+.lbScroll {
+  margin: 0.7rem 0 0;
+  overflow-x: auto;
+}
+
+.lb {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.lb th {
+  padding: 0 0.6rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--fg-dim);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lb td {
+  padding: 0.62rem 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.lb .lbRank,
+.lb .lbWallet {
+  text-align: left;
+}
+
+.lbRank {
+  width: 2.6rem;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+/* The podium: the first three ranks of the board in the accent. */
+.lb tbody:first-of-type tr:nth-child(-n + 3) .lbRank {
+  color: var(--accent);
+}
+
+.lbWallet {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+.lbPart {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+
+.lbTotal {
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+
+.lbMe td {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.lbMe td:first-child {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.lbYou {
+  margin-left: 0.6rem;
+  padding: 1px 7px;
+  border: 1px solid rgba(var(--accent-rgb), 0.5);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--accent);
+}
+
+/* The connected wallet pinned under the top ten, set apart as "and you, further down". */
+.lbPinned td {
+  border-top: 1px dashed var(--border-strong);
+}
+
+.lbMore {
+  margin: 0.9rem 0 0.1rem;
+  padding: 0.5rem 0.95rem;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.lbMore:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.lbMore:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
 /* ---------- Rules ---------- */
 
 .rules {
@@ -563,6 +672,11 @@
 
   .missions {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On a phone the board is rank, wallet and total; the per-component breakdown needs width. */
+  .lbPart {
+    display: none;
   }
 }
 

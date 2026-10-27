@@ -47,6 +47,35 @@ vi.mock('@/hooks/useHunterNfts', () => ({
   useHunterNfts: () => ({ badges: [], count: 0, minted: null, cap: null, deployed: false, loading: false }),
 }));
 
+// The leaderboard's own rendering is pinned in Leaderboard.test.tsx; here it is only checked
+// to be on the page, for visitors as well as connected wallets.
+vi.mock('@/hooks/useLeaderboard', () => ({
+  useLeaderboard: () => ({
+    entries: [
+      {
+        rank: 1,
+        address: '0x2b8ba090dedf879f8045c0dda5a78762ced90d19',
+        missions: '500.000000',
+        time: '214.600000',
+        streak: '128.000000',
+        lp: '96.400000',
+        total: '939.000000',
+      },
+      {
+        rank: 2,
+        address: '0x06513c819388d2c4883890615b76008d1c2ff98f',
+        missions: '450.000000',
+        time: '10.000000',
+        streak: '10.000000',
+        lp: '0.000000',
+        total: '470.000000',
+      },
+    ],
+    loading: false,
+    error: null,
+  }),
+}));
+
 const positionsState = vi.hoisted(() => ({ list: null as unknown[] | null }));
 const underFloor = (held: number) => ({
   pairIndex: 0,
@@ -166,6 +195,23 @@ describe('<PointsPanel>', () => {
     expect(rules).toHaveTextContent('under 5 min');
     expect(rules).toHaveTextContent('each mission counts once per wallet');
     expect(screen.queryByText(/Anti-farm/)).not.toBeInTheDocument();
+  });
+
+  it('shows the leaderboard to a visitor with no wallet, with no row marked as theirs', () => {
+    connected.value = false;
+    render(<PointsPanel />);
+    const board = screen.getByTestId('leaderboard');
+    expect(board).toHaveTextContent('0x0651…f98f');
+    expect(board.querySelector('[data-me="true"]')).toBeNull();
+    connected.value = true;
+  });
+
+  it('marks the connected wallet on the leaderboard', () => {
+    connected.value = true;
+    render(<PointsPanel />);
+    const mine = screen.getByTestId('leaderboard').querySelector('[data-me="true"]');
+    expect(mine).toHaveTextContent('0x2b8b…0d19');
+    expect(mine).toHaveTextContent('You');
   });
 
   it('asks for a wallet when disconnected but still shows what can be earned', () => {
