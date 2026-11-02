@@ -15,6 +15,11 @@ vi.mock('@/hooks/useCandles', () => ({
 vi.mock('@/hooks/usePrice', () => ({
   usePrice: () => ({ data: { mark: '111.000000000000000000', index: '111.000000000000000000', degraded: false } }),
 }));
+// The trader's position levels read the wallet through wagmi; this suite is about the chart
+// type, so no wallet and no levels. The levels have their own suite (PriceChartPositions).
+vi.mock('@/hooks/usePositionLevels', () => ({
+  usePositionLevels: () => [],
+}));
 
 beforeEach(() => {
   window.localStorage.clear();

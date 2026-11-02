@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { INTERVAL_SECONDS } from '@whitespace/shared/candles';
 import { useCandles } from '@/hooks/useCandles';
+import { usePositionLevels } from '@/hooks/usePositionLevels';
 import { usePrice } from '@/hooks/usePrice';
 import { priceToRaw, formatMoney, priceFractionDigits } from '@/lib/money';
 import { PRICE_DECIMALS_NUM } from '@/lib/config';
+import { levelsInView } from '@/lib/positionLevels';
 import type { Candle, CandleInterval } from '@/lib/types';
 import { DegradedBanner } from './DegradedBanner';
 import styles from './PriceChart.module.css';
@@ -431,20 +433,14 @@ interface Layout {
  * Interval selection and the log scale toggle are both genuine, wired features. There is no depth view (a vault has no
  * book) and no indicator library, so neither is offered as a disabled button.
  *
- * WHAT THE MOCKUP HAS THAT THIS DOES NOT. terminal_design.pdf draws a dashed horizontal
- * line at a position's liquidation price. At the time this was written the app had no
- * liquidation price to draw — PositionsList and OpenPositionForm both rendered it as a
- * dash, because it depends on accrued funding and rollover state nothing here read — and
- * drawing the line anyway, at an approximation or at entry price relabelled, would put a
- * number on screen that a trader would size a stop against. So the dashed line here marks
- * the live MARK price: real, and the level the protocol actually prices against.
- *
- * That constraint is being lifted separately by `src/hooks/useLiquidationPrice.ts`, which
- * reads the figure off WhitespacePairInfos. Once it has landed, the position overlay is a
- * small addition — this component already has the primitive (see the mark line and its
- * axis chip below); it needs the trader's open positions for this pair and one more line
- * per position. It is deliberately not wired here rather than done against a hook that is
- * still in flight.
+ * THE TRADER'S OWN LEVELS. Every open position the connected wallet holds on this market is
+ * drawn over the candles: its entry (tagged with side and leverage), its TP and SL when
+ * set, and its liquidation price — each a line across the plot with its price in a chip
+ * on the axis, built on the same primitive as the mark line. The liquidation price is the
+ * contract's own (`usePositionLevels` asks WhitespacePairInfos, as the positions table
+ * does); until it answers that line is simply absent, never drawn at a guess a trader would
+ * size a stop against. A level outside the visible price range is not drawn, and it does
+ * not stretch the autoscale to make room — dragging the price axis brings it into view.
  *
  * NOTHING IS INTERPOLATED. The index series starts when the API does (services/api's
  * src/indexSeries.ts), so a freshly-started stack legitimately has a handful of buckets.
@@ -479,6 +475,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
   const [historyExhausted, setHistoryExhausted] = useState(false);
   const { candles, loading, error } = useCandles(pairIndex, interval, range.from, range.to);
   const { data: price } = usePrice(pairIndex);
+  const levels = usePositionLevels(pairIndex);
   /** Set by hand from the price axis; null is auto — fitted to the visible candles. */
   const [priceDomain, setPriceDomain] = useState<PriceDomain | null>(null);
 
@@ -860,6 +857,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
     return y >= PAD.top && y <= PAD.top + layout.plotH ? y : null;
   })();
   const markY = scale && markRaw !== null && markRaw >= scale.min && markRaw <= scale.max ? scale.toY(markRaw) : null;
+  const shownLevels = scale ? levelsInView(levels, scale.min, scale.max).map((l) => ({ ...l, y: scale.toY(l.price) })) : [];
 
   // One precision for every price label on this chart — axis ticks, the mark chip, the
   // crosshair and the OHLC readout — so a sub-$10 market (XRP) shows enough digits to be
@@ -1013,7 +1011,7 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
 
                 <g className={styles.axis} data-testid="price-axis">
                   {yTicks
-                    .filter((t) => labelClearOfChips(scale.toY(t), [markY, crosshairY]))
+                    .filter((t) => labelClearOfChips(scale.toY(t), [markY, crosshairY, ...shownLevels.map((l) => l.y)]))
                     .map((t) => (
                       <text key={`yl${t}`} x={PAD.left + layout.plotW + 6} y={scale.toY(t) + 3.5}>
                         {formatMoney(t, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}
@@ -1048,6 +1046,25 @@ export function PriceChart({ pairIndex }: { pairIndex: number | null }) {
                     <path className={styles.lineArea} d={linePath.area} />
                     <path className={styles.line} d={linePath.line} />
                     {lastLinePoint ? <circle className={styles.lineDot} cx={lastLinePoint.x} cy={lastLinePoint.y} r={3.5} /> : null}
+                  </g>
+                ) : null}
+
+                {/* The trader's levels go under the mark: where a chip of each sits at the
+                    same height, the live price is the one left readable. */}
+                {shownLevels.length > 0 ? (
+                  <g data-testid="position-levels">
+                    {shownLevels.map((l) => (
+                      <g key={l.key} className={styles[`level-${l.kind}`]} data-testid={`position-level-${l.kind}`}>
+                        <line className={styles.levelLine} x1={PAD.left} x2={PAD.left + layout.plotW} y1={l.y} y2={l.y} clipPath={`url(#${clipId})`} />
+                        <text className={styles.levelTag} x={PAD.left + 6} y={l.y - 4}>
+                          {l.tag}
+                        </text>
+                        <rect className={styles.levelChip} x={PAD.left + layout.plotW + 2} y={l.y - CHIP_H / 2} width={PAD.right - 6} height={CHIP_H} rx={5} />
+                        <text className={styles.levelChipText} x={PAD.left + layout.plotW + 6} y={l.y + 3.5}>
+                          {formatMoney(l.price, PRICE_DECIMALS_NUM, { fractionDigits: priceFd })}
+                        </text>
+                      </g>
+                    ))}
                   </g>
                 ) : null}
 

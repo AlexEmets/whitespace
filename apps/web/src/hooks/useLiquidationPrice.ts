@@ -20,12 +20,8 @@ import { PAIR_INFOS_ADDRESS } from '@/lib/deployment';
  * resolved. Callers render the dash for null.
  */
 
-/**
- * For a position that already exists. The contract reads that specific trade's stored
- * funding accumulator and accrued rollover, so `trader`/`pairIndex`/`index` must identify
- * a real open trade — the answer is not transferable between slots.
- */
-export function useLiquidationPrice(params: {
+/** What identifies an open trade and sizes it, as `getTradeLiquidationPrice` takes it. */
+export interface LiquidationPriceParams {
   trader: Address | undefined;
   pairIndex: number;
   index: number;
@@ -38,29 +34,46 @@ export function useLiquidationPrice(params: {
   leverageRaw: bigint;
   /** Raw PRECISION_2 max leverage for the pair, e.g. 10000n for 100.00x. */
   maxLeverageRaw: bigint;
-}): bigint | null {
-  const enabled =
+}
+
+/**
+ * The `getTradeLiquidationPrice` arguments for a trade, or undefined while any input is
+ * missing — the read is then not made at all. Shared by the positions table (one trade)
+ * and the chart (every trade on its market), so both ask the contract the same question.
+ */
+export function liquidationPriceArgs(params: LiquidationPriceParams) {
+  const ready =
     Boolean(params.trader) && params.openPriceRaw > 0n && params.collateralRaw > 0n && params.leverageRaw > 0n && params.maxLeverageRaw > 0n;
+  if (!ready) return undefined;
+  return [
+    params.trader as Address,
+    params.pairIndex,
+    params.index,
+    params.openPriceRaw,
+    params.long,
+    params.collateralRaw,
+    // uint32/uint8 parameters are `number` in viem's encoder, not bigint (same
+    // boundary useOpenTrade.ts and useMarketFees.ts document). Both are PRECISION_2
+    // and bounded far below Number.MAX_SAFE_INTEGER, so the narrowing is exact.
+    Number(params.leverageRaw),
+    Number(params.maxLeverageRaw),
+  ] as const;
+}
+
+/**
+ * For a position that already exists. The contract reads that specific trade's stored
+ * funding accumulator and accrued rollover, so `trader`/`pairIndex`/`index` must identify
+ * a real open trade — the answer is not transferable between slots.
+ */
+export function useLiquidationPrice(params: LiquidationPriceParams): bigint | null {
+  const args = liquidationPriceArgs(params);
+  const enabled = args !== undefined;
 
   const { data } = useReadContract({
     address: PAIR_INFOS_ADDRESS,
     abi: PAIR_INFOS_ABI,
     functionName: 'getTradeLiquidationPrice',
-    args: enabled
-      ? [
-          params.trader as Address,
-          params.pairIndex,
-          params.index,
-          params.openPriceRaw,
-          params.long,
-          params.collateralRaw,
-          // uint32/uint8 parameters are `number` in viem's encoder, not bigint (same
-          // boundary useOpenTrade.ts and useMarketFees.ts document). Both are PRECISION_2
-          // and bounded far below Number.MAX_SAFE_INTEGER, so the narrowing is exact.
-          Number(params.leverageRaw),
-          Number(params.maxLeverageRaw),
-        ]
-      : undefined,
+    args,
     query: { enabled },
   });
 

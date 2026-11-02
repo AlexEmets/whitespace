@@ -107,6 +107,77 @@
   font-weight: 600;
 }
 
+/* The trader's own levels: entry in the foreground ink, TP in the long colour, SL and the
+   liquidation in the short colour — SL dashed, liquidation solid, the one not to reach. */
+.levelLine {
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
+.levelTag {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.levelChipText {
+  fill: var(--on-color);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.level-entry .levelLine {
+  stroke: var(--fg-muted);
+  stroke-dasharray: 2 3;
+}
+
+.level-entry .levelTag {
+  fill: var(--fg);
+}
+
+.level-entry .levelChip {
+  fill: var(--fg-muted);
+}
+
+.level-tp .levelLine,
+.level-tp .levelChip {
+  stroke: var(--long);
+  fill: var(--long);
+}
+
+.level-tp .levelTag {
+  fill: var(--long);
+}
+
+.level-sl .levelLine,
+.level-sl .levelChip,
+.level-liq .levelLine,
+.level-liq .levelChip {
+  stroke: var(--short);
+  fill: var(--short);
+}
+
+.level-sl .levelTag,
+.level-liq .levelTag {
+  fill: var(--short);
+}
+
+.level-liq .levelLine {
+  stroke-dasharray: none;
+  stroke-width: 1.2;
+}
+
+.levelChip {
+  stroke: none;
+}
+
 .crosshair {
   stroke: var(--fg-muted);
   stroke-width: 1;
