@@ -26,6 +26,32 @@
   outline: none;
 }
 
+/* The same control with its word, where there is room for one: "Share" on the portfolio's
+   performance card. */
+.labelled {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.labelled:hover,
+.labelled:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent-ring);
+  outline: none;
+}
+
 .body {
   display: flex;
   flex-direction: column;

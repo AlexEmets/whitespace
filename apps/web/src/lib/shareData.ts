@@ -1,6 +1,7 @@
 import { toClosedTrade } from './closedTrade';
 import { API_BASE_URL } from './config';
 import { closedTradeShareCard, isAddress, openPositionShareCard, parseShareId, type ShareCard } from './shareCard';
+import { traderStatsCard, type StatsCard } from './statsCard';
 import { DEFAULT_THEME, isTheme, type Theme } from './theme';
 import type { ClosedPositionSummary, MarketSummary, PositionSummary } from './types';
 
@@ -75,6 +76,37 @@ export async function loadShareCard(
     const price = (await fetchJson(`/price/${position.pairIndex}`)) as { mark?: string | null };
     if (typeof price.mark !== 'string') return null;
     return { card: openPositionShareCard(position, from, price.mark, nowSeconds), theme };
+  } catch {
+    return null;
+  }
+}
+
+export interface StatsCardResult {
+  card: StatsCard;
+  theme: Theme;
+}
+
+/**
+ * A wallet's stats card, from its closes on the API — like loadShareCard, nothing but the
+ * address and the theme comes from the link, so the record on the card cannot be forged.
+ * Null for a malformed address (before any request), for a wallet with nothing closed, and
+ * for an API that did not answer: the page renders a 404, not an error.
+ */
+export async function loadStatsCard(
+  params: { address: string; theme?: string | null },
+  fetchJson: FetchJson,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): Promise<StatsCardResult | null> {
+  if (!isAddress(params.address)) return null;
+  const address = params.address.toLowerCase();
+  const theme: Theme = isTheme(params.theme) ? params.theme : DEFAULT_THEME;
+
+  try {
+    const markets = (await fetchJson('/markets')) as MarketSummary[];
+    const history = (await fetchJson(`/positions/${address}/history`)) as ClosedPositionSummary[];
+    const marketFrom = (pairIndex: number) => markets.find((m) => m.pairIndex === pairIndex)?.from ?? null;
+    const card = traderStatsCard(address, history.map(toClosedTrade), marketFrom, nowSeconds);
+    return card ? { card, theme } : null;
   } catch {
     return null;
   }

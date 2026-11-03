@@ -252,6 +252,12 @@
   justify-content: space-between;
 }
 
+.perfHeadSide {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .perfGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

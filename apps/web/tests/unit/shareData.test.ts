@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadShareCard, serverApiBase, type FetchJson } from '@/lib/shareData';
+import { loadShareCard, loadStatsCard, serverApiBase, type FetchJson } from '@/lib/shareData';
 
 const ADDRESS = '0x00000000000000000000000000000000000000aa';
 const T0 = Date.UTC(2026, 8, 28, 12, 0, 0) / 1000;
@@ -129,5 +129,44 @@ describe('loadShareCard', () => {
 
   it('is null for an open position whose market has no price yet', async () => {
     expect(await loadShareCard({ address: ADDRESS, id: 'o9' }, fakeApi({ '/price/1': { mark: null } }), T0)).toBeNull();
+  });
+});
+
+describe('loadStatsCard', () => {
+  it("builds the wallet's stats card from its closes, naming the best trade's market", async () => {
+    const result = await loadStatsCard({ address: ADDRESS }, fakeApi(), T0);
+    expect(result?.card.pnl).toBe('+12.50');
+    expect(result?.card.trades).toBe('1');
+    expect(result?.card.winRate).toBe('100%');
+    expect(result?.card.bestMarket).toBe('BTC-PERP');
+    expect(result?.theme).toBe('solar');
+  });
+
+  it('carries the Lunar theme from the link, and ignores anything else', async () => {
+    expect((await loadStatsCard({ address: ADDRESS, theme: 'lunar' }, fakeApi(), T0))?.theme).toBe('lunar');
+    expect((await loadStatsCard({ address: ADDRESS, theme: 'neon' }, fakeApi(), T0))?.theme).toBe('solar');
+  });
+
+  it('looks up the lower-cased address, however the link spelled it', async () => {
+    const api = fakeApi();
+    await loadStatsCard({ address: ADDRESS.toUpperCase().replace('0X', '0x') }, api, T0);
+    expect(api).toHaveBeenCalledWith(`/positions/${ADDRESS}/history`);
+  });
+
+  it('is null for a malformed address, without calling the API', async () => {
+    const api = fakeApi();
+    expect(await loadStatsCard({ address: '0x123' }, api, T0)).toBeNull();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it('is null for a wallet with nothing closed', async () => {
+    expect(await loadStatsCard({ address: ADDRESS }, fakeApi({ [`/positions/${ADDRESS}/history`]: [] }), T0)).toBeNull();
+  });
+
+  it('is null when the API fails, rather than throwing into the page', async () => {
+    const failing: FetchJson = vi.fn(async () => {
+      throw new Error('502');
+    });
+    expect(await loadStatsCard({ address: ADDRESS }, failing, T0)).toBeNull();
   });
 });

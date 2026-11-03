@@ -14,8 +14,10 @@ import { COLLATERAL_DECIMALS } from '@/lib/config';
 import { formatMoney } from '@/lib/money';
 import { estimateUnrealisedPnl } from '@/lib/pnl';
 import { accountShares, cumulativeRealisedPnl, tradePerformance, winRate, type AccountPart } from '@/lib/portfolio';
+import { traderStatsCard } from '@/lib/statsCard';
 import type { PositionSummary, PriceResponse } from '@/lib/types';
 import { FundingButtons } from '@/components/FundingButtons';
+import { ShareStatsButton } from '@/components/share/ShareStatsButton';
 import { AccountState, DefRow, Defs, Dash, Section, accountStyles } from './AccountPage';
 import { OpenPositionsTable } from './OpenPositionsTable';
 import { PnlSparkline } from './PnlSparkline';
@@ -120,6 +122,15 @@ export function PortfolioView() {
   const pnlSeries = useMemo(() => cumulativeRealisedPnl(stats.trades), [stats.trades]);
   const rate = winRate(stats.wins, stats.losses);
   const historyPending = historyLoading && stats.closedCount === 0;
+  // The shareable record: built from the same closes as the figures below, so the card can
+  // only say what this card says. Null until something has closed.
+  const statsCard = useMemo(
+    () =>
+      address
+        ? traderStatsCard(address, stats.trades, (i) => markets.find((m) => m.pairIndex === i)?.from ?? null, Math.floor(Date.now() / 1000))
+        : null,
+    [address, stats.trades, markets],
+  );
 
   const pendingOrders = orders.filter((o) => o.status === 'pending');
   const resolvedOrders = orders.filter((o) => o.status !== 'pending');
@@ -264,7 +275,10 @@ export function PortfolioView() {
         <section className={styles.perfCard} data-testid="portfolio-performance" aria-label="Performance">
           <div className={styles.perfHead}>
             <span className={styles.label}>Performance</span>
-            <span className={styles.faint}>all time</span>
+            <span className={styles.perfHeadSide}>
+              <span className={styles.faint}>all time</span>
+              {statsCard ? <ShareStatsButton address={address} card={statsCard} /> : null}
+            </span>
           </div>
           <div className={styles.perfGrid}>
             <Stat

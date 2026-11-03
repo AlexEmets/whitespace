@@ -56,7 +56,7 @@ export function compactLeverage(leverage: string): string {
    dialog must print the same date. */
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function utcDate(seconds: number): string {
+export function utcDate(seconds: number): string {
   const d = new Date(seconds * 1000);
   return `${String(d.getUTCDate()).padStart(2, '0')} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }

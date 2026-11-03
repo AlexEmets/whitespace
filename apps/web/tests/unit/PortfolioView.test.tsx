@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PortfolioView, sumAccountValue, totalUnrealisedPnl } from '@/components/portfolio/PortfolioView';
 import type { ClosedPositionSummary, PositionSummary, PriceResponse } from '@/lib/types';
@@ -118,9 +118,11 @@ vi.mock('@/hooks/usePortfolioBalances', () => ({
   }),
 }));
 
+const historyState = vi.hoisted(() => ({ empty: false }));
+
 // Mocked one level below useTradeStats so the real normalisation and aggregation run.
 vi.mock('@/hooks/usePositionHistory', () => ({
-  usePositionHistory: () => ({ history: [closedTrade], loading: false, error: null }),
+  usePositionHistory: () => ({ history: historyState.empty ? [] : [closedTrade], loading: false, error: null }),
 }));
 
 describe('portfolio arithmetic', () => {
@@ -295,5 +297,23 @@ describe('<PortfolioView> connected', () => {
     );
     expect(screen.getByTestId('account-bar').querySelectorAll('[data-part]')).toHaveLength(0);
     hasPrice.value = true;
+  });
+});
+
+describe('sharing the trader stats card', () => {
+  it('offers to share the stats from the performance card once something has closed, and not before', () => {
+    const { unmount } = render(<PortfolioView />);
+    const perf = screen.getByTestId('portfolio-performance');
+    fireEvent.click(within(perf).getByTestId('share-stats'));
+    expect(screen.getByTestId('share-preview')).toHaveAttribute(
+      'src',
+      '/share/0x2b8ba090dedf879f8045c0dda5a78762ced90d19/stats/card.png',
+    );
+    unmount();
+
+    historyState.empty = true;
+    render(<PortfolioView />);
+    expect(screen.queryByTestId('share-stats')).not.toBeInTheDocument();
+    historyState.empty = false;
   });
 });

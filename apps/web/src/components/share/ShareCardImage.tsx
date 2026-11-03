@@ -17,13 +17,13 @@ export const CARD_HEIGHT = 630;
 /** The ring's circle in card pixels: the 2px rim drawn over the glow's inner edge. The
  * glow disc shares its centre. */
 export const CARD_RING = { cx: 1020, cy: 360, r: 208 } as const;
-const GLOW_RADIUS = 320;
+export const GLOW_RADIUS = 320;
 
 /** The one-line footer — date, network, site — pinned under the ring: its distance from the
  * card's bottom edge and its line box. Two lines at the old height ran across the ring. */
 export const FOOTER = { bottom: 26, lineHeight: 24 } as const;
 
-const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: string; rim: string; markRim: string; flare: string }> = {
+export const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: string; rim: string; markRim: string; flare: string }> = {
   solar: {
     bg: '#030305',
     accent: '#ffc37a',
@@ -44,17 +44,17 @@ const PALETTE: Record<Theme, { bg: string; accent: string; glow: string; halo: s
   },
 };
 
-const FG = '#ededf2';
-const MUTED = '#8e8fa3';
-const LONG = '#5eead4';
-const SHORT = '#ff7a6b';
+export const FG = '#ededf2';
+export const MUTED = '#8e8fa3';
+export const LONG = '#5eead4';
+export const SHORT = '#ff7a6b';
 
 /**
  * The brand mark (lib/brandMark.ts) for Satori, which rasterises an inline SVG through
  * resvg: plain presentation attributes rather than style objects, and fixed gradient ids,
  * since the card draws the mark once.
  */
-function CardBrandMark({ p }: { p: (typeof PALETTE)[Theme] }) {
+export function CardBrandMark({ p }: { p: (typeof PALETTE)[Theme] }) {
   return (
     <svg width={44} height={44} viewBox={`0 0 ${BRAND_VIEWBOX} ${BRAND_VIEWBOX}`}>
       <defs>
