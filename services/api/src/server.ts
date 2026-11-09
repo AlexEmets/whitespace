@@ -38,6 +38,11 @@ router.get('/points/:address', handlePoints);
 // gasless wallet can afford its first transaction (see src/faucet.ts).
 router.post('/faucet/wbt', handleFaucetWbt);
 
+/** The routes this server answers, as registered above. */
+export function registeredRoutes(): Array<{ method: string; path: string }> {
+  return router.list();
+}
+
 export type App = { server: Server; wsManager: WsManager };
 
 /**

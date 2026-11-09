@@ -2,8 +2,8 @@ import { queryOne } from '../db.js';
 import type { RouteResult } from '../router.js';
 
 const CHAIN_ID = Number(process.env.CHAIN_ID ?? 1874);
-const DEGRADED_LAG_SECONDS = 30;
-const DOWN_LAG_SECONDS = 300;
+export const DEGRADED_LAG_SECONDS = 30;
+export const DOWN_LAG_SECONDS = 300;
 
 export async function handleHealth(): Promise<RouteResult> {
   const row = await queryOne<{ block_number: string; block_timestamp: number }>(

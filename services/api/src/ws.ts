@@ -13,10 +13,10 @@ import { clientIp } from './routes/faucet.js';
 import { INTERVALS } from '@whitespace/shared/candles';
 
 type ChannelKind = 'price' | 'positions' | 'orders' | 'candles' | 'limitOrders' | 'fees';
-const VALID_KINDS: ChannelKind[] = ['price', 'positions', 'orders', 'candles', 'limitOrders', 'fees'];
+export const VALID_KINDS: readonly ChannelKind[] = ['price', 'positions', 'orders', 'candles', 'limitOrders', 'fees'];
 /** Channels whose argument is a wallet; the address must be well-formed, so a client cannot
  * create an unbounded number of distinct polled channels out of arbitrary strings. */
-const ADDRESS_KINDS: ChannelKind[] = ['positions', 'orders', 'limitOrders', 'fees'];
+const ADDRESS_KINDS: readonly ChannelKind[] = ['positions', 'orders', 'limitOrders', 'fees'];
 
 /** Every channel a socket holds is re-queried each poll; this caps what one socket can
  * make the server do per tick. A trading UI needs a handful. */
@@ -156,8 +156,11 @@ export type WsManagerOptions = {
   fetchChannelData?: (parsed: ParsedChannel) => Promise<unknown>;
 };
 
+/** How often every subscribed channel is re-read and, if it changed, pushed. */
+export const DEFAULT_POLL_INTERVAL_MS = 2000;
+
 export function createWsManager(opts: WsManagerOptions = {}): WsManager {
-  const pollIntervalMs = opts.pollIntervalMs ?? 2000;
+  const pollIntervalMs = opts.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   const pingIntervalMs = opts.pingIntervalMs ?? 30_000;
   const maxConnections = opts.maxConnections ?? DEFAULT_MAX_CONNECTIONS;
   const maxConnectionsPerIp = opts.maxConnectionsPerIp ?? DEFAULT_MAX_CONNECTIONS_PER_IP;

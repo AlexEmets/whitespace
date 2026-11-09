@@ -23,7 +23,11 @@
     },
     "./venues": "./src/venues.mjs",
     "./keys": "./src/keys.mjs",
-    "./orderTypes": "./src/orderTypes.mjs"
+    "./orderTypes": "./src/orderTypes.mjs",
+    "./api": {
+      "types": "./src/api.d.ts",
+      "default": "./src/api.mjs"
+    }
   },
   "scripts": {
     "test": "node --test"

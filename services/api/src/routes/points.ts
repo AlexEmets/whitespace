@@ -66,10 +66,13 @@ export const handlePoints: Handler = async (_req, params): Promise<RouteResult> 
   return { code: 200, body };
 };
 
+export const LEADERBOARD_DEFAULT_LIMIT = 100;
+export const LEADERBOARD_MAX_LIMIT = 500;
+
 // GET /points/leaderboard?limit= -> LeaderboardEntry[], ranked by total points descending.
 // Ties break by address so the order is stable across calls.
 export const handleLeaderboard: Handler = async (_req, _params, searchParams): Promise<RouteResult> => {
-  const limit = parseLimit(searchParams, 100, 500);
+  const limit = parseLimit(searchParams, LEADERBOARD_DEFAULT_LIMIT, LEADERBOARD_MAX_LIMIT);
   if (limit === null) return badRequest('invalid limit');
 
   const rows = await query<{ trader: string } & WalletPointsRow>(

@@ -7,7 +7,7 @@ export type Handler = (
   searchParams: URLSearchParams,
 ) => Promise<RouteResult>;
 
-type Route = { method: string; pattern: RegExp; paramNames: string[]; handler: Handler };
+type Route = { method: string; path: string; pattern: RegExp; paramNames: string[]; handler: Handler };
 
 function compile(path: string): { pattern: RegExp; paramNames: string[] } {
   const paramNames: string[] = [];
@@ -29,12 +29,17 @@ export class Router {
 
   get(path: string, handler: Handler): void {
     const { pattern, paramNames } = compile(path);
-    this.routes.push({ method: 'GET', pattern, paramNames, handler });
+    this.routes.push({ method: 'GET', path, pattern, paramNames, handler });
   }
 
   post(path: string, handler: Handler): void {
     const { pattern, paramNames } = compile(path);
-    this.routes.push({ method: 'POST', pattern, paramNames, handler });
+    this.routes.push({ method: 'POST', path, pattern, paramNames, handler });
+  }
+
+  /** Every registered route, in registration order — what the API reference is checked against. */
+  list(): Array<{ method: string; path: string }> {
+    return this.routes.map(({ method, path }) => ({ method, path }));
   }
 
   match(method: string, pathname: string): { handler: Handler; params: Record<string, string> } | null {
