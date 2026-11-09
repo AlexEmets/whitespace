@@ -193,6 +193,17 @@ describe('<DocsArticle>', () => {
     expect(text).toMatch(/degraded/i);
   });
 
+  it('points builders at the API reference, before the community section', () => {
+    paramsAvailable.value = true;
+    render(<DocsArticle />);
+    const section = screen.getByTestId('docs-section-api');
+    expect(screen.getByTestId('docs-api-link')).toHaveAttribute('href', '/docs/api');
+    expect(section).toContainElement(screen.getByTestId('docs-api-link'));
+    expect(section.compareDocumentPosition(screen.getByTestId('docs-section-community'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   it('ends with where to find the community and how to report a bug, each opening in a new tab', () => {
     paramsAvailable.value = true;
     render(<DocsArticle />);

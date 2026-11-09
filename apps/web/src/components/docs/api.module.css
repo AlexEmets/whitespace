@@ -1,0 +1,300 @@
+/*
+ * /docs/api, on top of docs.module.css: the base-URL strip under the title, code blocks,
+ * endpoint cards and the "Try it" panel. Same tokens as the rest of the Eclipse design;
+ * the only colour with meaning is the response status (long for 2xx/3xx, short otherwise).
+ */
+
+.bases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 1.4rem;
+}
+
+.bases > div {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.6rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.bases span {
+  color: var(--accent);
+  font-size: 0.72rem;
+  flex: none;
+}
+
+.bases code {
+  color: var(--fg);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- Code blocks ---------- */
+
+.codeWrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  margin: 0 0 1.2rem;
+  max-width: 80ch;
+  overflow: hidden;
+}
+
+.codeHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.6rem 0.5rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.copy {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--fg-muted);
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.copy:hover {
+  color: var(--fg);
+}
+
+.code,
+.response {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+/* ---------- Endpoints ---------- */
+
+.endpoints {
+  display: grid;
+  gap: 10px;
+}
+
+.endpoint {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.2rem 1.3rem;
+  min-width: 0;
+}
+
+.endpointHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0 0 0.6rem;
+  font-weight: 400;
+}
+
+.method {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-ring);
+  border-radius: 6px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.path {
+  color: var(--fg);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.summary {
+  color: var(--fg-muted);
+  font-size: 0.97rem;
+  font-weight: 300;
+  line-height: 1.7;
+  margin: 0 0 0.9rem;
+  max-width: 72ch;
+}
+
+.params {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0 0 1rem;
+}
+
+.param {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 0.8rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.param dt code {
+  color: var(--fg);
+}
+
+.param dd {
+  margin: 0;
+  color: var(--fg-muted);
+  font-weight: 300;
+}
+
+.paramIn {
+  color: var(--fg-dim);
+  font-size: 0.78rem;
+}
+
+/* ---------- Try it ---------- */
+
+.try {
+  border-top: 1px solid var(--border);
+  padding-top: 0.9rem;
+}
+
+.tryBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.tryPath {
+  color: var(--fg-muted);
+  font-size: 0.82rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tryButton {
+  flex: none;
+  height: 34px;
+  padding: 0 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-ring);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.tryButton:hover:not(:disabled) {
+  background: var(--accent-ring);
+}
+
+.tryButton:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tryHint,
+.tryError {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.tryError {
+  color: var(--short);
+}
+
+.tryMeta {
+  display: flex;
+  gap: 1rem;
+  margin: 0.8rem 0 0.5rem;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+}
+
+.ok {
+  color: var(--long);
+}
+
+.bad {
+  color: var(--short);
+}
+
+.response {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  max-height: 26rem;
+  overflow: auto;
+}
+
+/* The channel table: names stay monospace, what they push reads as prose. */
+.channelSummary {
+  font-family: var(--font-sans);
+  font-weight: 300;
+}
+
+/* ---------- Wallet for the examples ---------- */
+
+.walletRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1rem;
+  margin-top: 1.4rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+}
+
+.walletRow label {
+  color: var(--fg-muted);
+  font-size: 0.72rem;
+}
+
+.wallet {
+  flex: 1 1 26rem;
+  min-width: 0;
+  height: 40px;
+  padding: 0 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 0.88rem;
+}
+
+.wallet:focus {
+  outline: none;
+  border-color: var(--accent-ring);
+}
+
+.walletBad {
+  border-color: var(--short);
+}
+
+.walletHint {
+  color: var(--short);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 560px) {
+  .param {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+  .endpoint {
+    padding: 1rem;
+  }
+  .tryBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

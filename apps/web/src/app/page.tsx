@@ -228,6 +228,9 @@ export default function LandingPage() {
         <span>whitespace · Whitechain testnet 1874</span>
         <span className="footer-links">
           <Link href="/docs">Docs</Link>
+          <Link href="/docs/api" data-testid="footer-api">
+            API
+          </Link>
           <Link href="/faucet">Faucet</Link>
           <Link href="/vaults">Vaults</Link>
           <Link href="/terms" data-testid="footer-terms">

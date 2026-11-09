@@ -66,22 +66,23 @@ const SECTIONS: SectionDef[] = [
   { id: 'fees', title: 'Fees' },
   { id: 'contracts', title: 'Contracts' },
   { id: 'limits', title: 'Limits of this testnet' },
+  { id: 'api', title: 'Build on it' },
   { id: 'community', title: 'Community & support' },
 ];
 
-function P({ children }: { children: ReactNode }) {
+export function P({ children }: { children: ReactNode }) {
   return <p className={styles.p}>{children}</p>;
 }
 
-function H3({ children }: { children: ReactNode }) {
+export function H3({ children }: { children: ReactNode }) {
   return <h3 className={styles.h3}>{children}</h3>;
 }
 
-function List({ children }: { children: ReactNode }) {
+export function List({ children }: { children: ReactNode }) {
   return <ul className={styles.list}>{children}</ul>;
 }
 
-function LI({ children }: { children: ReactNode }) {
+export function LI({ children }: { children: ReactNode }) {
   return <li className={styles.li}>{children}</li>;
 }
 
@@ -94,7 +95,7 @@ function Caveat({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function DocSection({ index, id, title, children }: { index: number; id: string; title: string; children: ReactNode }) {
+export function DocSection({ index, id, title, children }: { index: number; id: string; title: string; children: ReactNode }) {
   return (
     <section className={styles.section} id={id} data-testid={`docs-section-${id}`}>
       <div className={`${styles.sectionNumber} mono-upper`}>{String(index).padStart(2, '0')}</div>
@@ -690,7 +691,18 @@ liquidated     when  tradeValue < liqMarginValue  (strictly less)`}</div>
             </p>
           </DocSection>
 
-          <DocSection index={9} id="community" title="Community & support">
+          <DocSection index={9} id="api" title="Build on it">
+            <P>
+              Everything on this site comes from a public, read-only API: markets, live prices, candles, positions,
+              trade history, fees, points and the LP vault, over REST and WebSocket. It needs no key. The{' '}
+              <Link href="/docs/api" data-testid="docs-api-link">
+                API reference
+              </Link>{' '}
+              lists every endpoint and lets you call each one from the page.
+            </P>
+          </DocSection>
+
+          <DocSection index={10} id="community" title="Community & support">
             <P>
               Announcements, the community chats and bug reports all live outside this site. If something here is wrong
               or broken, the bug form is the fastest way to reach the team.
