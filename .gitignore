@@ -36,8 +36,9 @@ pgdata/
 *.log
 .DS_Store
 
-# Agent worktrees — isolated repo copies, never part of the tree
-.claude/worktrees/
+# Local editor/agent workspace and notes — kept on the developer's machine only
+.claude/
+CLAUDE.md
 
 # Playwright artefacts
 test-results/
