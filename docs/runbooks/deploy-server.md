@@ -144,7 +144,7 @@ The public 1874 RPC rate-limits per IP, and the keeper, both bots and the indexe
 host's. The keeper has the least slack (a report must land within 10 s of the order), so:
 
 - The keeper and the indexer resolve IPv6 first; every other Node service IPv4 first
-  (`--dns-result-order`). The limit the provider says it raised for `65.21.53.147` does not
+  (`--dns-result-order`). The limit the provider says it raised for the server's IPv4 address does not
   hold: under a 20-trader load test (`tools/stack/load.mjs`) the IPv4 address was refused for
   minutes and the indexer stopped advancing. The bots' and API's bursts on IPv4 therefore
   cannot stall fills (10 s window) or indexed state. Check either

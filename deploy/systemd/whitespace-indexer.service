@@ -36,7 +36,7 @@ RestartSec=5
 # so under load the kernel OOM killer chose for us, and it chose Postgres.
 MemoryHigh=272M
 MemoryMax=320M
-# IPv6 first, like the keeper. The limit the provider says it raised for 65.21.53.147 does
+# IPv6 first, like the keeper. The limit the provider says it raised for this host's IPv4 address does
 # not hold: under a 20-trader load test the bots and the API emptied the IPv4 budget, every
 # `eth_getBlockByNumber("latest")` came back "rate limit exceeded", and the indexer stopped
 # advancing (lag 84 s and growing) until the address recovered. The IPv6 address answered
