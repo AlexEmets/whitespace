@@ -1,4 +1,5 @@
 import { query } from '../db.js';
+import { vaultPerformance } from '../vaultPerformance.js';
 import { collateral, price, id as fmtId } from '../format.js';
 import type { Handler, RouteResult } from '../router.js';
 import type { VaultSettlement } from '../types.js';
@@ -52,4 +53,23 @@ export const handleVaultSettlements: Handler = async (_req, _params, searchParam
     txHash: r.tx_hash,
   }));
   return { code: 200, body };
+};
+
+// GET /vault/performance -> VaultPerformance: the share price now, its change and APR over
+// 7 days, 30 days and since the first settlement, and one share price per UTC day for a
+// chart. All the arithmetic is in src/vaultPerformance.ts; this only reads the history.
+export const handleVaultPerformance: Handler = async (): Promise<RouteResult> => {
+  const rows = await query<{ ts: number | string; share_to_assets_price: string; total_assets: string | null }>(
+    `SELECT COALESCE(settlement_ts, at) AS ts, share_to_assets_price, total_assets
+       FROM vault_settlement ORDER BY COALESCE(settlement_ts, at), id`,
+  );
+  const performance = vaultPerformance(
+    rows.map((r) => ({
+      ts: Number(r.ts),
+      sharePrice: BigInt(r.share_to_assets_price),
+      totalAssets: r.total_assets === null ? null : BigInt(r.total_assets),
+    })),
+  );
+  if (!performance) return { code: 404, body: { error: 'no vault settlements indexed yet' } };
+  return { code: 200, body: performance };
 };

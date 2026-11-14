@@ -9,7 +9,7 @@ import { handlePrice } from './routes/price.js';
 import { handleLimitOrders } from './routes/limitOrders.js';
 import { handleFees } from './routes/fees.js';
 import { handlePnl } from './routes/pnl.js';
-import { handleVaultSettlements } from './routes/vault.js';
+import { handleVaultPerformance, handleVaultSettlements } from './routes/vault.js';
 import { handleFaucetWbt } from './routes/faucet.js';
 import { handlePoints, handleLeaderboard } from './routes/points.js';
 import { createWsManager, type WsManager, type WsManagerOptions } from './ws.js';
@@ -31,6 +31,7 @@ router.get('/limit-orders/:address', handleLimitOrders);
 router.get('/fees/:address', handleFees);
 router.get('/pnl/:address', handlePnl);
 router.get('/vault/settlements', handleVaultSettlements);
+router.get('/vault/performance', handleVaultPerformance);
 // Leaderboard before the :address route, or ":address" would capture "leaderboard".
 router.get('/points/leaderboard', handleLeaderboard);
 router.get('/points/:address', handlePoints);

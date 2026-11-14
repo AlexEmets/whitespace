@@ -154,6 +154,15 @@ export const API_ENDPOINTS = [
   },
   {
     method: 'GET',
+    path: '/vault/performance',
+    group: 'vault',
+    summary:
+      'What an LP earned: the share price now, its change and APR over 7 days, 30 days and since the first settlement, and one share price per UTC day for a chart. APR is the change annualised without compounding; a window is null while the vault is younger than it.',
+    params: [],
+    example: '/vault/performance',
+  },
+  {
+    method: 'GET',
     path: '/health',
     group: 'status',
     summary: 'The newest indexed block and how far behind the chain it is. status is ok, degraded (over 30 s behind) or down (over 5 min).',
