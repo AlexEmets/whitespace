@@ -2202,6 +2202,41 @@ table.data-table[data-testid='positions-table'] .cell-sub.neg {
 
 /* The two panels are halves of one row, so both stretch to the taller one and end on the
    same line; sizing each to its own content left the shorter one stopping short. */
+/* The share-price chart on /vaults: a step line over the par line, dates underneath. */
+.vault-chart {
+  margin: 0;
+}
+
+.vault-chart svg {
+  display: block;
+  width: 100%;
+  height: 180px;
+}
+
+.vault-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.6rem;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+@media (max-width: 560px) {
+  .vault-chart svg {
+    height: 140px;
+  }
+  /* Two dates fit a phone; the legend between them does not. */
+  .vault-chart-axis span:nth-child(2) {
+    display: none;
+  }
+}
+
+/* The vault grid sits under the performance section, spaced like any other band. */
+.vault-grid {
+  margin-top: 10px;
+}
+
 .vault-grid {
   display: grid;
   grid-template-columns: minmax(0, 420px) minmax(0, 1fr);

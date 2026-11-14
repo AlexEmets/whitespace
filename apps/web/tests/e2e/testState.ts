@@ -125,6 +125,9 @@ export class TestState {
     lpBalance: string;
     lpSince: number | null;
   };
+  /** GET /vault/performance payload; undefined answers 404, as the API does before the vault
+   * has settled once. */
+  vaultPerformance?: unknown;
   /** GET /points/leaderboard payload. */
   leaderboard?: Array<{
     rank: number;

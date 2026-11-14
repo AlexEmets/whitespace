@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { VaultPanel } from '@/components/VaultPanel';
+import { VaultPerformance } from '@/components/VaultPerformance';
 import { PageHead, Section } from '@/components/portfolio/AccountPage';
 import styles from '@/components/portfolio/accountPage.module.css';
 
 export const metadata: Metadata = {
   title: 'Vaults — Whitespace',
-  description: 'The LP vault that takes the other side of every Whitespace trade: its TVL and your share of it.',
+  description: 'The LP vault that takes the other side of every Whitespace trade: its returns, its share price history, its TVL and your share of it.',
 };
 
 /** /vaults — the LP vault as a product: what it holds, what share of it is yours, and how
@@ -20,6 +21,7 @@ export default function VaultsPage() {
         title="Vaults"
         lede="One vault is the counterparty to every trade on Whitespace. Liquidity providers own it in shares; the share price moves with the traders' net PnL, fees and funding."
       />
+      <VaultPerformance />
       <div className="vault-grid">
         <VaultPanel />
         <Section title="How deposits and withdrawals move" testId="vault-lifecycle">

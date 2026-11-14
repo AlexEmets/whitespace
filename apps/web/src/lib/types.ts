@@ -245,6 +245,23 @@ export interface LeaderboardEntry {
   total: string;
 }
 
+/** One window of GET /vault/performance. `change` and `apr` are fractions at 18 dp. */
+export interface VaultPerformanceWindow {
+  from: number;
+  sharePriceThen: string;
+  change: string;
+  apr: string;
+}
+
+/** GET /vault/performance — what an LP earned, from the vault's settlement history. */
+export interface VaultPerformance {
+  sharePrice: string;
+  totalAssets: string | null;
+  updatedAt: number;
+  windows: { '7d': VaultPerformanceWindow | null; '30d': VaultPerformanceWindow | null; all: VaultPerformanceWindow | null };
+  series: Array<{ t: number; sharePrice: string }>;
+}
+
 export type WsMessage =
   | { channel: `price:${string}`; type: 'price'; data: PriceResponse }
   | { channel: `positions:${string}`; type: 'positions'; data: PositionSummary[] }

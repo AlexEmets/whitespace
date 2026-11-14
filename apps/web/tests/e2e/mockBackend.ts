@@ -216,6 +216,12 @@ export async function installMockBackend(page: Page, state: TestState, apiBaseUr
       });
     }
 
+    if (path === '/vault/performance') {
+      return state.vaultPerformance
+        ? route.fulfill({ json: state.vaultPerformance })
+        : route.fulfill({ status: 404, json: { error: 'no vault settlements indexed yet' } });
+    }
+
     if (path === '/points/leaderboard') {
       return route.fulfill({ json: state.leaderboard ?? [] });
     }

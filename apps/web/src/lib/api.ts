@@ -14,6 +14,7 @@ import type {
   PriceResponse,
   PointsSummary,
   LeaderboardEntry,
+  VaultPerformance,
   WbtFaucetResult,
 } from './types';
 
@@ -57,6 +58,7 @@ export const api = {
   pnl: (address: string) => getJson<PnlSummary>(`/pnl/${address}`),
   points: (address: string) => getJson<PointsSummary>(`/points/${address}`),
   leaderboard: (limit = 100) => getJson<LeaderboardEntry[]>(`/points/leaderboard?limit=${limit}`),
+  vaultPerformance: () => getJson<VaultPerformance>('/vault/performance'),
   /** Ask the server-side faucet to send native WBT (gas) to `address`. The result carries
    * its own `ok` flag; see postJson on why a decline is not an exception here. */
   requestWbt: (address: string) => postJson<WbtFaucetResult>('/faucet/wbt', { address }),
