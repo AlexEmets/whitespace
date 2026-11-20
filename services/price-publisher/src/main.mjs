@@ -10,6 +10,7 @@ import { loadConfig } from './config.mjs';
 import { createPublisherEngine } from './engine.mjs';
 import { createServerApp } from './server.mjs';
 import { connectVenue } from './venues/index.mjs';
+import { formatDegradedLine } from './degradedLog.mjs';
 import { getMarket } from '@whitespace/shared/markets';
 
 async function main() {
@@ -59,6 +60,9 @@ async function main() {
     }
   }
 
+  const venuesByFeed = Object.fromEntries(
+    config.markets.map((feed) => [feed, config.venues.filter((v) => getMarket(feed).venueSymbols[v])]),
+  );
   const stopFns = [];
   for (const feed of config.markets) {
     const market = getMarket(feed);
@@ -87,11 +91,9 @@ async function main() {
       if (aggregate.degraded) {
         // The threshold is logged, not just the count: with per-market bounds, "healthy=2"
         // is a degradation for BTC and normal for WBT, and a log line that omits which rule
-        // applied cannot be read without going to look it up.
-        console.warn(
-          `[price-publisher] ${feed} DEGRADED: healthy=${aggregate.healthyCount}/${aggregate.minHealthyVenues} ` +
-            `venues=[${aggregate.healthyVenues.join(',')}] mark=${mark}`,
-        );
+        // applied cannot be read without going to look it up. Every other connected venue is
+        // listed with the reason it was left out.
+        console.warn(formatDegradedLine({ feed, aggregate, mark, venues: venuesByFeed[feed] }));
       }
     }
   }, config.bounds.markEmaSampleIntervalMs);
