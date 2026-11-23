@@ -25,3 +25,4 @@ export const wsUrl = whitebit.wsUrl;
 export const subscribePayload = whitebit.subscribePayload;
 export const createBook = whitebit.createBook;
 export const parseMessage = whitebit.parseMessage;
+export const needsResync = whitebit.needsResync;

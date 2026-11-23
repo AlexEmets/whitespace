@@ -19,6 +19,17 @@
  * outright" (observed: the very first message replaces both sides in full). A local
  * book must therefore be maintained across messages — `applyDepthUpdate` does that,
  * kept pure and independent of the socket so it is unit-testable with synthetic diffs.
+ *
+ * Every frame also carries `update_id` and `past_update_id`: a diff applies only on top of the
+ * frame whose `update_id` equals its `past_update_id`. A frame that is lost breaks that chain,
+ * and the level it would have removed stays in the local book for good. Ignoring the chain
+ * left WBT/USD's books crossed (best ask at or under best bid) for hours on end — the
+ * connector re-issues the last tick while the socket is alive, so the publisher rejected
+ * both WhiteBIT books as invalid_quote and refused opens, and for hours at a time closes
+ * too (2026-11-20/21: over seven hours a day degraded). A broken chain, or a book that has
+ * crossed for any other reason (an exchange book never does), now marks the book out of
+ * sync: it yields no tick, and `needsResync` tells the connector to subscribe again, which
+ * starts over from a full snapshot.
  */
 
 import { parseDecimalTo18 } from '@whitespace/shared/decimal';
@@ -36,16 +47,28 @@ function isZeroString(s) {
   return /^0+(\.0+)?$/.test(s);
 }
 
-/** @returns {{ bids: Map<string,string>, asks: Map<string,string> }} */
+/**
+ * Levels are keyed by the price as an 18-decimal integer string, not the text the venue sent,
+ * so '58.41' and '58.410' are the same level and a removal always finds what it removes.
+ * `lastUpdateId` is the `update_id` of the last applied frame; `outOfSync` is set once the
+ * book can no longer be trusted (see the module comment).
+ * @returns {{ bids: Map<string,string>, asks: Map<string,string>, lastUpdateId: number|undefined, outOfSync: boolean }}
+ */
 export function createBook() {
-  return { bids: new Map(), asks: new Map() };
+  return { bids: new Map(), asks: new Map(), lastUpdateId: undefined, outOfSync: false };
 }
 
 function applyLevels(map, levels) {
   for (const [priceStr, volStr] of levels) {
-    if (isZeroString(volStr)) map.delete(priceStr);
-    else map.set(priceStr, volStr);
+    const key = parseDecimalTo18(priceStr).toString();
+    if (isZeroString(volStr)) map.delete(key);
+    else map.set(key, volStr);
   }
+}
+
+/** True once the book has lost a frame or crossed; the connector must subscribe again. */
+export function needsResync(book) {
+  return Boolean(book?.outOfSync);
 }
 
 /**
@@ -58,11 +81,21 @@ export function applyDepthUpdate(book, params) {
   const [isFullUpdate, payload] = params ?? [];
   if (!payload) return book;
   if (isFullUpdate) {
+    // A full snapshot replaces what it carries and restarts the sequence.
     if (payload.bids) book.bids.clear();
     if (payload.asks) book.asks.clear();
+    book.outOfSync = false;
+  } else {
+    if (book.outOfSync) return book; // nothing applies on top of a broken book
+    const chained = payload.past_update_id === undefined || book.lastUpdateId === undefined || payload.past_update_id === book.lastUpdateId;
+    if (!chained) {
+      book.outOfSync = true;
+      return book;
+    }
   }
   if (payload.bids) applyLevels(book.bids, payload.bids);
   if (payload.asks) applyLevels(book.asks, payload.asks);
+  if (payload.update_id !== undefined) book.lastUpdateId = payload.update_id;
   return book;
 }
 
@@ -74,17 +107,23 @@ export function applyDepthUpdate(book, params) {
  * @returns {{ bid: bigint, ask: bigint, ts: number }|null}
  */
 export function bestOfBook(book, ts) {
+  if (book.outOfSync) return null;
   let bestBid = null;
-  for (const priceStr of book.bids.keys()) {
-    const p = parseDecimalTo18(priceStr);
+  for (const key of book.bids.keys()) {
+    const p = BigInt(key);
     if (bestBid === null || p > bestBid) bestBid = p;
   }
   let bestAsk = null;
-  for (const priceStr of book.asks.keys()) {
-    const p = parseDecimalTo18(priceStr);
+  for (const key of book.asks.keys()) {
+    const p = BigInt(key);
     if (bestAsk === null || p < bestAsk) bestAsk = p;
   }
   if (bestBid === null || bestAsk === null) return null;
+  if (bestAsk <= bestBid) {
+    // An exchange book never crosses; ours has, so it missed something.
+    book.outOfSync = true;
+    return null;
+  }
   return { bid: bestBid, ask: bestAsk, ts };
 }
 

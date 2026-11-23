@@ -103,7 +103,7 @@ test('whitebit: a partial update (isFullUpdate=false) patches only the side it c
     params: [
       true,
       {
-        asks: [['78726.35', '0.045088']],
+        asks: [['78740.00', '0.045088']], // above the new bid below: an exchange book never crosses
         bids: [
           ['78726.34', '0.045088'],
           ['78723.28', '0.02067'],
@@ -119,7 +119,7 @@ test('whitebit: a partial update (isFullUpdate=false) patches only the side it c
     params: [false, { bids: [['78730.00', '0.1']], event_time: 2 }, 'BTC_USDT'],
   });
   assert.equal(tick.bid, parseDecimalTo18('78730.00'));
-  assert.equal(tick.ask, parseDecimalTo18('78726.35')); // ask untouched by the partial update
+  assert.equal(tick.ask, parseDecimalTo18('78740.00')); // ask untouched by the partial update
 });
 
 test('whitebit: a zero-volume level removes that price from the book', () => {
@@ -164,4 +164,75 @@ test('a venue frame with no exchange timestamp still yields a tick (receipt time
   assert.equal(bybit.parseMessage(bybitNoTs, RECEIVED_AT).ts, RECEIVED_AT);
   const okxNoTs = { arg: { channel: 'tickers', instId: 'BTC-USDT' }, data: [{ bidPx: '1', askPx: '2' }] };
   assert.equal(okx.parseMessage(okxNoTs, RECEIVED_AT).ts, RECEIVED_AT);
+});
+
+// --- WhiteBIT: sequence (update_id / past_update_id) and crossed books ---------------
+
+const wbFull = (updateId, bids, asks) => ({ method: 'depth_update', params: [true, { update_id: updateId, bids, asks }, 'WBT_USDT'] });
+const wbDiff = (pastId, updateId, side) => ({ method: 'depth_update', params: [false, { past_update_id: pastId, update_id: updateId, ...side }, 'WBT_USDT'] });
+
+test('whitebit: diffs that chain on update_id keep the book in sync', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, wbFull(100, [['58.40', '1']], [['58.42', '1']]), RECEIVED_AT);
+  const tick = whitebit.parseMessage(book, wbDiff(100, 101, { bids: [['58.41', '2']] }), RECEIVED_AT);
+  assert.equal(tick.bid, parseDecimalTo18('58.41'));
+  assert.equal(whitebit.needsResync(book), false);
+  assert.equal(book.lastUpdateId, 101);
+});
+
+test('whitebit: a diff whose past_update_id skips a frame marks the book out of sync and yields no tick', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, wbFull(100, [['58.40', '1']], [['58.42', '1']]), RECEIVED_AT);
+  // frame 101 was lost; 102 builds on it
+  const tick = whitebit.parseMessage(book, wbDiff(101, 102, { asks: [['58.42', '0']] }), RECEIVED_AT);
+  assert.equal(tick, null);
+  assert.equal(whitebit.needsResync(book), true);
+  // later diffs do not apply on top of a broken book
+  assert.equal(whitebit.parseMessage(book, wbDiff(102, 103, { bids: [['58.41', '1']] }), RECEIVED_AT), null);
+  assert.equal(book.bids.has(parseDecimalTo18('58.41').toString()), false);
+});
+
+test('whitebit: a full snapshot brings an out-of-sync book back', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, wbFull(100, [['58.40', '1']], [['58.42', '1']]), RECEIVED_AT);
+  whitebit.parseMessage(book, wbDiff(105, 106, { bids: [['58.41', '1']] }), RECEIVED_AT);
+  assert.equal(whitebit.needsResync(book), true);
+  const tick = whitebit.parseMessage(book, wbFull(200, [['58.50', '1']], [['58.52', '1']]), RECEIVED_AT);
+  assert.equal(whitebit.needsResync(book), false);
+  assert.equal(tick.bid, parseDecimalTo18('58.50'));
+  assert.equal(tick.ask, parseDecimalTo18('58.52'));
+});
+
+test('whitebit: a crossed book (best ask at or under best bid) yields no tick and needs a resync', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, wbFull(100, [['58.40', '1']], [['58.42', '1']]), RECEIVED_AT);
+  // a bid at 58.45 with the 58.42 ask never removed: the shape a lost frame leaves behind
+  const tick = whitebit.parseMessage(book, wbDiff(100, 101, { bids: [['58.45', '1']] }), RECEIVED_AT);
+  assert.equal(tick, null);
+  assert.equal(whitebit.needsResync(book), true);
+  // a locked book (ask == bid) is just as impossible
+  const locked = whitebit.createBook();
+  assert.equal(whitebit.parseMessage(locked, wbFull(1, [['58.42', '1']], [['58.42', '1']]), RECEIVED_AT), null);
+  assert.equal(whitebit.needsResync(locked), true);
+});
+
+test('whitebit: the same price written with a trailing zero is one level, so its removal lands', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, wbFull(100, [['58.41', '1'], ['58.40', '1']], [['58.43', '1']]), RECEIVED_AT);
+  const tick = whitebit.parseMessage(book, wbDiff(100, 101, { bids: [['58.410', '0']] }), RECEIVED_AT);
+  assert.equal(tick.bid, parseDecimalTo18('58.40'));
+  assert.equal(book.bids.size, 1);
+});
+
+test('whitebit: frames without update ids (older captures) still apply as before', () => {
+  const book = whitebit.createBook();
+  whitebit.parseMessage(book, { method: 'depth_update', params: [true, { bids: [['1', '1']], asks: [['2', '1']] }, 'X'] }, RECEIVED_AT);
+  const tick = whitebit.parseMessage(book, { method: 'depth_update', params: [false, { bids: [['1.5', '1']] }, 'X'] }, RECEIVED_AT);
+  assert.equal(tick.bid, parseDecimalTo18('1.5'));
+  assert.equal(whitebit.needsResync(book), false);
+});
+
+test('whitebit_perp shares the resync rule', async () => {
+  const perp = await import('../src/venues/whitebit_perp.mjs');
+  assert.equal(perp.needsResync, whitebit.needsResync);
 });

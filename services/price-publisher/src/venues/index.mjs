@@ -179,6 +179,13 @@ export function connectVenue(venueId, symbol, onTick, onError = () => {}) {
         // Receipt time for every venue (see the venue modules for why not exchange time).
         const receivedAt = Date.now();
         const tick = bookBased ? mod.parseMessage(book, message, receivedAt) : mod.parseMessage(message, receivedAt);
+        // A diff book that lost a frame or crossed cannot be repaired in place: subscribe again
+        // for a full snapshot. The reconnect also resets liveBook, so the broken quote is not
+        // re-issued while the socket stays alive.
+        if (bookBased && mod.needsResync?.(book)) {
+          reconnect(`${symbol} book out of sequence — resubscribing for a full snapshot`);
+          return;
+        }
         if (tick) {
           liveBook.record(tick, receivedAt);
           onTick({ venue: venueId, ...tick });
